@@ -22,7 +22,8 @@ Testes e verificações:
 
 ```powershell
 npx tsc --noEmit            # tipos da interface
-cargo test --workspace      # 63 testes do core + 15 do desktop
+cargo test --workspace      # 68 testes do core + 15 do desktop
+node --check crates/core/assets/remote/app.js   # sintaxe da web app do celular
 ```
 
 A interface ainda não tem runner de testes próprio; a lógica pura das telas foi conferida por scripts avulsos durante a migração.
@@ -64,7 +65,8 @@ src-tauri/    crate argus-desktop (Tauri 2, identificador dev.argus.app)
   src/events.rs  repassa os eventos do orquestrador e dos servidores para a interface
 crates/core   (argus-core): workspace, monitor, pty, procs, deps, metrics, db, remote, autowork,
               agents/{provider, claude, opencode, orchestrator}
-              assets/remote (web app do celular)
+              assets/remote (web app do celular: index.html, app.js, style.css, unauthorized.html,
+              manifest.webmanifest, icon.svg; embutidos no executável por include_str)
 crates/app    (argus-app): interface ANTIGA em Dioxus 0.7. Fora do workspace, não compila mais.
 ```
 
@@ -92,7 +94,49 @@ Atalhos novos: Ctrl+N (nova conversa), Ctrl+B (barra esquerda), Ctrl+J (terminal
 
 Três temas, escolhidos em Configurações e lembrados no localStorage (`argus.tema`): **Oceano** (padrão), **Nebulosa** e **Brasa**. Toda cor vem de `src/styles/tokens.css`: cada tema define os tokens de base (`--bg`, `--surface`, `--surface-2`, `--border`, `--border-strong`, `--text`, `--text-2`, `--accent`, `--accent-hover`, `--on-accent`, `--accent-text`, `--selection`, `--focus`, `--status-bg`, `--on-status`) só com cores da própria paleta; os demais são derivados. As cores de estado (`--ok`, `--warn`, `--err`, `--run`) são iguais nos três. Nenhum componente usa hex direto. O Monaco (`views/workbench/monaco.ts`) e o xterm (`views/terminal/session.ts`) montam o tema a partir dos tokens e trocam junto.
 
-Pendente: a web app do celular (`crates/core/assets/remote`) continua com as cores antigas.
+A web app do celular (`crates/core/assets/remote/style.css`) repete os mesmos tokens e os mesmos três temas; o seletor fica na tela Ajustes dela e a escolha é guardada no aparelho (mesma chave `argus.tema`). O `theme-color`, o manifest e o ícone acompanham o tema (`/manifest.webmanifest?tema=...`).
+
+### Acesso remoto (web app do celular)
+
+Servidor axum em `crates/core/src/remote.rs`, desligado por padrão; liga na aba Remoto, que mostra o QR code. A web app é HTML, CSS e JavaScript puros (sem framework e sem CDN) e foi refeita em 2026-11-14 para acompanhar o desktop.
+
+| Tela | O que tem |
+|---|---|
+| Pareamento | `/pair?token=...` grava o cookie (HttpOnly, SameSite=Strict) e redireciona para `/`, tirando o token do endereço. Token ausente, errado ou revogado dá a mesma página 401 "Não autorizado" |
+| Sessões (início) | projetos com as suas sessões: ponto de status (erro vira ícone de alerta com o rótulo "Erro"), título, provedor, selos de auto-work e de servidores, negrito e ponto azul na sessão com novidade, busca, "Encerradas", "+" geral e por projeto |
+| Conversa | pedido em caixa, resposta em Markdown (tabela com rolagem lateral, código com rótulo e Copiar), ferramentas e "N passos" recolhidos, stream pelo WebSocket, total de tokens e custo equivalente em API, caixa de composição no rodapé (acompanha o teclado), Enviar que vira Parar |
+| Subagentes | lista em árvore e o chat de cada um (prompt recebido, ferramentas, resultado), somente leitura, sem caixa de resposta |
+| Nova conversa | projeto (só os da pasta raiz aberta na IDE), provedor e pedido; cai na conversa criada |
+| Auto-work | liga e desliga por projeto, progresso, Pausar, Retomar e Parar (com confirmação) |
+| Servidores | por sessão ou terminal, com Abrir e Derrubar (com confirmação) |
+| Ajustes | tema, estado da conexão, como revogar e como instalar |
+
+Rotas (todas exigem o token, por cookie ou `Authorization: Bearer`; sem ele, 401, inclusive no WebSocket):
+
+| Rota | O que faz |
+|---|---|
+| `GET /pair?token=` | pareamento (única rota sem token prévio) |
+| `GET /`, `/app.js`, `/style.css`, `/icon.svg?tema=`, `/manifest.webmanifest?tema=` | a web app |
+| `GET /api/tasks`, `POST /api/tasks` | lista as sessões; cria uma (só em projeto conhecido da IDE) |
+| `GET /api/tasks/{id}` | a sessão e os eventos (inclui `SubagentStart`, `SubagentEnd` e `Scoped`) |
+| `POST /api/tasks/{id}/reply`, `/cancel` | responde; para o turno |
+| `GET /api/projects` | `[{ name, path }]`: projetos da pasta raiz aberta mais os das sessões |
+| `GET /api/providers` | `[{ id, name }]` |
+| `GET /api/pricing` | tabela de preços do custo equivalente em API |
+| `GET /api/autowork`, `POST /api/autowork`, `POST /api/tasks/{id}/autowork/{start,pause,resume,stop}` | auto-work |
+| `GET /api/servers`, `POST /api/servers/{pid}/kill` | servidores rastreados; derruba um (só PID rastreado) |
+| `GET /api/stream` | WebSocket: `state`, `agent`, `stderr`, `autowork`, `resync` e `ping` a cada 5 s |
+
+Cuidados já no código: o token não aparece em log nem em corpo de resposta; a página não carrega nada de fora (Content-Security-Policy `default-src 'self'`); o aviso da CLI "Warning: claude.ai MCP servers blocked" é filtrado no servidor e não chega ao celular; desligar o servidor na aba Remoto derruba os WebSockets abertos (antes eles continuavam recebendo eventos); a web app reconecta sozinha, avisa "Conexão perdida" e recarrega os dados ao voltar.
+
+Limites conhecidos:
+
+- **Instalação como aplicativo:** por `http://` na rede local o navegador só oferece "Adicionar à tela inicial" (atalho). A instalação completa de PWA e o service worker exigem HTTPS; não há service worker.
+- **Anexos:** aparecem como chips com o nome do arquivo; a miniatura das imagens não é enviada ao celular, e o celular não anexa arquivos.
+- **Fila de mensagens:** não existe no remoto; com o agente trabalhando, a caixa fica desabilitada e o botão vira Parar.
+- **Negrito de novidade:** vale para o que chega com a web app aberta (fica guardado no aparelho); o servidor não guarda o que cada aparelho já viu.
+- **"Abrir" de um servidor** usa o IP do computador; servidor que só escuta em `localhost` não abre pelo celular.
+- **Iniciar o auto-work numa sessão** não tem botão na web app (a rota `start` existe); ele começa pelas regras do desktop.
 
 ### Sobre `crates/app` (Dioxus)
 
@@ -116,7 +160,8 @@ Legenda: **na janela** = visto funcionando na janela do Tauri; **compila** = imp
 | Subagentes do opencode e subagente em segundo plano do claude | ⚠ escritos sem conferir contra saída real |
 | Métricas de tokens e custo equivalente em API, gráfico por dia | ✓ na janela (atualiza ao fim do turno) |
 | Dependências: detecção, confirmação antes de instalar, comando inexistente no terminal | ✓ na janela (só o pedido; nenhuma instalação foi executada) |
-| Acesso remoto pela LAN (QR + token) | ✓ na janela: liga, QR, `/api/tasks` sem token = 401 e com token = 200, desliga e fecha a porta; **web app nunca aberta no celular** |
+| Acesso remoto pela LAN (QR + token) | ✓ na janela: liga, QR, todas as rotas e o WebSocket sem token = 401, desliga, fecha a porta e derruba quem estava conectado |
+| Web app do celular (refeita: projetos e sessões, conversa, subagentes, nova conversa, auto-work, servidores, temas) | ✓ num navegador emulando celular (390, 360 e 430 px, toque), contra o servidor real: lista, histórico da sessão #1, subagente sem caixa de resposta, `/context` enviado com a resposta chegando pelo WebSocket, reconexão, três temas, Derrubar num servidor real. ⚠ auto-work: ligar e desligar conferidos de verdade; progresso, Pausar, Retomar e Parar só com uma execução simulada na tela. ⚠ "Enviar" de Nova conversa não foi tocado (gastaria tokens). **Nunca aberta num celular de verdade** |
 | Auto-work (PENDENCIAS.md, TODO/FIXME, build/testes, travas) | ⚠ core testado; o formulário aparece, nenhum ciclo rodou |
 | Player de música (mídia do Windows + arquivos locais) | ⚠ aparece na status bar ("Nada tocando"); tocar mídia não conferido |
 | Pet de uso | ✓ na janela (dormindo e trabalhando, balão com os números) |
@@ -179,7 +224,7 @@ Implementado, mas ainda não visto funcionando na janela nova. Marque com `[x]` 
 - [ ] As métricas contam 2 turnos quando um turno usa dois modelos.
 - [x] O botão "Fazer login" aparecia mesmo com o provedor já conectado. Agora, conectado, aparece só "Trocar de conta" (visto na aba Provedores).
 - [ ] Imagens anexadas podem não ser lidas pelo claude, porque ficam fora da pasta do projeto (provável saída: `--add-dir`).
-- [x] O aviso da CLI do claude sobre servidores MCP bloqueados mostrava o nome da organização do usuário no chat. As linhas que começam com "Warning: claude.ai MCP servers blocked" não são mais renderizadas (`isHiddenNotice` em `views/session/events.ts`); visto com a sessão gravada, que tem 4 dessas linhas. O texto continua gravado no banco e ainda aparece na web app do celular.
+- [x] O aviso da CLI do claude sobre servidores MCP bloqueados mostrava o nome da organização do usuário no chat. As linhas que começam com "Warning: claude.ai MCP servers blocked" não são mais renderizadas (`isHiddenNotice` em `views/session/events.ts`); visto com a sessão gravada, que tem 4 dessas linhas. O texto continua gravado no banco; no acesso remoto ele é filtrado no servidor e não chega ao celular.
 - [ ] Um comando de barra que o Argus não conhece vai para a CLI e conta como turno.
 
 ## Próximos passos (em ordem)
@@ -191,7 +236,7 @@ Implementado, mas ainda não visto funcionando na janela nova. Marque com `[x]` 
    - conversa: primeiro envio criando a tarefa na mesma aba, colar print, arrastar arquivo, Ctrl+Enter com o turno rodando;
    - player tocando mídia; auto-work rodando um ciclo.
 2. **Servidores vinculados a uma sessão.** O painel já foi conferido com um servidor aberto num terminal da IDE. Falta o vínculo a uma sessão de agente, liberando `python -m http.server` em "Comandos permitidos".
-3. **Abrir a web app no celular.** Na primeira vez, o Windows pede permissão no Firewall: clique em **Permitir** (rede privada). Conferir também a visão dos subagentes no remoto (a API já devolve os eventos novos; a web app não foi adaptada).
+3. **Abrir a web app num celular de verdade.** Na primeira vez, o Windows pede permissão no Firewall: clique em **Permitir** (rede privada). A web app foi refeita e conferida num navegador emulando celular; falta o aparelho real (teclado de verdade, área segura, "Adicionar à tela inicial", toque). Conferir também o auto-work com uma execução real e o primeiro envio de Nova conversa.
 4. **Subagentes: conferir o que foi suposto.** Uma saída real do opencode com a ferramenta `task`, e um subagente em segundo plano do claude.
 5. **Pequenos ajustes conhecidos:**
    - O botão "Reiniciar" de um servidor roda sem saída visível. Seria melhor reabrir o processo num terminal da IDE.
@@ -200,7 +245,7 @@ Implementado, mas ainda não visto funcionando na janela nova. Marque com `[x]` 
    - Trocar o `netstat` por GetExtendedTcpTable, o que exige adicionar a crate `windows` ao core.
    - Espaçar as verificações de build e testes do auto-work em projetos grandes, ou torná-las opcionais.
    - O OpenCode não informa o modelo usado; o custo cai na tabela de fallback.
-   - Web app do celular (`crates/core/assets/remote`): aplicar as paletas dos temas e esconder o aviso de MCP bloqueado.
+   - Web app do celular: HTTPS (para instalar como PWA de verdade), miniaturas dos anexos e fila de mensagens.
    - A fila de mensagens e o rascunho da "conversa nova" são compartilhados entre todas as abas de conversa nova (chave `new`).
    - `OrchestratorEvent` não deriva `Serialize`; por isso existe o espelho `OrchMsg` em `src-tauri/src/events.rs`. Derivar no core elimina o espelho.
    - TypeScript/JavaScript no Monaco só valida sintaxe (a validação semântica foi desligada).

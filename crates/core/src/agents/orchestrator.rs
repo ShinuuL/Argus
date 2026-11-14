@@ -172,6 +172,13 @@ impl Orchestrator {
         self.inner.db.as_deref()
     }
 
+    /// Provedores registrados: (id, nome de exibição), por id.
+    pub fn providers(&self) -> Vec<(String, String)> {
+        let mut v: Vec<_> = self.inner.providers.values().map(|p| (p.id().to_string(), p.display_name().to_string())).collect();
+        v.sort();
+        v
+    }
+
     pub fn subscribe(&self) -> broadcast::Receiver<OrchestratorEvent> {
         self.inner.tx.subscribe()
     }

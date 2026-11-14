@@ -23,6 +23,8 @@ pub fn open_root(app: &AppHandle, dir: PathBuf) -> Result<RootInfo, String> {
     let paths: Vec<PathBuf> = projects.iter().map(|p| p.path.clone()).collect();
     *ctx.root.lock().map_err(err)? = Some(dir.clone());
     *ctx.projects.lock().map_err(err)? = projects.clone();
+    // O acesso remoto (celular) lista estes projetos e só cria conversa neles.
+    ctx.remote.set_projects(paths.clone());
     let watch_error = monitor::start_watch(app, paths.clone()).err().map(|e| format!("Monitoramento indisponível: {e}"));
     for p in paths {
         monitor::refresh_status(app.clone(), p);
