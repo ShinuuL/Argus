@@ -273,6 +273,26 @@ async fn pair(State(st): State<AppState>, q: Result<Query<PairQuery>, axum::extr
         .into_response()
 }
 
+/// Quantas portas acima da pedida são tentadas antes de desistir.
+const PORT_SEARCH: u16 = 50;
+
+/// Abre a porta pedida ou, se estiver ocupada, a livre mais próxima acima dela.
+async fn bind_nearest(port: u16) -> anyhow::Result<tokio::net::TcpListener> {
+    let mut last = None;
+    for p in (port..=port.saturating_add(PORT_SEARCH)).take(if port == 0 { 1 } else { usize::from(PORT_SEARCH) + 1 }) {
+        match tokio::net::TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], p))).await {
+            Ok(l) => return Ok(l),
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => last = Some(e),
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Err(anyhow::anyhow!(
+        "nenhuma porta livre entre {port} e {}: {}",
+        port.saturating_add(PORT_SEARCH),
+        last.map(|e| e.to_string()).unwrap_or_default()
+    ))
+}
+
 const PAIRED_PAGE: &str = r#"<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -627,10 +647,12 @@ impl RemoteServer {
         self.running.lock().unwrap().is_some()
     }
 
-    /// Inicia em 0.0.0.0:`port` (0 = porta livre). Se já rodando, reinicia.
+    /// Inicia em 0.0.0.0:`port` (0 = porta livre). Se a porta pedida estiver ocupada (por
+    /// exemplo, por outra cópia do Argus), usa a porta livre mais próxima acima dela; a porta
+    /// de fato usada vem em `RemoteInfo`. Se já rodando, reinicia.
     pub async fn start(&self, orch: Orchestrator, port: u16) -> anyhow::Result<RemoteInfo> {
         self.stop();
-        let listener = tokio::net::TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], port))).await?;
+        let listener = bind_nearest(port).await?;
         let port = listener.local_addr()?.port();
         let (stopped, stopped_rx) = watch::channel(false);
         let app = router(AppState {
@@ -741,6 +763,15 @@ mod tests {
         assert_eq!(token_from_headers(&h).as_deref(), Some("tok"));
     }
 
+
+    #[tokio::test]
+    async fn busy_port_falls_back_to_the_nearest_free_one() {
+        let taken = bind_nearest(0).await.unwrap();
+        let busy = taken.local_addr().unwrap().port();
+        let l = bind_nearest(busy).await.unwrap();
+        let got = l.local_addr().unwrap().port();
+        assert!(got > busy && got <= busy.saturating_add(PORT_SEARCH), "{busy} -> {got}");
+    }
     #[tokio::test]
     async fn auth_flow() {
         let srv = RemoteServer::new();

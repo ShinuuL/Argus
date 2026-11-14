@@ -95,6 +95,11 @@ export default function RemoteView() {
       {loaded && info && (
         <>
           <p className="ok rx-p">Servidor ligado na porta {info.port}</p>
+          {Number(port.trim()) > 0 && info.port !== Number(port.trim()) && (
+            <p className="small rx-p">
+              A porta {port.trim()} estava em uso; o Argus usou a livre mais próxima.
+            </p>
+          )}
           {/* O SVG do QR code é gerado pelo próprio backend do Argus. */}
           <div className="qr" role="img" aria-label="QR code de pareamento" dangerouslySetInnerHTML={{ __html: info.qr_svg }} />
           <p className="small rx-url">{info.url}</p>
