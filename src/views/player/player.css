@@ -1,0 +1,13 @@
+/* Ajustes do player para caber na status bar de 24px (as classes .mp-* vêm de components.css).
+   O prefixo .wb-status dá mais especificidade que as regras de components.css, que entra
+   depois no pacote; sem ele, título e subtítulo voltam a empilhar e vazam da barra. */
+.wb-status .music-player { height: 100%; }
+.wb-status .music-player .mp-btn { display: inline-flex; align-items: center; justify-content: center; height: 20px; padding: 0 5px; }
+.wb-status .music-player .mp-info { flex-direction: row; align-items: baseline; gap: 6px; max-width: 280px; }
+.wb-status .music-player .mp-title { flex: 0 1 auto; min-width: 0; }
+.wb-status .music-player .mp-sub { flex: 0 2 auto; min-width: 0; }
+.wb-status .music-player .mp-vol { height: 14px; padding: 0; border: 0; background: none; accent-color: var(--text-on-status); }
+.wb-status .music-player .mp-err { display: inline-flex; align-items: center; color: var(--warn); }
+.wb-status .music-player .mp-list { left: auto; right: 0; background: var(--bg-panel); color: var(--text); border-color: var(--border-control); box-shadow: 0 4px 14px var(--shadow); }
+.wb-status .music-player .mp-list li:hover { background: var(--bg-hover); }
+.wb-status .music-player .mp-list li.active { color: var(--accent-text); background: var(--bg-selected); }

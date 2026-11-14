@@ -1,0 +1,5 @@
+/* Complementos da tela Remoto (.remote e .qr vêm de components.css). */
+.remote .rx-p { margin: 0; }
+.remote .rx-url { margin: 0; word-break: break-all; user-select: text; font: var(--font-mono); font-size: 11px; }
+.remote .rx-port { width: 70px; }
+.remote .qr { display: flex; justify-content: center; }

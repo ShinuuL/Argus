@@ -2,7 +2,7 @@
 //! um git worktree por tarefa, sessões conversacionais (vários turnos),
 //! eventos via broadcast e persistência opcional em SQLite.
 
-use super::provider::{AgentEvent, AgentProvider, CommandSpec};
+use super::provider::{subagents_of, AgentEvent, AgentProvider, CommandSpec, SubagentInfo};
 use crate::db::Db;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -192,13 +192,35 @@ impl Orchestrator {
     }
 
     /// Eventos gravados de uma tarefa (vazio sem banco). Inclui `User` dos turnos
-    /// de resposta; linhas de stderr voltam como `Raw`.
+    /// de resposta; linhas de stderr voltam como `Raw`. Os eventos internos de
+    /// subagentes vêm como `Scoped` (ver `subagents` e `subagent_history`).
     pub fn history(&self, id: TaskId) -> Vec<AgentEvent> {
         let Some(db) = &self.inner.db else { return vec![] };
         db.list_events(id as i64)
             .unwrap_or_default()
             .into_iter()
             .filter_map(|e| serde_json::from_str(&e.payload).ok())
+            .collect()
+    }
+
+    /// Subagentes da tarefa (lista plana: use `parent` para montar a árvore),
+    /// na ordem em que nasceram. Lido do banco; vazio sem banco.
+    pub fn subagents(&self, id: TaskId) -> Vec<SubagentInfo> {
+        subagents_of(&self.history(id))
+    }
+
+    /// Conversa de um subagente (somente leitura): o `SubagentStart` dele, os
+    /// eventos internos já sem o invólucro `Scoped`, e o `SubagentEnd`.
+    pub fn subagent_history(&self, id: TaskId, subagent: &str) -> Vec<AgentEvent> {
+        let Some(db) = &self.inner.db else { return vec![] };
+        db.list_subagent_events(id as i64, subagent)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|e| serde_json::from_str::<AgentEvent>(&e.payload).ok())
+            .map(|e| match e {
+                AgentEvent::Scoped { event, .. } => *event,
+                o => o,
+            })
             .collect()
     }
 
@@ -361,7 +383,7 @@ impl Orchestrator {
             _ => {}
         }
         if let Some(db) = &self.inner.db {
-            let _ = db.insert_event(id as i64, ev.kind(), &json(&ev));
+            let _ = db.insert_event_sub(id as i64, ev.kind(), &json(&ev), ev.subagent_id());
         }
         let _ = self.inner.tx.send(OrchestratorEvent::Agent { task: id, event: ev });
     }
@@ -632,6 +654,89 @@ mod tests {
             }
             if l.is_empty() { vec![] } else { vec![AgentEvent::Text(l.to_string())] }
         }
+    }
+
+    /// Provider que imprime a fixture real do claude (via `type`/`cat`) e usa o parser real.
+    struct Replay(PathBuf, crate::agents::claude::ClaudeProvider);
+    impl AgentProvider for Replay {
+        fn id(&self) -> &str {
+            "replay"
+        }
+        fn display_name(&self) -> &str {
+            "Replay"
+        }
+        fn detect(&self) -> Option<PathBuf> {
+            None
+        }
+        fn login_status(&self) -> LoginStatus {
+            LoginStatus::Unknown
+        }
+        fn login_command(&self) -> CommandSpec {
+            CommandSpec::new("cmd")
+        }
+        fn task_command(&self, _p: &str, cwd: &Path, _s: Option<&str>) -> CommandSpec {
+            let f = self.0.to_string_lossy().into_owned();
+            let c = if cfg!(windows) {
+                CommandSpec::new("cmd").arg("/c").arg("type").arg(f.replace('/', "\\"))
+            } else {
+                CommandSpec::new("cat").arg(f)
+            };
+            c.cwd(cwd)
+        }
+        fn parse_line(&self, l: &str) -> Vec<AgentEvent> {
+            self.1.parse_line(l)
+        }
+    }
+
+    #[tokio::test]
+    async fn subagent_events_are_persisted_and_read_back() {
+        const SUB: &str = "toolu_01CsNFNQqgKLL88nwZezfZRE";
+        let dir = tempfile::tempdir().unwrap();
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures").join("claude_subagent.jsonl");
+        let dbp = dir.path().join("h.db");
+        let mk = || {
+            let prov: Arc<dyn AgentProvider> = Arc::new(Replay(fixture.clone(), Default::default()));
+            Orchestrator::with_db(vec![prov], 1, false, Some(Db::open(&dbp).unwrap()))
+        };
+        let o = mk();
+        let mut rx = o.subscribe();
+        let id = o.submit(dir.path(), "replay", "liste com um subagente").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+
+        // Ao vivo: início, evento interno marcado e fim chegam pelo broadcast.
+        let mut live = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            if let OrchestratorEvent::Agent { event, .. } = ev {
+                live.push(event);
+            }
+        }
+        assert!(live.iter().any(|e| matches!(e, AgentEvent::SubagentStart { id, parent: None, .. } if id == SUB)), "{live:?}");
+        assert!(live.iter().any(|e| matches!(e, AgentEvent::Scoped { subagent, .. } if subagent == SUB)));
+        assert!(live.iter().any(|e| matches!(e, AgentEvent::SubagentEnd { id, ok: true, .. } if id == SUB)));
+        drop(o);
+
+        // Do disco, noutra instância.
+        let o = mk();
+        let kinds: Vec<&str> = o.history(id).iter().map(|e| e.kind()).collect();
+        assert_eq!(
+            kinds,
+            ["User", "Session", "ToolUse", "SubagentStart", "ToolUse", "SubagentEnd", "Text", "Usage", "Result"]
+        );
+        let subs = o.subagents(id);
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs[0].id, SUB);
+        assert_eq!(subs[0].description, "Listar arquivos da pasta");
+        assert_eq!(subs[0].result.as_deref(), Some("- alfa.txt\n- beta.md"));
+        let h = o.subagent_history(id, SUB);
+        assert_eq!(h.len(), 3, "{h:?}");
+        assert!(matches!(&h[0], AgentEvent::SubagentStart { .. }));
+        assert!(matches!(&h[1], AgentEvent::ToolUse { name, .. } if name == "Glob"));
+        assert!(matches!(&h[2], AgentEvent::SubagentEnd { ok: true, .. }));
+        assert!(o.subagent_history(id, "nao-existe").is_empty());
+        // A coluna do banco separa principal e subagente.
+        let recs = o.db().unwrap().list_events(id as i64).unwrap();
+        assert_eq!(recs.iter().filter(|r| r.subagent.as_deref() == Some(SUB)).count(), 3);
+        assert_eq!(recs.iter().filter(|r| r.subagent.is_none()).count(), 6);
     }
 
     fn stdin_echo_args() -> Vec<String> {

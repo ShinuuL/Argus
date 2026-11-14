@@ -1,0 +1,127 @@
+/*
+ * Tokens de cor do Argus. TODA cor da interface vem daqui: nenhum componente
+ * usa hex direto.
+ *
+ * Cada tema define os mesmos tokens de base usando só as cores da própria
+ * paleta (tons intermediários por color-mix entre duas cores da paleta). Os
+ * tokens derivados (mais abaixo) são calculados a partir da base e valem para
+ * os três temas. As cores de estado são iguais em todos os temas.
+ *
+ * Tema escolhido: atributo data-theme em <html> (src/store/theme.ts).
+ */
+
+/* ---------- Oceano (padrão): #0d1b2a #1b263b #415a77 #778da9 #e0e1dd ---------- */
+:root,
+[data-theme="oceano"] {
+  --bg: #0d1b2a;
+  --surface: #1b263b;
+  --surface-2: color-mix(in srgb, #1b263b 70%, #415a77);
+  --border: color-mix(in srgb, #1b263b 50%, #415a77);
+  --border-strong: #415a77;
+  --text: #e0e1dd;
+  /* #778da9 puro dá 4,4:1 sobre a superfície; clareado com o texto da paleta. */
+  --text-2: color-mix(in srgb, #778da9 72%, #e0e1dd);
+  --accent: #778da9;
+  --accent-hover: color-mix(in srgb, #778da9 65%, #e0e1dd);
+  --on-accent: #0d1b2a;
+  --accent-text: color-mix(in srgb, #778da9 55%, #e0e1dd);
+  --selection: color-mix(in srgb, #1b263b 35%, #415a77);
+  --focus: color-mix(in srgb, #778da9 50%, #e0e1dd);
+  --status-bg: #415a77;
+  --on-status: #e0e1dd;
+}
+
+/* ---------- Nebulosa: #10002b #240046 #3c096c #5a189a #7b2cbf #9d4edd #c77dff #e0aaff ---------- */
+[data-theme="nebulosa"] {
+  --bg: #10002b;
+  --surface: #240046;
+  --surface-2: #3c096c;
+  --border: color-mix(in srgb, #3c096c 55%, #5a189a);
+  --border-strong: #5a189a;
+  /* #e0aaff cansa em texto corrido: clareado com branco. */
+  --text: color-mix(in srgb, #e0aaff 55%, #ffffff);
+  --text-2: #c77dff;
+  --accent: #7b2cbf;
+  /* #9d4edd puro com o texto do botão dá 4,2:1; meio-termo com #7b2cbf. */
+  --accent-hover: color-mix(in srgb, #7b2cbf 50%, #9d4edd);
+  --on-accent: color-mix(in srgb, #e0aaff 15%, #ffffff);
+  --accent-text: #c77dff;
+  --selection: color-mix(in srgb, #3c096c 40%, #5a189a);
+  --focus: #c77dff;
+  --status-bg: #3c096c;
+  --on-status: color-mix(in srgb, #e0aaff 55%, #ffffff);
+}
+
+/* ---------- Brasa: #0b090a #161a1d #660708 #a4161a #ba181b #e5383b #b1a7a6 #d3d3d3 #f5f3f4 #ffffff ---------- */
+[data-theme="brasa"] {
+  --bg: #0b090a;
+  --surface: #161a1d;
+  --surface-2: color-mix(in srgb, #161a1d 86%, #b1a7a6);
+  --border: color-mix(in srgb, #161a1d 78%, #b1a7a6);
+  --border-strong: color-mix(in srgb, #161a1d 60%, #b1a7a6);
+  --text: #f5f3f4;
+  --text-2: #b1a7a6;
+  --accent: #ba181b;
+  /* #e5383b puro com texto branco dá 4,2:1; meio-termo com #ba181b. */
+  --accent-hover: color-mix(in srgb, #ba181b 50%, #e5383b);
+  --on-accent: #ffffff;
+  --accent-text: color-mix(in srgb, #e5383b 65%, #f5f3f4);
+  --selection: color-mix(in srgb, #660708 65%, #161a1d);
+  --focus: #d3d3d3;
+  --status-bg: #660708;
+  --on-status: #f5f3f4;
+}
+
+:root {
+  color-scheme: dark;
+
+  /* Estado: iguais nos três temas, fora das paletas, para continuarem distinguíveis. */
+  --ok: #5fd38d;
+  --warn: #e8b04a;
+  --err: #ff8f7a;
+  --danger: #ff8f7a;
+  --run: #6cb6ff;
+  --ok-bg: color-mix(in srgb, var(--ok) 16%, var(--surface));
+  --warn-bg: color-mix(in srgb, var(--warn) 16%, var(--surface));
+  --err-bg: color-mix(in srgb, var(--err) 16%, var(--surface));
+  --run-bg: color-mix(in srgb, var(--run) 16%, var(--surface));
+
+  /* Sombra, véu de modal e papel do QR code (não são cor de tema). */
+  --shadow: rgba(0, 0, 0, 0.45);
+  --scrim: rgba(0, 0, 0, 0.6);
+  --paper: #ffffff;
+  --paper-ink: #000000;
+
+  /* Derivados (nomes usados pelos componentes) */
+  --bg-activity: var(--bg);
+  --bg-app: var(--bg);
+  --bg-editor: var(--bg);
+  --bg-code: var(--bg);
+  --bg-tabs: color-mix(in srgb, var(--bg) 55%, var(--surface));
+  --bg-raised: var(--surface);
+  --bg-panel: var(--surface);
+  --bg-hover: color-mix(in srgb, var(--surface) 70%, var(--border));
+  --bg-active: color-mix(in srgb, var(--surface) 45%, var(--border));
+  --bg-control: var(--surface-2);
+  --bg-control-hover: color-mix(in srgb, var(--surface-2) 55%, var(--border-strong));
+  --bg-selected: var(--selection);
+  --bg-status: var(--status-bg);
+  --border-control: var(--border-strong);
+  --text-strong: var(--text);
+  --text-dim: var(--text-2);
+  --text-faint: var(--text-2);
+  --text-on-status: var(--on-status);
+  --accent-soft: color-mix(in srgb, var(--accent) 22%, transparent);
+
+  /* Tipografia e medidas */
+  --font-ui: 13px system-ui, sans-serif;
+  --font-mono: 12px "Cascadia Mono", Consolas, monospace;
+  --radius: 5px;
+  --radius-lg: 8px;
+  --sidebar-width: 272px;
+  --right-width: 320px;
+  --top-height: 32px;
+  --status-height: 24px;
+  --tab-height: 34px;
+  --chat-width: 820px;
+}

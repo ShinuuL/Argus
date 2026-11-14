@@ -1,0 +1,12 @@
+/* Provedores (aba). */
+.ag-view { display: flex; flex-direction: column; gap: 14px; }
+.ag-list { display: flex; flex-direction: column; gap: 8px; }
+.ag-card { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); min-width: 0; flex-wrap: wrap; }
+.ag-card > .ic { color: var(--text-2); flex: none; }
+.ag-card-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 120px; }
+.ag-card-note { flex-basis: 100%; }
+.ag-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+.ag-status-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.ag-status.muted { opacity: 1; color: var(--text-2); }
+.ag-relogin { background: none; border-color: var(--border); color: var(--text-2); font-size: 12px; padding: 3px 10px; }
+.ag-view button .ic { vertical-align: -2px; margin-right: 4px; }

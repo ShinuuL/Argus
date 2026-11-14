@@ -1,0 +1,6 @@
+/* Complementos do auto-work; as classes .aw-* base estão em styles/components.css. */
+.aw-help { margin: 0; line-height: 1.4; }
+.aw-limits { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 6px 8px; align-items: center; }
+.aw-limits input { width: 100%; min-width: 0; }
+.aw-progress { width: 70px; height: 6px; accent-color: var(--run); }
+.aw-badge button:disabled { opacity: .5; cursor: default; }

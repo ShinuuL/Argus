@@ -1,0 +1,14 @@
+/* Complementos da tela de servidores; as classes .srv-* base estão em styles/components.css. */
+.srv-badge { font: inherit; font-size: 11px; }
+.srv-chip { font: inherit; font-size: 11px; }
+.srv-panel .srv-empty { margin: 4px 0; }
+.srv-panel .srv-err { display: flex; gap: 6px; align-items: flex-start; overflow-wrap: anywhere; }
+.srv-line a { color: inherit; }
+.srv-actions button:disabled, .srv-group-head button:disabled { opacity: .5; cursor: default; }
+
+/* Pergunta ao cancelar/descartar uma sessão com servidores. */
+.srv-ask-back { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; background: var(--scrim); }
+.srv-ask { width: min(460px, calc(100vw - 32px)); background: var(--bg-panel); border: 1px solid var(--border-control); border-radius: var(--radius-lg); padding: 16px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 12px 32px var(--shadow); }
+.srv-ask p { margin: 0; line-height: 1.45; }
+.srv-ask-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.srv-ask-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

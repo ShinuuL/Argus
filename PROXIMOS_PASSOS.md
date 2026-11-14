@@ -1,15 +1,31 @@
 # Argus — Estado atual e próximos passos
 
-_Atualizado em 2026-11-14._
+_Atualizado em 2026-11-14, depois da migração da interface de Dioxus para Tauri 2 e do redesenho do layout (chat no centro, temas)._
 
-O Argus é uma IDE desktop em Rust (Dioxus 0.7) que gerencia vários projetos de uma pasta raiz e orquestra agentes de IA (Claude Code e OpenCode). Os agentes usam o login das próprias CLIs oficiais; a IDE nunca lê nem guarda tokens.
+O Argus é uma IDE desktop que gerencia vários projetos de uma pasta raiz e orquestra agentes de IA (Claude Code e OpenCode). A lógica fica em Rust (`argus-core`); a interface é React + TypeScript dentro de uma janela Tauri 2. Os agentes usam o login das próprias CLIs oficiais; a IDE nunca lê nem guarda tokens.
+
+**Estado em uma frase:** tudo compila, os testes passam e as telas principais foram exercitadas na janela em 2026-11-14 (inclusive uma tarefa real do claude com subagente). A coluna "Estado" da tabela abaixo diz o que foi conferido de verdade e o que ainda falta.
+
+A conferência na janela foi feita pelo protocolo de depuração do WebView2 (cliques e teclas enviados à página, sem usar o mouse real). Para repetir: abra o executável com `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` e conecte em `http://127.0.0.1:9333`. Gestos que dependem do sistema (arrastar aba, arrastar arquivo do Explorer, colar print) não passam por esse caminho e continuam sem conferência.
 
 ## Como rodar
 
+Requisitos: Rust (stable, MSVC), Node.js 20 ou mais novo e o WebView2 (já vem no Windows 11).
+
 ```powershell
-cargo run -p argus-app            # abre a IDE
-cargo test --workspace            # 57 testes core + 8 app
+npm install                                   # uma vez, ou quando o package.json mudar
+npm run tauri dev                             # abre a IDE com recarga automática da interface
+npm run tauri build -- --debug --no-bundle    # gera target\debug\argus-desktop.exe sem instalador
 ```
+
+Testes e verificações:
+
+```powershell
+npx tsc --noEmit            # tipos da interface
+cargo test --workspace      # 63 testes do core + 15 do desktop
+```
+
+A interface ainda não tem runner de testes próprio; a lógica pura das telas foi conferida por scripts avulsos durante a migração.
 
 Variáveis úteis para testes:
 
@@ -19,67 +35,177 @@ Variáveis úteis para testes:
 | `ARGUS_DB` | usa outro banco SQLite |
 | `ARGUS_ALLOWED_TOOLS` | usa outro arquivo de comandos permitidos |
 
-Os dados ficam em `%APPDATA%\argus\`: `argus.db`, `pricing.json` e `allowed_tools.json`. O histórico antigo da pasta `harness` foi copiado para lá.
-
-## Ao renomear a pasta do projeto
-
-- Nenhum caminho absoluto está no código, então nada quebra.
-- A pasta `target/` vai recompilar do zero na primeira vez, o que leva alguns minutos.
-- Os worktrees dos agentes ficam em `<projeto>/../.argus-worktrees/`. Worktrees antigos em `.harness-worktrees` podem ser apagados com `git worktree prune` no projeto de origem.
-- O repositório git ainda não tem nenhum commit. Recomendo fazer o primeiro commit logo depois de renomear.
+Os dados ficam em `%APPDATA%\argus\`: `argus.db`, `pricing.json`, `allowed_tools.json` e a pasta `anexos\` (anexos do chat, apagados depois de 1 dia).
 
 ## Estrutura
 
 ```
+package.json, vite.config.ts, index.html     front-end (vite)
+src/                                         interface em React 18 + TypeScript + zustand
+  api/        uma função tipada por comando Tauri, eventos e tipos que espelham o serde
+  store/      useApp, useLayout, useWorkbench, useTerminals, useTheme, bootstrap (liga eventos ao estado)
+  shell/      Shell (layout), TopBar, RightPanel, BottomPanel, StatusBar, ContextMenu, icons (SVG inline),
+              useActiveContext (sessão e projeto da aba em foco), useGlobalShortcuts
+  styles/     tokens.css (TODAS as cores, por tema), components.css (classes portadas), shell.css (layout)
+  views/
+    projects/   barra esquerda: projetos, sessões e o rodapé que abre as telas de apoio
+    session/    a conversa (aba principal): index (ChatTab), Transcript, panels (Alterações e Subagentes
+                do painel direito), SubagentTree, events (funções puras), useTaskEvents, actions
+    chat/       componentes da conversa: Composer, MessageView/Markdown, fila, anexos, menções, comandos de barra
+    workbench/  grupos de abas, split, Monaco (tema gerado dos tokens), Painel de projetos
+    explorer/   árvore de arquivos do projeto ativo (aba Arquivos do painel direito)
+    servers/    aba Servidores do painel direito, selos e "Comandos permitidos"
+    agents/     aba Provedores (login e status das CLIs)
+    settings/   aba Configurações (tema, auto-work por projeto, comandos permitidos)
+    autowork/, deps/, metrics/, remote/, terminal/, player/, pet/
+src-tauri/    crate argus-desktop (Tauri 2, identificador dev.argus.app)
+  src/commands/  workspace, monitor, fs, pty, agents, autowork, servers, deps, metrics,
+                 remote, media, system, extra_agents, extra_chat  (84 comandos)
+  src/events.rs  repassa os eventos do orquestrador e dos servidores para a interface
 crates/core   (argus-core): workspace, monitor, pty, procs, deps, metrics, db, remote, autowork,
               agents/{provider, claude, opencode, orchestrator}
-crates/app    (argus-app):  main.rs, state.rs, ui/{workbench, sidebar, editor, terminal, agents,
-              autowork, servers, deps, metrics, remote, player, pet}.rs
-              assets/{monaco, xterm, remote (web app do celular)}
+              assets/remote (web app do celular)
+crates/app    (argus-app): interface ANTIGA em Dioxus 0.7. Fora do workspace, não compila mais.
 ```
+
+Monaco e xterm entram por npm e são empacotados pelo vite; nada vem de CDN.
+
+## Layout
+
+Inspirado na Orca (projetos e sessões à esquerda, abas no centro, arquivos à direita) e no chat do Claude Code no VS Code. Não há mais activity bar.
+
+| Região | O que tem |
+|---|---|
+| Barra superior (32 px) | alternar a barra esquerda, projeto e sessão em foco, alternar terminal e painel direito |
+| Barra esquerda | "Abrir pasta raiz", Painel, filtro de encerradas, recolher tudo e busca. Cada projeto (nome, branch, ±alterados) expande nas sessões: ponto de status, título (primeiro pedido), selos de auto-work e servidores, provedor. Sessão com atividade não vista fica em negrito. "+" no hover cria conversa no projeto; clique direito: Abrir, Ver diff, Cancelar o turno, Descartar. Rodapé: Provedores, Dependências, Métricas, Remoto e Configurações abrem como abas |
+| Centro | grupos de abas com split (até 3). A aba de conversa é a principal: "Nova conversa" (saudação, sugestões, pílulas de projeto e provedor) vira a sessão da tarefa no primeiro envio, na mesma aba. Não existem mais as abas "Chat" e "Sessão" separadas |
+| Conversa | cabeçalho com seletor de conversas (busca), "+", estado, total de tokens e custo equivalente em API. Coluna central de 820 px: pedido em caixa, resposta em Markdown, ferramentas em linhas recolhidas, "N passos" no turno terminado. Caixa de composição arredondada: anexar, "/", "@", pílulas (projeto, provedor, modo de permissão, auto-work) e Enviar, que vira Parar durante o turno. Seta para cima recupera os pedidos anteriores |
+| Painel direito (retrátil) | Arquivos (projeto ativo), Alterações (diff da sessão, Aplicar e Descartar), Subagentes (árvore; abre o chat somente leitura), Servidores |
+| Painel inferior | terminais (oculto por padrão; abre pelo botão Terminal, Ctrl+J ou ao criar um terminal) |
+| Status bar | "N agentes rodando" (clique foca a sessão), servidores, uso de hoje; player, direção do split e pet |
+
+Atalhos novos: Ctrl+N (nova conversa), Ctrl+B (barra esquerda), Ctrl+J (terminal); não valem com o foco num terminal.
+
+"Projeto ativo" (`useApp.selected`) acompanha a aba em foco (`shell/useActiveContext.ts`) e pode ser trocado clicando num projeto na barra esquerda. É ele que a aba Arquivos, os terminais novos e as telas por projeto usam.
+
+### Temas
+
+Três temas, escolhidos em Configurações e lembrados no localStorage (`argus.tema`): **Oceano** (padrão), **Nebulosa** e **Brasa**. Toda cor vem de `src/styles/tokens.css`: cada tema define os tokens de base (`--bg`, `--surface`, `--surface-2`, `--border`, `--border-strong`, `--text`, `--text-2`, `--accent`, `--accent-hover`, `--on-accent`, `--accent-text`, `--selection`, `--focus`, `--status-bg`, `--on-status`) só com cores da própria paleta; os demais são derivados. As cores de estado (`--ok`, `--warn`, `--err`, `--run`) são iguais nos três. Nenhum componente usa hex direto. O Monaco (`views/workbench/monaco.ts`) e o xterm (`views/terminal/session.ts`) montam o tema a partir dos tokens e trocam junto.
+
+Pendente: a web app do celular (`crates/core/assets/remote`) continua com as cores antigas.
+
+### Sobre `crates/app` (Dioxus)
+
+A pasta ficou **fora do workspace Cargo** (`exclude = ["crates/app"]`) e serve só de referência de comportamento. Ela não compila mais sozinha. **Pode ser apagada depois que você conferir a interface nova na janela** e confirmar que nada da antiga faz falta.
 
 ## Funcionalidades
 
-| Recurso | Estado |
+Legenda: **na janela** = visto funcionando na janela do Tauri; **compila** = implementado, passa em `tsc`/build, nunca exercitado na janela; **core testado** = a lógica em Rust tem teste, a tela não foi exercitada.
+
+| Recurso | Estado na interface nova |
 |---|---|
-| Explorador multiprojeto + status git ao vivo | ✓ testado na tela |
-| Editor Monaco, abas estilo VS Code, split, arrastar, Ctrl+Tab/W/\\ | ✓ testado na tela |
-| Terminais embutidos (ConPTY) | ✓ testado na tela |
-| Provedores claude/opencode, login pela CLI, status | ✓ testado na tela |
-| Tarefas em worktree isolado, stream, diff, aplicar/descartar, responder (`--resume`) | ✓ tarefa real |
-| Histórico SQLite persistente | ✓ |
-| Métricas de tokens e custo equivalente em API | ✓ tarefa real |
-| Dependências: detecção e instalação com confirmação, comando inexistente no terminal | ✓ testado na tela |
-| Acesso remoto pela LAN (QR + token) | ✓ API testada; **web app nunca aberta no celular** |
-| Auto-work (PENDENCIAS.md, TODO/FIXME, build/testes, travas) | ✓ tarefa real concluída 2/2 |
-| Player de música (mídia do Windows + arquivos locais) | ✓ testado na tela |
-| Pet de uso | ✓ visível; **estado "feliz" não confirmado** |
-| Servidores vinculados à sessão + painel lateral | ⚠ implementado e com testes, **nunca visto funcionando** |
-| Visão somente leitura dos subagentes | ✗ **não implementado**: o agente da rodada 4 recusou a tarefa |
+| Janela, barra de projetos e sessões, painel direito, barra superior, status bar | ✓ na janela (layout novo, de 1100 px para cima) |
+| Temas Oceano, Nebulosa e Brasa (interface, Monaco e terminal) | ✓ na janela (interface e Monaco); terminal com tema não conferido |
+| Explorador: árvore por projeto, status git por arquivo (M/U), abrir arquivo | ✓ na janela |
+| Editor Monaco com cores (.rs, .toml, .md), abas, split, Ctrl+Tab/W/\\, Ctrl+S e indicador de modificado | ✓ na janela; **arrastar abas não conferido** |
+| Terminais embutidos (ConPTY + xterm) | ✓ na janela (um terminal por vez; várias abas e mover entre grupos não conferidos) |
+| Provedores claude/opencode e status | ✓ na janela ("conectado" nos dois); login pela CLI num terminal não conferido |
+| Tarefas em worktree isolado, stream, diff, responder (`--resume`) | ✓ na janela com uma tarefa real do claude; **aplicar/descartar não conferidos** |
+| Histórico SQLite persistente | ✓ na janela (a tarefa e o chat voltam depois de fechar e abrir) |
+| Subagentes: árvore, cartão "→ subagente", chat somente leitura sem caixa de resposta | ✓ na janela com um subagente real do claude |
+| Subagentes do opencode e subagente em segundo plano do claude | ⚠ escritos sem conferir contra saída real |
+| Métricas de tokens e custo equivalente em API, gráfico por dia | ✓ na janela (atualiza ao fim do turno) |
+| Dependências: detecção, confirmação antes de instalar, comando inexistente no terminal | ✓ na janela (só o pedido; nenhuma instalação foi executada) |
+| Acesso remoto pela LAN (QR + token) | ✓ na janela: liga, QR, `/api/tasks` sem token = 401 e com token = 200, desliga e fecha a porta; **web app nunca aberta no celular** |
+| Auto-work (PENDENCIAS.md, TODO/FIXME, build/testes, travas) | ⚠ core testado; o formulário aparece, nenhum ciclo rodou |
+| Player de música (mídia do Windows + arquivos locais) | ⚠ aparece na status bar ("Nada tocando"); tocar mídia não conferido |
+| Pet de uso | ✓ na janela (dormindo e trabalhando, balão com os números) |
+| Servidores + painel lateral | ✓ na janela com `python -m http.server 8799` num terminal da IDE: aparece, "Derrubar" mata o processo e fecha a porta; vínculo a uma sessão de agente não conferido |
+| Conversa (aba única: conversa nova + sessão) | ✓ na janela com a sessão gravada (histórico, passos, subagente, painel direito); **o primeiro envio criando a tarefa na mesma aba não foi conferido** (exige rodar um agente) |
+
+O pedido de instalação por comando inexistente só aparece para ferramentas conhecidas (tabela em `crates/core/src/deps.rs`, por exemplo `gradle`, `pnpm`, `go`); um comando qualquer não abre nada.
+
+## O que veio do chat do Digitama
+
+Tudo em `src/views/chat`, com os comandos Rust em `src-tauri/src/commands/extra_chat.rs`. A aba de conversa (`src/views/session`) usa esses componentes. Os estados abaixo são de antes do redesenho; a caixa foi reorganizada (botões e pílulas) e não foi reexercitada com um agente rodando.
+
+| Item | O que faz | Estado |
+|---|---|---|
+| 1.1 Markdown | títulos, listas, tabelas, código com rótulo da linguagem, copiar código e copiar mensagem | ✓ na janela (título, lista, código com rótulo); os botões de copiar aparecem, o clique não foi conferido |
+| 1.2 Fila de mensagens | com o agente ocupado, Enter põe na fila; a fila sai quando o turno termina; Ctrl+Enter para o turno e envia | ✓ na janela (Enter e saída da fila); Ctrl+Enter não conferido |
+| 1.3 Menções | `@arquivo` (busca no projeto) e `@agente` (arquivos de `.claude/agents` e `.opencode/agents`) | ✓ na janela |
+| 1.4 e 1.5 Anexos | clipe, arrastar e soltar, colar print, texto colado grande vira anexo; miniaturas na mensagem | ✓ na janela: clipe (.txt e .png), texto grande colado e miniatura; arrastar e colar print não conferidos |
+| 1.6 Comandos de barra | `/nova`, `/parar`, `/diff`, `/aplicar`, `/descartar`, `/sessoes`, `/ajuda` e os comandos da CLI do claude | ✓ na janela: menu com os do Argus e os da CLI, `/ajuda`, `/diff`; `/modelo` responde "não disponível aqui"; `/nova` abre uma conversa nova e `/diff` abre a aba Alterações do painel direito (não reconferidos depois do redesenho) |
+| 1.7 Chamada de ferramenta escrita como texto | aviso com o botão "Executar de verdade" | ⚠ compila; detecção testada por script |
+| 1.8 Uso do dia | pílula "hoje: X tokens · ≈ US$ Y (equivalente em API)" | ⚠ compila |
+| 2.4 (atalho) Detecção de loop | cancela o turno quando o agente repete a mesma chamada; só vale com a conversa aberta numa aba | ⚠ compila |
+
+Ficou pendente do Digitama:
+
+- **1.9 Conexões e cartão do repositório:** não feito (é o passo 9 abaixo).
+- **Imagens anexadas com o claude:** os anexos ficam em `%APPDATA%\argus\anexos\<tarefa>\`, fora da pasta de trabalho do agente. O `claude -p` pode negar a leitura. A saída provável é passar `--add-dir` em `task_command` (core). Não testado.
+- **Comandos de barra da CLI:** na primeira vez que você digita `/` numa pasta, o Argus sobe um `claude -p --no-session-persistence`, manda `/context`, lê a linha de inicialização e mata o processo. Conferido contra a CLI real (claude 2.1.220), deixando o comando terminar: a resposta vem da própria CLI, com 0 tokens e custo 0. Para desligar mesmo assim, tire `chat_agent_capabilities` do `invoke_handler` em `src-tauri/src/main.rs`.
+- **Comando de barra que o Argus não conhece** (por exemplo `/context`) vai para a CLI como mensagem. Os que a CLI resolve sozinha custam 0 tokens, mas contam como um turno da tarefa.
+- **"Turnos" nas métricas** conta uma linha por modelo: um turno em que o subagente usa outro modelo aparece como 2.
+- **`/modelo`:** aparece no menu e responde "ainda não está disponível" (depende da troca de modelo, item 2.2).
+- **`@agente`** vai como texto; os agentes embutidos de cada CLI não entram na lista.
+- **Fila e anexos** vivem só na memória da janela: não sobrevivem a reinício nem aparecem no remoto.
+- **Realce de sintaxe** nos blocos de código do chat.
+- **Detecção de loop no core** (item 2.4 definitivo), para valer com a aba fechada e no remoto.
+- **Ctrl+C no Explorer + Ctrl+V** anexando pelo caminho real.
+- **Licença:** a lógica de menções e fila veio da versão reescrita do Digitama, que cita um projeto MIT de terceiros. Conferir antes de distribuir.
+
+## Pendências de validação
+
+Implementado, mas ainda não visto funcionando na janela nova. Marque com `[x]` quando conferir.
+
+- [ ] Primeiro envio numa conversa nova: criar a tarefa e a mesma aba virar a sessão (com stream ao vivo, botão Parar e fila).
+- [ ] "N agentes rodando" na status bar e o ponto pulsando na barra esquerda com um agente de verdade (o negrito de "não lida" foi conferido com um evento simulado).
+- [ ] Pílula de auto-work ligando e desligando o projeto; seta para cima recuperando o pedido anterior.
+- [ ] Arrastar um arquivo da aba Arquivos para a caixa de composição (vira `@caminho`).
+- [ ] Terminal com as cores do tema.
+- [ ] Arrastar abas entre grupos, arrastar arquivo do Explorer e colar print.
+- [ ] Aplicar e descartar uma tarefa com alterações.
+- [ ] Auto-work rodando um ciclo na interface nova.
+- [ ] Player tocando música.
+- [ ] Login pela CLI num terminal.
+- [ ] Tarefa pelo OpenCode.
+- [ ] Web app aberta num celular de verdade.
+- [ ] Servidor vinculado a uma sessão de agente.
+
+## Defeitos conhecidos
+
+- [ ] "Enviar" em Nova tarefa não abria a aba da sessão. O formulário deixou de existir: a conversa nova cria a tarefa e a mesma aba vira a sessão. Corrigido no código, **ainda não visto funcionando** (exige rodar um agente).
+- [ ] As métricas contam 2 turnos quando um turno usa dois modelos.
+- [x] O botão "Fazer login" aparecia mesmo com o provedor já conectado. Agora, conectado, aparece só "Trocar de conta" (visto na aba Provedores).
+- [ ] Imagens anexadas podem não ser lidas pelo claude, porque ficam fora da pasta do projeto (provável saída: `--add-dir`).
+- [x] O aviso da CLI do claude sobre servidores MCP bloqueados mostrava o nome da organização do usuário no chat. As linhas que começam com "Warning: claude.ai MCP servers blocked" não são mais renderizadas (`isHiddenNotice` em `views/session/events.ts`); visto com a sessão gravada, que tem 4 dessas linhas. O texto continua gravado no banco e ainda aparece na web app do celular.
+- [ ] Um comando de barra que o Argus não conhece vai para a CLI e conta como turno.
 
 ## Próximos passos (em ordem)
 
-1. **Visão dos subagentes (somente leitura).**
-   - Capturar uma saída real do `claude -p --output-format stream-json --verbose` com uso da ferramenta Task/Agent e guardá-la como fixture.
-   - No parse, as mensagens dos subagentes vêm com `parent_tool_use_id`.
-   - Criar os eventos `SubagentStart`/`SubagentEnd`, persistir no banco e montar a árvore na aba da sessão.
-   - O chat do subagente é só visualização: sem caixa de resposta, com o aviso "somente leitura".
-   - No chat principal, mostrar o cartão "→ subagente X".
-   - Ter a mesma visão no remoto.
-2. **Teste visual dos servidores.**
-   - Subir `python -m http.server 8799` num terminal da IDE e confirmar que aparece no painel; derrubá-lo e confirmar que a porta fechou.
-   - Testar o vínculo a uma sessão liberando `python -m http.server` em "Comandos permitidos".
-3. **Abrir a web app no celular.** Na primeira vez, o Windows pede permissão no Firewall: clique em **Permitir** (rede privada).
-4. **Pet feliz:** aumentar a janela do estado "feliz" de 10 s para cerca de 60 s, ou até o usuário interagir.
+1. **Terminar o teste na janela.** O que ainda não foi conferido, em ordem de risco:
+   - arrastar aba dentro do WebView2 e soltar na borda para criar grupo;
+   - terminal em aba oculta ganhando tamanho ao aparecer; mover aba de terminal entre grupos sem matar o processo;
+   - login pela CLI num terminal; aplicar e descartar uma tarefa com alterações;
+   - conversa: primeiro envio criando a tarefa na mesma aba, colar print, arrastar arquivo, Ctrl+Enter com o turno rodando;
+   - player tocando mídia; auto-work rodando um ciclo.
+2. **Servidores vinculados a uma sessão.** O painel já foi conferido com um servidor aberto num terminal da IDE. Falta o vínculo a uma sessão de agente, liberando `python -m http.server` em "Comandos permitidos".
+3. **Abrir a web app no celular.** Na primeira vez, o Windows pede permissão no Firewall: clique em **Permitir** (rede privada). Conferir também a visão dos subagentes no remoto (a API já devolve os eventos novos; a web app não foi adaptada).
+4. **Subagentes: conferir o que foi suposto.** Uma saída real do opencode com a ferramenta `task`, e um subagente em segundo plano do claude.
 5. **Pequenos ajustes conhecidos:**
-   - A caixa "derrubar servidores?" aparece também quando você só quer parar o turno. Deveria ter a opção "só parar o turno".
    - O botão "Reiniciar" de um servidor roda sem saída visível. Seria melhor reabrir o processo num terminal da IDE.
+   - Janela separada de servidores não foi portada (a permissão para janelas `aux-*` já existe).
+   - "Hoje" nas métricas vira às 21h de Brasília, porque os dias vêm em UTC do backend.
    - Trocar o `netstat` por GetExtendedTcpTable, o que exige adicionar a crate `windows` ao core.
    - Espaçar as verificações de build e testes do auto-work em projetos grandes, ou torná-las opcionais.
-   - Um bloco de texto seguido de chamada de ferramenta: conferir se tudo aparece no log.
    - O OpenCode não informa o modelo usado; o custo cai na tabela de fallback.
-6. **Empacotamento:** `cargo install dioxus-cli`, depois `dx bundle` para gerar o instalador, copiando `assets/` junto do executável.
-7. **Ícone e identidade visual do Argus.** Sugestão: um olho; o pet pode ganhar um olho que acompanha o que acontece.
+   - Web app do celular (`crates/core/assets/remote`): aplicar as paletas dos temas e esconder o aviso de MCP bloqueado.
+   - A fila de mensagens e o rascunho da "conversa nova" são compartilhados entre todas as abas de conversa nova (chave `new`).
+   - `OrchestratorEvent` não deriva `Serialize`; por isso existe o espelho `OrchMsg` em `src-tauri/src/events.rs`. Derivar no core elimina o espelho.
+   - TypeScript/JavaScript no Monaco só valida sintaxe (a validação semântica foi desligada).
+6. **Empacotamento:** `npm run tauri build` gera o instalador. O Tauri avisa que o identificador `dev.argus.app` termina em `.app`, o que conflita com bundles do macOS; no Windows não afeta.
+7. **Apagar `crates/app`** depois de conferir a interface nova.
 8. **Uso de CPU e GPU por sessão.**
    - Mostrar, em cada sessão, o consumo de CPU, memória e GPU dos processos dela (agente, subprocessos e servidores vinculados).
    - A árvore de processos por sessão já existe em `crates/core/src/procs.rs`; a CPU e a memória vêm do `sysinfo`.
@@ -88,10 +214,30 @@ crates/app    (argus-app):  main.rs, state.rs, ui/{workbench, sidebar, editor, t
    - GitHub, Google Cloud, Firebase, Vercel e outros.
    - Seguir a mesma regra dos agentes: usar a CLI oficial de cada serviço (`gh`, `gcloud`, `firebase`, `vercel`), que faz o próprio login. A IDE não lê nem guarda tokens.
    - Tela "Conexões": detectar a CLI, mostrar o status de login, botão "Fazer login" no terminal embutido e ações por projeto (PRs e issues, deploys, logs).
+   - Inclui o cartão do repositório do chat (item 1.9 do Digitama).
+10. **Mapa de agentes (Agent map).**
+    - Janela ou painel "Mapa de agentes" por sessão: à esquerda o nó da sessão principal (nome, modelo, tokens no contexto) e à direita, ligados por linhas, os subagentes que ela chamou.
+    - Cada nó de subagente mostra o nome, um ponto de status (verde = rodando, cinza = concluído), a duração e os tokens gastos.
+    - Cabeçalho com a contagem ("6 agentes · clique em um agente para ver detalhes"). Clicar num nó abre o chat somente leitura daquele subagente.
+    - Embaixo, a lista de tarefas em segundo plano da sessão (comandos de shell em execução, com o tempo), clicável para ver a saída.
+    - Usa os eventos `SubagentStart`/`SubagentEnd` do core (já prontos) e a árvore de processos de `procs.rs`.
+11. **Janela de contexto e % de uso.**
+    - Mostrar, em cada sessão, quanto da janela de contexto do modelo está ocupada: uma linha (barra fina) com a porcentagem, no cabeçalho do chat ou junto da caixa de composição.
+    - Passar o mouse sobre a linha abre o detalhe dos tokens em contexto: entrada, saída, cache lido, cache gravado, total e o tamanho da janela do modelo; se a CLI informar, a divisão por categoria (prompt de sistema, ferramentas, mensagens, arquivos).
+    - Fontes: o campo `usage` de cada turno no stream-json e o tamanho da janela por modelo; para o claude, o comando `/context` devolve a divisão por categoria com custo 0.
+    - Avisar quando passar de um limite (por exemplo 80%).
+
+## Notas
+
+- Os worktrees dos agentes ficam em `<projeto>/../.argus-worktrees/`. Worktrees antigos em `.harness-worktrees` podem ser apagados com `git worktree prune` no projeto de origem.
+- A pasta do projeto ainda se chama `Harness`. Nenhum caminho absoluto está no código; ao renomear, `target/` recompila do zero.
+- O `index.html` não pode ter `<style>` inline: o `vite build` falha quando o diretório atual vem com a letra do drive minúscula (`d:\`).
+- Nada da migração foi commitado ainda.
 
 ## Decisões fixas
 
 - Os agentes são as CLIs oficiais, com o login da assinatura. Nada de chave de API, e a IDE não lê tokens.
 - O claude roda com `--permission-mode acceptEdits`. O Bash fica bloqueado, a não ser o que estiver liberado em "Comandos permitidos" por projeto.
-- Nenhuma marca ou nome de empresa no projeto.
+- Nenhuma marca ou nome de empresa no projeto. O identificador do app é `dev.argus.app`.
 - O custo é sempre exibido como "equivalente em API".
+- Textos da interface em português do Brasil. Windows primeiro.

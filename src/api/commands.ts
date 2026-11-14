@@ -1,0 +1,338 @@
+/**
+ * Uma função por comando do backend (src-tauri/src/commands/*).
+ *
+ * Todas devolvem Promise e rejeitam com uma string (mensagem em português
+ * pronta para exibir). Use `errorMessage(e)` de `./util` no `catch`.
+ */
+import { invoke } from "@tauri-apps/api/core";
+import { ensurePtyListeners, forgetPty } from "./events";
+import type {
+  AgentEvent,
+  AppInfo,
+  AutoWorkEvent,
+  AutoWorkSettings,
+  CmdSpec,
+  CommandSpec,
+  DepIssue,
+  DirEntry,
+  FileStat,
+  InstallPlan,
+  LanAddr,
+  LoginStatus,
+  MediaCmd,
+  MetricsReport,
+  MissingCommand,
+  MusicFolder,
+  Owner,
+  Path,
+  Pricing,
+  Project,
+  ProjectAutoWork,
+  ProjectChanged,
+  ProjectStatus,
+  ProjectUsage,
+  ProviderInfo,
+  PtyId,
+  PtySession,
+  RemoteInfo,
+  RootInfo,
+  ServerInfo,
+  SubagentInfo,
+  SystemMedia,
+  SystemUsage,
+  Task,
+  TaskId,
+  TimeRange,
+  TodayUsage,
+  UsageRow,
+} from "./types";
+
+// ------------------------------------------------------------------ workspace
+
+/** Abre o seletor de pasta do sistema; null se o usuário cancelar. */
+export const workspacePickRoot = (): Promise<Path | null> => invoke("workspace_pick_root");
+
+/** Abre `path` como pasta raiz: varre projetos, liga o watcher e dispara `project-changed` por projeto. */
+export const workspaceOpenRoot = (path: Path): Promise<RootInfo> => invoke("workspace_open_root", { path });
+
+/** Pasta raiz já aberta no backend (ex.: via ARGUS_ROOT), ou null. */
+export const workspaceCurrent = (): Promise<RootInfo | null> => invoke("workspace_current");
+
+/** Só varre uma pasta em busca de projetos, sem mudar a raiz atual. */
+export const workspaceScan = (path: Path): Promise<Project[]> => invoke("workspace_scan", { path });
+
+// -------------------------------------------------------------------- monitor
+
+/** Status git de um projeto (null se não for repositório). */
+export const monitorStatus = (path: Path): Promise<ProjectStatus | null> => invoke("monitor_status", { path });
+
+/** Status git de vários projetos de uma vez. */
+export const monitorStatuses = (paths: Path[]): Promise<ProjectChanged[]> => invoke("monitor_statuses", { paths });
+
+/** Troca o watcher para observar `paths` (mudanças chegam em `onProjectChanged`). */
+export const monitorWatch = (paths: Path[]): Promise<void> => invoke("monitor_watch", { paths });
+
+/** Desliga o watcher de arquivos. */
+export const monitorUnwatch = (): Promise<void> => invoke("monitor_unwatch");
+
+// ------------------------------------------------------------------------- fs
+
+/** Lê um arquivo como texto UTF-8 (limite de 20 MB). */
+export const fsReadFile = (path: Path): Promise<string> => invoke("fs_read_file", { path });
+
+/** Grava o texto no arquivo, substituindo o conteúdo. */
+export const fsWriteFile = (path: Path, content: string): Promise<void> => invoke("fs_write_file", { path, content });
+
+/** Lista um diretório, pastas primeiro; sem `showHidden` oculta `.algo`, node_modules e target. */
+export const fsListDir = (path: Path, showHidden = false): Promise<DirEntry[]> =>
+  invoke("fs_list_dir", { path, showHidden });
+
+/** Existência, tipo, tamanho e data de modificação de um caminho. */
+export const fsStat = (path: Path): Promise<FileStat> => invoke("fs_stat", { path });
+
+// ------------------------------------------------------------------------ pty
+
+export interface PtySpawnOptions {
+  /** Pasta inicial; vale sobre o `cwd` do comando. */
+  cwd?: Path | null;
+  /** Sem comando, abre o shell padrão. Aceita o `CommandSpec` de `agentsLoginCommand` e de `InstallPlan`. */
+  command?: CmdSpec | CommandSpec | null;
+  cols?: number;
+  rows?: number;
+}
+
+/** Abre um terminal e devolve o id; a saída chega em `onPtyOutput(id)` (nada se perde antes de assinar). */
+export async function ptySpawn(opts: PtySpawnOptions = {}): Promise<PtyId> {
+  await ensurePtyListeners();
+  return invoke("pty_spawn", {
+    cwd: opts.cwd ?? null,
+    command: opts.command ?? null,
+    cols: opts.cols ?? null,
+    rows: opts.rows ?? null,
+  });
+}
+
+/** Envia texto digitado para o terminal. */
+export const ptyWrite = (id: PtyId, data: string): Promise<void> => invoke("pty_write", { id, data });
+
+/** Redimensiona o terminal (colunas x linhas). */
+export const ptyResize = (id: PtyId, cols: number, rows: number): Promise<void> =>
+  invoke("pty_resize", { id, cols, rows });
+
+/** Encerra o processo do terminal e descarta os assinantes dele. */
+export async function ptyKill(id: PtyId): Promise<void> {
+  try {
+    await invoke("pty_kill", { id });
+  } finally {
+    forgetPty(id);
+  }
+}
+
+/** Terminais abertos no backend. */
+export const ptyList = (): Promise<PtySession[]> => invoke("pty_list");
+
+/** Shell padrão do sistema (pwsh, powershell ou $SHELL). */
+export const ptyDefaultShell = (): Promise<CmdSpec> => invoke("pty_default_shell");
+
+// -------------------------------------------------------------------- agentes
+
+/** Provedores de agente disponíveis (claude, opencode). */
+export const agentsProviders = (): Promise<ProviderInfo[]> => invoke("agents_providers");
+
+/** Status de login de um provedor, perguntando à própria CLI (pode levar alguns segundos). */
+export const agentsLoginStatus = (provider: string): Promise<LoginStatus> =>
+  invoke("agents_login_status", { provider });
+
+/** Comando de login da CLI, para rodar num terminal (`ptySpawn({ command })`). */
+export const agentsLoginCommand = (provider: string): Promise<CommandSpec> =>
+  invoke("agents_login_command", { provider });
+
+/** Todas as tarefas, inclusive as antigas do histórico. */
+export const tasksList = (): Promise<Task[]> => invoke("tasks_list");
+
+/** Uma tarefa pelo id (null se não existir). */
+export const taskGet = (id: TaskId): Promise<Task | null> => invoke("task_get", { id });
+
+/** Cria uma tarefa num worktree isolado e devolve o id; o andamento chega em `onOrch`. */
+export const taskCreate = (project: Path, provider: string, prompt: string): Promise<TaskId> =>
+  invoke("task_create", { project, provider, prompt });
+
+/** Cancela o turno em andamento da tarefa. */
+export const taskCancel = (id: TaskId): Promise<void> => invoke("task_cancel", { id });
+
+/** Responde ao agente: novo turno na mesma sessão da CLI. */
+export const taskReply = (id: TaskId, message: string): Promise<void> => invoke("task_reply", { id, message });
+
+/** Eventos gravados da tarefa (vazio se o histórico estiver desligado). */
+export const taskHistory = (id: TaskId): Promise<AgentEvent[]> => invoke("task_history", { id });
+
+/** Subagentes criados pela tarefa (visão somente leitura), na ordem em que nasceram. */
+export const taskSubagents = (id: TaskId): Promise<SubagentInfo[]> => invoke("task_subagents", { id });
+
+/** Eventos internos de um subagente da tarefa (`subagent` = `SubagentInfo.id`). */
+export const taskSubagentHistory = (id: TaskId, subagent: string): Promise<AgentEvent[]> =>
+  invoke("task_subagent_history", { id, subagent });
+
+/** Diff do worktree da tarefa em relação ao projeto ("" = sem alterações). */
+export const taskDiff = (id: TaskId): Promise<string> => invoke("task_diff", { id });
+
+/** Aplica as alterações da tarefa no projeto. */
+export const taskApply = (id: TaskId): Promise<void> => invoke("task_apply", { id });
+
+/** Descarta as alterações da tarefa e remove o worktree. */
+export const taskDiscard = (id: TaskId): Promise<void> => invoke("task_discard", { id });
+
+// ------------------------------------------------------------------ auto-work
+
+/** Configuração do auto-work de um projeto (padrões se nunca foi salva). */
+export const autoworkGetSettings = (project: Path): Promise<AutoWorkSettings> =>
+  invoke("autowork_get_settings", { project });
+
+/** Salva a configuração do auto-work do projeto e devolve o que ficou gravado. */
+export const autoworkSetSettings = (project: Path, settings: AutoWorkSettings): Promise<AutoWorkSettings> =>
+  invoke("autowork_set_settings", { project, settings });
+
+/** Configurações de auto-work salvas de todos os projetos. */
+export const autoworkAllSettings = (): Promise<ProjectAutoWork[]> => invoke("autowork_all_settings");
+
+/** Progresso do auto-work de uma tarefa (null se nunca rodou). */
+export const autoworkStatus = (task: TaskId): Promise<AutoWorkEvent | null> => invoke("autowork_status", { task });
+
+/** Progresso de todas as execuções de auto-work. */
+export const autoworkAllStatus = (): Promise<AutoWorkEvent[]> => invoke("autowork_all_status");
+
+/** Inicia ou reinicia o auto-work numa tarefa; false se não foi possível. */
+export const autoworkStart = (task: TaskId): Promise<boolean> => invoke("autowork_start", { task });
+
+/** Pausa o auto-work (o turno atual termina). */
+export const autoworkPause = (task: TaskId): Promise<boolean> => invoke("autowork_pause", { task });
+
+/** Retoma o auto-work pausado. */
+export const autoworkResume = (task: TaskId): Promise<boolean> => invoke("autowork_resume", { task });
+
+/** Para o auto-work da tarefa. */
+export const autoworkStop = (task: TaskId): Promise<boolean> => invoke("autowork_stop", { task });
+
+// ----------------------------------------------------------------- servidores
+
+/** Servidores em execução abertos por sessões e terminais. */
+export const serversList = (): Promise<ServerInfo[]> => invoke("servers_list");
+
+/** Servidores de um dono (sessão ou terminal). */
+export const serversOf = (owner: Owner): Promise<ServerInfo[]> => invoke("servers_of", { owner });
+
+/** Derruba um servidor (processo e filhos) e devolve a lista atualizada. */
+export const serverKill = (pid: number): Promise<ServerInfo[]> => invoke("server_kill", { pid });
+
+/** Derruba todos os servidores de um dono; devolve quantos caíram. */
+export const serversStopAll = (owner: Owner): Promise<number> => invoke("servers_stop_all", { owner });
+
+/** Reinicia um servidor com a mesma linha de comando; devolve o novo PID. */
+export const serverRestart = (server: ServerInfo): Promise<number> => invoke("server_restart", { server });
+
+/** Padrões de comando liberados ao agente no projeto (um por item). */
+export const allowedCommandsGet = (project: Path): Promise<string[]> => invoke("allowed_commands_get", { project });
+
+/** Salva os comandos permitidos do projeto; vale a partir do próximo turno. */
+export const allowedCommandsSet = (project: Path, commands: string[]): Promise<string[]> =>
+  invoke("allowed_commands_set", { project, commands });
+
+// --------------------------------------------------------------- dependências
+
+/** Pendências de dependências do projeto, cada uma com o comando de correção (nada é executado). */
+export const depsAnalyze = (project: Path): Promise<DepIssue[]> => invoke("deps_analyze", { project });
+
+/** Reconhece "comando não encontrado" num texto de terminal (null se não houver). */
+export const depsDetectMissingCommand = (text: string): Promise<MissingCommand | null> =>
+  invoke("deps_detect_missing_command", { text });
+
+/** Plano de instalação de uma ferramenta conhecida (null se desconhecida). */
+export const depsInstallPlan = (command: string): Promise<InstallPlan | null> =>
+  invoke("deps_install_plan", { command });
+
+// ------------------------------------------------------------------- métricas
+
+/** Relatório de tokens e custo equivalente em API dos últimos `days` dias (0 = tudo). */
+export const metricsReport = (days: number): Promise<MetricsReport> => invoke("metrics_report", { days });
+
+/** Tokens e custo equivalente em API de hoje. */
+export const metricsToday = (): Promise<TodayUsage> => invoke("metrics_today");
+
+/** Linhas brutas de uso (uma por turno) no intervalo; sem intervalo, tudo. */
+export const metricsUsageRows = (range?: TimeRange): Promise<UsageRow[]> =>
+  invoke("metrics_usage_rows", { range: range ?? null });
+
+/** Uso agregado por projeto, provedor e modelo no intervalo. */
+export const metricsUsageByProject = (range?: TimeRange): Promise<ProjectUsage[]> =>
+  invoke("metrics_usage_by_project", { range: range ?? null });
+
+/** Tabela de preços em uso (padrões mesclados com o pricing.json). */
+export const pricingGet = (): Promise<Pricing> => invoke("pricing_get");
+
+/** Salva a tabela de preços no pricing.json e devolve a tabela resultante. */
+export const pricingSet = (pricing: Pricing): Promise<Pricing> => invoke("pricing_set", { pricing });
+
+/** Caminho do pricing.json (null se não houver pasta de dados). */
+export const pricingPath = (): Promise<Path | null> => invoke("pricing_path");
+
+// --------------------------------------------------------------------- remoto
+
+/** Estado do servidor remoto (null se desligado). */
+export const remoteInfo = (): Promise<RemoteInfo | null> => invoke("remote_info");
+
+/** Liga o servidor remoto na porta; devolve a URL de pareamento e o QR code em SVG. */
+export const remoteStart = (port: number): Promise<RemoteInfo> => invoke("remote_start", { port });
+
+/** Desliga o servidor remoto. */
+export const remoteStop = (): Promise<void> => invoke("remote_stop");
+
+/** Gera um novo token de pareamento (revoga todos os aparelhos). */
+export const remoteRegenerateToken = (): Promise<RemoteInfo> => invoke("remote_regenerate_token");
+
+/** Escolhe o IP da URL de pareamento (null = automático). */
+export const remoteSetHost = (host: string | null): Promise<RemoteInfo> => invoke("remote_set_host", { host });
+
+/** IPs locais disponíveis (LAN primeiro, depois VPN/virtuais). */
+export const remoteHosts = (): Promise<LanAddr[]> => invoke("remote_hosts");
+
+// ---------------------------------------------------------------------- mídia
+
+/** Mídia tocando no sistema (null se nada estiver tocando). */
+export const mediaSystemCurrent = (): Promise<SystemMedia | null> => invoke("media_system_current");
+
+/** Envia tocar/pausar, próxima ou anterior à mídia do sistema; devolve o estado novo. */
+export const mediaSystemCommand = (cmd: MediaCmd): Promise<SystemMedia | null> =>
+  invoke("media_system_command", { cmd });
+
+/** Abre o seletor de pasta de músicas e lista os áudios dela (null se cancelar). */
+export const mediaPickFolder = (): Promise<MusicFolder | null> => invoke("media_pick_folder");
+
+/** Lista os arquivos de áudio de uma pasta. */
+export const mediaScanFolder = (dir: Path): Promise<Path[]> => invoke("media_scan_folder", { dir });
+
+/** Toca um arquivo local; fim de faixa e erros chegam em `onMediaLocal`. */
+export const mediaLocalPlay = (path: Path): Promise<void> => invoke("media_local_play", { path });
+
+/** Alterna tocar/pausar da faixa local. */
+export const mediaLocalToggle = (): Promise<void> => invoke("media_local_toggle");
+
+/** Para a faixa local. */
+export const mediaLocalStop = (): Promise<void> => invoke("media_local_stop");
+
+/** Volume da faixa local, de 0 a 1. */
+export const mediaLocalVolume = (volume: number): Promise<void> => invoke("media_local_volume", { volume });
+
+// -------------------------------------------------------------------- sistema
+
+/** CPU (média desde a chamada anterior) e memória do sistema; chame a cada ~2 s. */
+export const systemUsage = (): Promise<SystemUsage> => invoke("system_usage");
+
+/** Abre uma URL http(s) no navegador padrão. */
+export const systemOpenUrl = (url: string): Promise<void> => invoke("system_open_url", { url });
+
+/** Caixa nativa de confirmação Sim/Não; true = Sim. */
+export const systemConfirm = (title: string, message: string): Promise<boolean> =>
+  invoke("system_confirm", { title, message });
+
+/** Versão do app, caminho do banco e pasta de dados. */
+export const appInfo = (): Promise<AppInfo> => invoke("app_info");

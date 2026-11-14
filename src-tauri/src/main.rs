@@ -1,0 +1,132 @@
+//! Argus (Tauri 2): janela principal + comandos que expõem o `argus-core` à interface.
+//!
+//! A interface (React/TypeScript, em `src/`) chama os comandos de `commands/*` e
+//! recebe eventos (ver `events.rs`). Toda a lógica de negócio fica no `argus-core`.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod commands;
+mod events;
+mod state;
+
+use commands::*;
+use tauri::Manager;
+
+fn main() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            let handle = app.handle().clone();
+            // O orquestrador e o auto-work usam `tokio::spawn`: criamos dentro do runtime.
+            let ctx = tauri::async_runtime::block_on(async { state::AppCtx::new() });
+            app.manage(ctx);
+            events::start_orchestrator_forwarder(&handle);
+            events::start_servers_forwarder(&handle);
+            // ARGUS_ROOT: abre a pasta raiz automaticamente (útil para testes).
+            if let Some(dir) = std::env::var_os("ARGUS_ROOT").map(std::path::PathBuf::from).filter(|d| d.is_dir()) {
+                if let Err(e) = workspace::open_root(&handle, dir) {
+                    eprintln!("ARGUS_ROOT: {e}");
+                }
+            }
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            // workspace
+            workspace::workspace_pick_root,
+            workspace::workspace_open_root,
+            workspace::workspace_current,
+            workspace::workspace_scan,
+            // monitor
+            monitor::monitor_status,
+            monitor::monitor_statuses,
+            monitor::monitor_watch,
+            monitor::monitor_unwatch,
+            // fs
+            fs::fs_read_file,
+            fs::fs_write_file,
+            fs::fs_list_dir,
+            fs::fs_stat,
+            // pty
+            pty::pty_spawn,
+            pty::pty_write,
+            pty::pty_resize,
+            pty::pty_kill,
+            pty::pty_list,
+            pty::pty_default_shell,
+            // agentes e tarefas
+            agents::agents_providers,
+            agents::agents_login_status,
+            agents::agents_login_command,
+            agents::tasks_list,
+            agents::task_get,
+            agents::task_create,
+            agents::task_cancel,
+            agents::task_reply,
+            agents::task_history,
+            agents::task_subagents,
+            agents::task_subagent_history,
+            agents::task_diff,
+            agents::task_apply,
+            agents::task_discard,
+            extra_agents::task_subagent_times,
+            // chat
+            extra_chat::chat_project_files,
+            extra_chat::chat_agents,
+            extra_chat::chat_attachment_save,
+            extra_chat::chat_attachment_read,
+            extra_chat::chat_attachments_cleanup,
+            extra_chat::chat_agent_capabilities,
+            // auto-work
+            autowork::autowork_get_settings,
+            autowork::autowork_set_settings,
+            autowork::autowork_all_settings,
+            autowork::autowork_status,
+            autowork::autowork_all_status,
+            autowork::autowork_start,
+            autowork::autowork_pause,
+            autowork::autowork_resume,
+            autowork::autowork_stop,
+            // servidores
+            servers::servers_list,
+            servers::servers_of,
+            servers::server_kill,
+            servers::servers_stop_all,
+            servers::server_restart,
+            servers::allowed_commands_get,
+            servers::allowed_commands_set,
+            // dependências
+            deps::deps_analyze,
+            deps::deps_detect_missing_command,
+            deps::deps_install_plan,
+            // métricas
+            metrics::metrics_report,
+            metrics::metrics_today,
+            metrics::metrics_usage_rows,
+            metrics::metrics_usage_by_project,
+            metrics::pricing_get,
+            metrics::pricing_set,
+            metrics::pricing_path,
+            // remoto
+            remote::remote_info,
+            remote::remote_start,
+            remote::remote_stop,
+            remote::remote_regenerate_token,
+            remote::remote_set_host,
+            remote::remote_hosts,
+            // mídia
+            media::media_system_current,
+            media::media_system_command,
+            media::media_pick_folder,
+            media::media_scan_folder,
+            media::media_local_play,
+            media::media_local_toggle,
+            media::media_local_stop,
+            media::media_local_volume,
+            // sistema
+            system::system_usage,
+            system::system_open_url,
+            system::system_confirm,
+            system::app_info,
+        ])
+        .run(tauri::generate_context!())
+        .expect("falha ao iniciar o Argus");
+}

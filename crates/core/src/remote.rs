@@ -28,11 +28,11 @@ use tokio::sync::{broadcast, oneshot};
 
 const COOKIE: &str = "argus_token";
 
-const INDEX_HTML: &str = include_str!("../../app/assets/remote/index.html");
-const APP_JS: &str = include_str!("../../app/assets/remote/app.js");
-const STYLE_CSS: &str = include_str!("../../app/assets/remote/style.css");
-const MANIFEST: &str = include_str!("../../app/assets/remote/manifest.webmanifest");
-const ICON_SVG: &str = include_str!("../../app/assets/remote/icon.svg");
+const INDEX_HTML: &str = include_str!("../assets/remote/index.html");
+const APP_JS: &str = include_str!("../assets/remote/app.js");
+const STYLE_CSS: &str = include_str!("../assets/remote/style.css");
+const MANIFEST: &str = include_str!("../assets/remote/manifest.webmanifest");
+const ICON_SVG: &str = include_str!("../assets/remote/icon.svg");
 
 /// Dados para exibir ao usuário depois de iniciar o servidor.
 #[derive(Debug, Clone, Serialize)]

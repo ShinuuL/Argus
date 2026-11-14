@@ -1,0 +1,21 @@
+/* Configurações (aba). */
+.set-view { display: flex; flex-direction: column; gap: 26px; }
+.set-section { display: flex; flex-direction: column; gap: 10px; }
+.set-section h3 { margin: 0; font-size: 14px; }
+.set-field { display: flex; flex-direction: column; gap: 4px; max-width: 320px; color: var(--text-2); }
+.set-field select { color: var(--text); }
+.set-card { padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.set-card .srv-allowed { margin: 0; padding: 0; border: 0; }
+
+.set-themes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.set-theme { display: flex; flex-direction: column; gap: 8px; padding: 8px; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.set-theme:hover { background: var(--bg-hover); }
+.set-theme.on { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+.set-theme-name { display: flex; align-items: baseline; gap: 8px; padding: 0 2px; }
+.set-theme-name .small { color: var(--text-2); }
+.set-swatch { display: flex; height: 74px; border-radius: 5px; overflow: hidden; border: 1px solid var(--border-strong); background: var(--bg); }
+.set-sw-side { width: 28%; background: var(--surface); border-right: 1px solid var(--border); }
+.set-sw-main { flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 10px; }
+.set-sw-line { height: 6px; border-radius: 3px; background: var(--text); width: 80%; }
+.set-sw-line.short { width: 50%; background: var(--text-2); }
+.set-sw-btn { margin-top: auto; align-self: flex-end; width: 34px; height: 12px; border-radius: 6px; background: var(--accent); }

@@ -1,0 +1,7 @@
+/* Terminal embutido (xterm). */
+.terminal-root { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg-editor); }
+.terminal-err { color: var(--err); padding: 4px 8px; font-size: 12px; flex: none; }
+.terminal-slot { flex: 1; min-height: 0; min-width: 0; padding: 4px; position: relative; overflow: hidden; }
+.term-host { position: absolute; inset: 4px; }
+.tabs .tab .tab-title { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tabs .tab.ended .tab-title { opacity: .6; font-style: italic; }

@@ -110,10 +110,41 @@ pub fn parse_json_event(line: &str, model: Option<&str>) -> Vec<AgentEvent> {
             .filter(|t| !t.is_empty())
             .map(|t| vec![AgentEvent::Text(t.to_string())])
             .unwrap_or_default(),
-        Some("tool_use") | Some("tool") => vec![AgentEvent::ToolUse {
-            name: part.get("tool").or_else(|| part.get("name")).and_then(Value::as_str).unwrap_or("?").to_string(),
-            input: part.pointer("/state/input").or_else(|| part.get("input")).cloned().unwrap_or(Value::Null),
-        }],
+        Some("tool_use") | Some("tool") => {
+            let name = part.get("tool").or_else(|| part.get("name")).and_then(Value::as_str).unwrap_or("?").to_string();
+            let input = part.pointer("/state/input").or_else(|| part.get("input")).cloned().unwrap_or(Value::Null);
+            let mut evs = Vec::new();
+            // Ferramenta "task" = subagente (sessão filha). O `run --format json` só
+            // imprime a ferramenta já concluída e não repassa os eventos internos da
+            // sessão filha, então início e fim saem juntos.
+            let sub = (name == "task")
+                .then(|| part.get("callID").or_else(|| part.get("id")).and_then(Value::as_str))
+                .flatten()
+                .map(str::to_string);
+            let st = |k: &str| input.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+            let start = sub.as_ref().map(|id| AgentEvent::SubagentStart {
+                id: id.clone(),
+                parent: None,
+                description: st("description"),
+                subagent_type: st("subagent_type"),
+                prompt: st("prompt"),
+            });
+            evs.push(AgentEvent::ToolUse { name, input });
+            evs.extend(start);
+            if let Some(id) = sub {
+                let state = part.get("state");
+                let status = state.and_then(|s| s.get("status")).and_then(Value::as_str).unwrap_or("completed");
+                if status == "completed" || status == "error" {
+                    let result = state
+                        .and_then(|s| s.get(if status == "error" { "error" } else { "output" }))
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string();
+                    evs.push(AgentEvent::SubagentEnd { id, ok: status == "completed", result });
+                }
+            }
+            evs
+        }
         Some("step_finish") => {
             let t = part.get("tokens");
             let mut evs = vec![AgentEvent::Usage(TokenUsage {
@@ -182,6 +213,30 @@ mod tests {
             [AgentEvent::Result { ok: false, summary, .. }] if summary == "Free usage limit reached."
         ));
         assert_eq!(parse_json_event("log solto", None), vec![AgentEvent::Raw("log solto".into())]);
+    }
+
+    // Linha SINTÉTICA (formato da ferramenta "task" segundo o código-fonte da CLI;
+    // não conferida numa execução real).
+    const TASK: &str = r#"{"type":"tool_use","timestamp":2,"sessionID":"ses_1","part":{"type":"tool","id":"prt_9","callID":"call_7","tool":"task","state":{"status":"completed","input":{"description":"Listar","prompt":"liste","subagent_type":"general"},"output":"a.txt","metadata":{"sessionId":"ses_filha"}}}}"#;
+
+    #[test]
+    fn task_tool_becomes_subagent() {
+        let e = parse_json_event(TASK, None);
+        assert_eq!(e.len(), 3);
+        assert!(matches!(&e[0], AgentEvent::ToolUse { name, .. } if name == "task"));
+        assert_eq!(
+            e[1],
+            AgentEvent::SubagentStart {
+                id: "call_7".into(),
+                parent: None,
+                description: "Listar".into(),
+                subagent_type: "general".into(),
+                prompt: "liste".into(),
+            }
+        );
+        assert_eq!(e[2], AgentEvent::SubagentEnd { id: "call_7".into(), ok: true, result: "a.txt".into() });
+        // Outras ferramentas continuam gerando um único evento.
+        assert_eq!(parse_json_event(TOOL, None).len(), 1);
     }
 
     #[test]

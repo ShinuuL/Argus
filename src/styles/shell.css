@@ -1,0 +1,137 @@
+/*
+ * Layout do shell: barra superior, barra esquerda, centro, painel direito e
+ * status bar. As cores vêm de tokens.css.
+ */
+html, body, #root { height: 100%; }
+body { -webkit-font-smoothing: antialiased; font: var(--font-ui); }
+#root { display: flex; flex-direction: column; }
+
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+button:disabled { opacity: 0.5; cursor: default; }
+::selection { background: var(--selection); color: var(--text); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--bg-control); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--bg-control-hover); }
+::-webkit-scrollbar-corner { background: transparent; }
+input[type="checkbox"], input[type="radio"], input[type="range"], progress { accent-color: var(--accent); }
+select option { background: var(--surface); color: var(--text); }
+input::placeholder, textarea::placeholder { color: var(--text-2); opacity: 0.8; }
+.ic { flex: none; display: inline-block; vertical-align: middle; }
+/* "muted" era opacidade; com os temas, o texto secundário tem cor própria (contraste garantido). */
+.muted { opacity: 1; color: var(--text-2); }
+
+/* Erro nunca depende só da cor (no tema Brasa o destaque também é vermelho): ícone e rótulo. */
+.err[role="alert"]::before { content: "⚠ "; }
+.danger-btn, .srv-danger, .wb-menu button.danger { color: var(--err); }
+.danger-btn, .srv-danger { background: transparent; border-color: var(--err); }
+.danger-btn:hover:not(:disabled), .srv-danger:hover:not(:disabled) { background: var(--err-bg); }
+
+.banner { display: flex; align-items: center; gap: 8px; flex: none; padding: 6px 12px; background: var(--err-bg); color: var(--err); border-bottom: 1px solid var(--err); }
+.banner > span { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--text); }
+.banner button { background: none; border: 0; padding: 2px 6px; color: inherit; }
+
+/* ---------- Barra superior ---------- */
+.tb { height: var(--top-height); flex: none; display: flex; align-items: center; gap: 4px; padding: 0 6px; background: var(--bg-tabs); border-bottom: 1px solid var(--border); }
+.tb-btn { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 7px; background: none; border: 0; color: var(--text-2); font-size: 12px; }
+.tb-btn:hover { background: var(--bg-hover); color: var(--text); }
+.tb-btn[aria-pressed="true"] { color: var(--text); background: var(--bg-active); }
+.tb-crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 6px; font-size: 12px; color: var(--text-2); }
+.tb-project { color: var(--text); font-weight: 600; white-space: nowrap; }
+
+/* ---------- Corpo ---------- */
+.sh-main { flex: 1; min-height: 0; display: flex; }
+.wb-area { flex: 1; min-width: 0; min-height: 0; display: flex; position: relative; }
+.wb-area > * { flex: 1; min-width: 0; min-height: 0; }
+.bottom.collapsed { display: none; }
+.wb-body { background: var(--bg); }
+.wb-ic { color: var(--text-2); }
+.wb-ic-svg { color: var(--text-2); }
+.wb-tab.active .wb-ic-svg { color: var(--accent-text); }
+.wb-tab-actions .wb-sbtn { display: inline-flex; align-items: center; height: 24px; }
+.wb-group.focused .wb-tab.active { border-top-color: var(--focus); }
+.wb-empty-actions button { padding: 6px 14px; }
+.tabs .tab { border-color: transparent; }
+.tabs .tab:hover { background: var(--bg-hover); }
+
+/* ---------- Painel direito ---------- */
+.rp { width: var(--right-width); flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-left: 1px solid var(--border); }
+.rp-tabs { display: flex; flex: none; height: var(--tab-height); background: var(--bg-tabs); border-bottom: 1px solid var(--border); }
+.rp-tab { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 5px; padding: 0 4px; background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--text-2); font-size: 11.5px; }
+/* O ícone só aparece na aba ativa: os quatro rótulos precisam caber inteiros. */
+.rp-tab-ic { display: none; }
+.rp-tab.on .rp-tab-ic { display: inline-block; }
+.rp-tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-tab:hover { background: var(--bg-hover); color: var(--text); }
+.rp-tab.on { color: var(--text); border-bottom-color: var(--focus); }
+.rp-count { flex: none; min-width: 16px; padding: 0 5px; border-radius: 8px; background: var(--bg-control); color: var(--text); font-size: 10px; text-align: center; }
+.rp-scroll { flex: 1; min-height: 0; overflow: auto; }
+.rp-body { display: flex; flex-direction: column; gap: 8px; padding: 10px; min-width: 0; }
+.rp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.rp-head .wb-sbtn { display: inline-flex; align-items: center; gap: 5px; flex: none; }
+.rp-actions { display: flex; gap: 6px; }
+.rp-actions button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 5px 8px; }
+.rp-empty { margin: 0; padding: 14px 10px; color: var(--text-2); font-size: 12px; line-height: 1.5; }
+.rp-body .rp-empty { padding: 6px 0; }
+.rp-hint { margin: 0; color: var(--text-2); font-size: 11.5px; line-height: 1.45; }
+.rp-link { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; background: none; border: 0; padding: 4px 0; color: var(--accent-text); font-size: 12px; }
+.rp-link:hover { background: none; text-decoration: underline; }
+.rp .srv-panel { width: auto; border-left: 0; padding: 10px; overflow: visible; }
+.rp .explorer { padding: 10px 8px 12px 10px; }
+
+/* Diff */
+.df-files { display: flex; flex-direction: column; gap: 1px; }
+.df-file { display: flex; align-items: center; gap: 8px; width: 100%; padding: 3px 6px; background: none; border: 0; border-radius: 4px; text-align: left; font: var(--font-mono); min-width: 0; }
+button.df-file:hover { background: var(--bg-hover); }
+.df-file .ellipsis { flex: 1; }
+.df-letter { flex: none; width: 12px; color: var(--warn); font-weight: 600; }
+.df-pre { margin: 0; padding: 8px; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); font: var(--font-mono); font-size: 11.5px; line-height: 1.45; }
+.df-pre span { display: block; white-space: pre; min-width: max-content; }
+.df-add { color: var(--ok); }
+.df-del { color: var(--err); }
+.df-pre .df-add { background: var(--ok-bg); }
+.df-pre .df-del { background: var(--err-bg); }
+.df-hunk { color: var(--run); }
+.df-meta { color: var(--text-2); }
+
+/* ---------- Status bar ---------- */
+.wb-status { position: relative; height: var(--status-height); }
+.wb-status-l, .wb-status-r { height: 100%; gap: 4px; }
+.wb-status-l { flex: 1 1 auto; overflow: hidden; }
+.wb-status-r { flex: 0 1 auto; }
+.sb-item { display: inline-flex; align-items: center; gap: 5px; height: 100%; padding: 0 7px; border-radius: 0; white-space: nowrap; color: var(--on-status); }
+.wb-status .wb-sbtn:hover:not(:disabled) { background: color-mix(in srgb, var(--on-status) 16%, transparent); color: var(--on-status); }
+.wb-status .wb-sbtn:disabled { opacity: 0.75; }
+.wb-status .chat-usage { background: none; color: var(--on-status); padding: 0 7px; overflow: hidden; text-overflow: ellipsis; }
+.wb-status .chat-usage small { color: inherit; opacity: 0.8; }
+.sb-running { font-weight: 600; }
+
+/* ---------- Telas de apoio abertas como aba ---------- */
+.page { height: 100%; overflow: auto; background: var(--bg); }
+.page-col { max-width: 760px; margin: 0 auto; padding: 26px 28px 48px; display: flex; flex-direction: column; gap: 16px; }
+.page-title { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 18px; font-weight: 600; }
+.page-title .ic { color: var(--text-2); }
+.page-lead { margin: 0; color: var(--text-2); line-height: 1.5; max-width: 62ch; }
+.page .side-pad { padding: 0; gap: 12px; }
+.page select { max-width: 360px; }
+.page .remote select { max-width: 100%; }
+.metrics.pad { max-width: 1100px; margin: 0 auto; padding: 26px 28px 48px; }
+
+/* Telas ainda não portadas. */
+.placeholder { display: flex; flex-direction: column; gap: 6px; padding: 12px; color: var(--text-2); min-width: 0; }
+.placeholder b { color: var(--text); }
+.placeholder.fill { height: 100%; align-items: center; justify-content: center; text-align: center; }
+.placeholder.inline { flex-direction: row; align-items: center; padding: 0 4px; gap: 4px; white-space: nowrap; }
+
+/* Menu de contexto: linhas com separador opcional. */
+.wb-menu-row { display: flex; flex-direction: column; }
+.wb-menu-row button { width: 100%; }
+
+/* ---------- Janela estreita (a partir de 1100 px) ---------- */
+@media (max-width: 1240px) {
+  :root { --sidebar-width: 236px; --right-width: 280px; }
+  .tb-btn span { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

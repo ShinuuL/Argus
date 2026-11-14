@@ -1,0 +1,25 @@
+/* Complementos do workbench (o grosso do visual está em styles/components.css). */
+.wb-tab { position: relative; }
+.wb-tab.drop-before::before { content: ""; position: absolute; left: -1px; top: 4px; bottom: 4px; width: 2px; background: var(--accent); }
+.wb-tab.dragging { opacity: .5; }
+.wb-tabs.drop-end { box-shadow: inset 0 -2px 0 var(--accent); }
+.wb-title { overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.wb-tab-actions { position: sticky; right: 0; background: var(--bg-tabs); }
+
+/* Zona de soltura sobre o corpo do grupo enquanto uma aba é arrastada. */
+.wb-drop { position: absolute; inset: 0; z-index: 20; }
+.wb-drop-mark { position: absolute; background: var(--accent-soft); border: 1px solid var(--accent); pointer-events: none; transition: inset .08s ease-out; }
+.wb-drop-mark.all { inset: 0; }
+.wb-row .wb-drop-mark.edge { inset: 0 0 0 50%; }
+.wb-col .wb-drop-mark.edge { inset: 50% 0 0 0; }
+@media (prefers-reduced-motion: reduce) { .wb-drop-mark { transition: none; } }
+
+/* Menu de contexto das abas. */
+.wb-menu { position: fixed; z-index: 1000; min-width: 190px; background: var(--bg-raised); border: 1px solid var(--border-control); border-radius: 6px; padding: 4px; box-shadow: 0 8px 24px var(--shadow); display: flex; flex-direction: column; }
+.wb-menu button { background: none; border: 0; border-radius: 4px; text-align: left; padding: 5px 10px; color: var(--text); font-size: 12px; display: flex; justify-content: space-between; gap: 16px; }
+.wb-menu button:hover:not(:disabled), .wb-menu button:focus-visible { background: var(--bg-selected); color: var(--text-strong); outline: none; }
+.wb-menu button:disabled { opacity: .45; }
+.wb-menu .key { opacity: .6; }
+.wb-menu hr { border: 0; border-top: 1px solid var(--border-control); margin: 4px 0; width: 100%; }
+
+.grid tbody tr.dash-sel { background: var(--bg-selected); }

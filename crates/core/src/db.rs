@@ -28,6 +28,9 @@ pub struct EventRecord {
     /// JSON serializado do evento.
     pub payload: String,
     pub created_at: i64,
+    /// Id do subagente a que o evento pertence (None = agente principal).
+    #[serde(default)]
+    pub subagent: Option<String>,
 }
 
 /// Uma linha de consumo (um `AgentEvent::Usage`).
@@ -160,6 +163,13 @@ impl Db {
                 conn.execute_batch(&format!("ALTER TABLE tasks ADD COLUMN {col};"))?;
             }
         }
+        // Idem em `events`: id do subagente dono do evento.
+        let has_sub: bool =
+            conn.prepare("SELECT 1 FROM pragma_table_info('events') WHERE name='subagent'")?.exists([])?;
+        if !has_sub {
+            conn.execute_batch("ALTER TABLE events ADD COLUMN subagent TEXT;")?;
+        }
+        conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_events_sub ON events(task_id, subagent);")?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 
@@ -216,20 +226,37 @@ impl Db {
     }
 
     pub fn insert_event(&self, task_id: i64, kind: &str, payload: &str) -> rusqlite::Result<i64> {
+        self.insert_event_sub(task_id, kind, payload, None)
+    }
+
+    /// Como `insert_event`, marcando o subagente a que o evento pertence.
+    pub fn insert_event_sub(&self, task_id: i64, kind: &str, payload: &str, subagent: Option<&str>) -> rusqlite::Result<i64> {
         let c = self.c();
         c.execute(
-            "INSERT INTO events(task_id, kind, payload, created_at) VALUES (?1,?2,?3,?4)",
-            params![task_id, kind, payload, now()],
+            "INSERT INTO events(task_id, kind, payload, created_at, subagent) VALUES (?1,?2,?3,?4,?5)",
+            params![task_id, kind, payload, now(), subagent],
         )?;
         Ok(c.last_insert_rowid())
     }
 
+    /// Todos os eventos da tarefa (agente principal e subagentes), em ordem.
     pub fn list_events(&self, task_id: i64) -> rusqlite::Result<Vec<EventRecord>> {
         let c = self.c();
-        let mut st = c.prepare("SELECT id, task_id, kind, payload, created_at FROM events WHERE task_id=?1 ORDER BY id")?;
-        let rows = st.query_map([task_id], |r| {
-            Ok(EventRecord { id: r.get(0)?, task_id: r.get(1)?, kind: r.get(2)?, payload: r.get(3)?, created_at: r.get(4)? })
-        })?;
+        let mut st = c.prepare(
+            "SELECT id, task_id, kind, payload, created_at, subagent FROM events WHERE task_id=?1 ORDER BY id",
+        )?;
+        let rows = st.query_map([task_id], event_row)?;
+        rows.collect()
+    }
+
+    /// Eventos de um subagente da tarefa: o `SubagentStart`, os internos e o `SubagentEnd`.
+    pub fn list_subagent_events(&self, task_id: i64, subagent: &str) -> rusqlite::Result<Vec<EventRecord>> {
+        let c = self.c();
+        let mut st = c.prepare(
+            "SELECT id, task_id, kind, payload, created_at, subagent FROM events
+             WHERE task_id=?1 AND subagent=?2 ORDER BY id",
+        )?;
+        let rows = st.query_map(params![task_id, subagent], event_row)?;
         rows.collect()
     }
 
@@ -333,6 +360,17 @@ impl Db {
     }
 }
 
+fn event_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<EventRecord> {
+    Ok(EventRecord {
+        id: r.get(0)?,
+        task_id: r.get(1)?,
+        kind: r.get(2)?,
+        payload: r.get(3)?,
+        created_at: r.get(4)?,
+        subagent: r.get(5)?,
+    })
+}
+
 fn task_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskRecord> {
     Ok(TaskRecord {
         id: r.get(0)?,
@@ -367,9 +405,17 @@ mod tests {
         assert_eq!(db.get_task(7).unwrap().unwrap().workdir.as_deref(), Some("/wt"));
         assert!(db.get_task(8).unwrap().is_none());
         assert_eq!(db.max_task_id().unwrap(), 7);
+        db.insert_event_sub(7, "Text", "\"sub\"", Some("toolu_1")).unwrap();
+        db.insert_event_sub(7, "Text", "\"outro\"", Some("toolu_2")).unwrap();
         let e = db.list_events(7).unwrap();
-        assert_eq!(e.len(), 2);
+        assert_eq!(e.len(), 4);
         assert_eq!(e[0].kind, "Text");
+        assert_eq!(e[0].subagent, None);
+        assert_eq!(e[2].subagent.as_deref(), Some("toolu_1"));
+        let sub = db.list_subagent_events(7, "toolu_1").unwrap();
+        assert_eq!(sub.len(), 1);
+        assert_eq!(sub[0].payload, "\"sub\"");
+        assert!(db.list_subagent_events(8, "toolu_1").unwrap().is_empty());
         assert_eq!(db.get_autowork("/p").unwrap(), None);
         db.set_autowork("/p", "{}").unwrap();
         db.set_autowork("/p", "{\"enabled\":true}").unwrap();
@@ -414,7 +460,10 @@ mod tests {
             c.execute_batch(
                 "CREATE TABLE tasks(id INTEGER PRIMARY KEY, project TEXT NOT NULL, provider TEXT NOT NULL,
                  prompt TEXT NOT NULL, state TEXT NOT NULL, created_at INTEGER NOT NULL);
-                 INSERT INTO tasks VALUES(1,'/p','claude','x','Completed',0);",
+                 INSERT INTO tasks VALUES(1,'/p','claude','x','Completed',0);
+                 CREATE TABLE events(id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL,
+                 kind TEXT NOT NULL, payload TEXT NOT NULL, created_at INTEGER NOT NULL);
+                 INSERT INTO events(task_id, kind, payload, created_at) VALUES(1,'Text','antigo',0);",
             )
             .unwrap();
         }
@@ -422,5 +471,14 @@ mod tests {
         let t = db.get_task(1).unwrap().unwrap();
         assert_eq!(t.session_id, None);
         db.set_task_session(1, "s").unwrap();
+        // Eventos antigos continuam legíveis, sem subagente; os novos aceitam a coluna.
+        db.insert_event_sub(1, "Text", "\"novo\"", Some("toolu_1")).unwrap();
+        let e = db.list_events(1).unwrap();
+        assert_eq!(e.len(), 2);
+        assert_eq!(e[0].subagent, None);
+        assert_eq!(e[1].subagent.as_deref(), Some("toolu_1"));
+        // Reabrir não tenta criar a coluna de novo.
+        drop(db);
+        assert_eq!(Db::open(&p).unwrap().list_events(1).unwrap().len(), 2);
     }
 }

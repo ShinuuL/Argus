@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissões das janelas do Argus (janela principal e janelas auxiliares abertas pela interface).",
+  "windows": ["main", "aux-*"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-title",
+    "core:window:allow-close",
+    "core:window:allow-set-focus",
+    "core:webview:allow-create-webview-window",
+    "dialog:default"
+  ]
+}

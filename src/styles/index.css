@@ -1,0 +1,4 @@
+/* Ordem importa: tokens, classes portadas da interface antiga, depois o shell. */
+@import "./tokens.css";
+@import "./components.css";
+@import "./shell.css";
