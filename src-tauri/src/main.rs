@@ -12,6 +12,12 @@ use commands::*;
 use tauri::Manager;
 
 fn main() {
+    // Aberto por um shell (Git Bash, `npm run tauri dev`), o Argus herda `PWD` e
+    // `OLDPWD` apontando para a pasta de onde foi chamado. Os processos filhos
+    // (agentes, terminais) herdariam o valor, e há CLI que confia nele em vez do
+    // diretório real. Aqui ainda não existe nenhuma outra thread.
+    std::env::remove_var("PWD");
+    std::env::remove_var("OLDPWD");
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {

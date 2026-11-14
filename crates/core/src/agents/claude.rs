@@ -59,6 +59,7 @@ impl AgentProvider for ClaudeProvider {
         }
         // Em `-p` não há quem aprove permissões: sem isto toda edição de arquivo
         // é negada. `acceptEdits` libera só edições (Bash continua bloqueado).
+        // As pastas de anexos entram depois, com `--add-dir` (`attachments::apply_add_dirs`).
         c.arg("--permission-mode")
             .arg("acceptEdits")
             .arg("--output-format")
@@ -70,6 +71,12 @@ impl AgentProvider for ClaudeProvider {
 
     fn parse_line(&self, line: &str) -> Vec<AgentEvent> {
         self.parser.lock().unwrap_or_else(|e| e.into_inner()).parse(line)
+    }
+
+    fn begin_turn(&self, session: Option<&str>) {
+        if let Some(s) = session {
+            self.parser.lock().unwrap_or_else(|e| e.into_inner()).totals.remove(s);
+        }
     }
 }
 
@@ -127,11 +134,50 @@ pub fn parse_stream_json(line: &str) -> Vec<AgentEvent> {
 /// - o subagente termina no `tool_result` com o mesmo `tool_use_id`, numa
 ///   mensagem `user` do nível de quem o chamou; o topo dessa linha traz
 ///   `tool_use_result` com `status` e `content`.
+///
+/// Um mesmo processo pode imprimir MAIS DE UM `result`: quando um comando em
+/// segundo plano termina depois da resposta, a CLI acorda sozinha, trabalha
+/// mais um pouco e imprime outro `result`, cujo `modelUsage`/`total_cost_usd`
+/// é o ACUMULADO do processo (visto numa execução real: 71055 tokens de cache
+/// gravados no primeiro, 75008 no segundo). Por isso o parser guarda o último
+/// total por sessão e emite só a diferença.
 #[derive(Debug, Default)]
 pub struct StreamParser {
     /// Subagentes abertos: id -> lançado em segundo plano (termina por
     /// `task_notification`, não pelo `tool_result`).
     open: HashMap<String, bool>,
+    /// Último total acumulado informado por sessão, no processo em andamento
+    /// (zerado por `begin_turn` quando um processo novo começa).
+    totals: HashMap<String, SessionTotals>,
+}
+
+#[derive(Debug, Default)]
+struct SessionTotals {
+    /// Por modelo (None = uso agregado, sem modelo).
+    models: HashMap<Option<String>, TokenUsage>,
+    cost: f64,
+}
+
+/// `cur - prev`, se `cur` for o acumulado de `prev` (nenhum campo diminuiu);
+/// senão `cur` como veio (processo novo).
+fn usage_delta(cur: &TokenUsage, prev: Option<&TokenUsage>) -> TokenUsage {
+    let Some(p) = prev else { return cur.clone() };
+    let grew = cur.input_tokens >= p.input_tokens
+        && cur.output_tokens >= p.output_tokens
+        && cur.cache_read >= p.cache_read
+        && cur.cache_write >= p.cache_write
+        && cur.cost_usd.unwrap_or(0.0) + 1e-12 >= p.cost_usd.unwrap_or(0.0);
+    if !grew {
+        return cur.clone();
+    }
+    TokenUsage {
+        input_tokens: cur.input_tokens - p.input_tokens,
+        output_tokens: cur.output_tokens - p.output_tokens,
+        cache_read: cur.cache_read - p.cache_read,
+        cache_write: cur.cache_write - p.cache_write,
+        model: cur.model.clone(),
+        cost_usd: cur.cost_usd.map(|c| (c - p.cost_usd.unwrap_or(0.0)).max(0.0)),
+    }
 }
 
 impl StreamParser {
@@ -224,33 +270,54 @@ impl StreamParser {
                 let mut evs = Vec::new();
                 // Uso por modelo (preferido: já traz custo por modelo); senão o agregado.
                 // Já inclui o consumo dos subagentes.
+                let mut usages = Vec::new();
                 if let Some(mu) = v.get("modelUsage").and_then(Value::as_object).filter(|m| !m.is_empty()) {
                     for (model, m) in mu {
-                        evs.push(AgentEvent::Usage(TokenUsage {
+                        usages.push(TokenUsage {
                             input_tokens: u(m, "inputTokens"),
                             output_tokens: u(m, "outputTokens"),
                             cache_read: u(m, "cacheReadInputTokens"),
                             cache_write: u(m, "cacheCreationInputTokens"),
                             model: Some(model.clone()),
                             cost_usd: m.get("costUSD").and_then(Value::as_f64),
-                        }));
+                        });
                     }
                 } else if let Some(us) = v.get("usage") {
-                    evs.push(AgentEvent::Usage(TokenUsage {
+                    usages.push(TokenUsage {
                         input_tokens: u(us, "input_tokens"),
                         output_tokens: u(us, "output_tokens"),
                         cache_read: u(us, "cache_read_input_tokens"),
                         cache_write: u(us, "cache_creation_input_tokens"),
                         model: None,
                         cost_usd: v.get("total_cost_usd").and_then(Value::as_f64),
-                    }));
+                    });
                 }
+                // Os totais são acumulados no processo: desconta o que o `result`
+                // anterior desta sessão já informou.
+                let totals = self.totals.entry(s(&v, "session_id").to_string()).or_default();
+                let usages: Vec<TokenUsage> = usages
+                    .into_iter()
+                    .map(|u| {
+                        let delta = usage_delta(&u, totals.models.get(&u.model));
+                        totals.models.insert(u.model.clone(), u);
+                        delta
+                    })
+                    .collect();
+                let cost = v.get("total_cost_usd").and_then(Value::as_f64).map(|c| {
+                    let delta = if c + 1e-12 >= totals.cost { c - totals.cost } else { c };
+                    totals.cost = c;
+                    delta.max(0.0)
+                });
+                // Comando de barra que a própria CLI resolve (`/context`, `/cost`...): nenhum
+                // modelo foi chamado, tudo vem zerado. Sem evento de uso, o turno não entra
+                // nas métricas nem na contagem de turnos da tarefa.
+                evs.extend(usages.into_iter().filter(|u| !u.is_empty()).map(AgentEvent::Usage));
                 let is_error = v.get("is_error").and_then(Value::as_bool).unwrap_or(false);
                 let sub_ok = v.get("subtype").and_then(Value::as_str).map_or(true, |s| s == "success");
                 evs.push(AgentEvent::Result {
                     ok: !is_error && sub_ok,
                     summary: v.get("result").and_then(Value::as_str).unwrap_or_default().to_string(),
-                    cost: v.get("total_cost_usd").and_then(Value::as_f64),
+                    cost,
                 });
                 evs
             }
@@ -327,10 +394,48 @@ mod tests {
             })
         );
         assert_eq!(evs[1], AgentEvent::Result { ok: true, summary: "oi \"aspas\" 100%".into(), cost: Some(0.070944) });
+        // Comando resolvido pela própria CLI (`/context`, `/cost`...): nenhum modelo
+        // chamado, tudo zerado -> sem evento de uso.
+        let evs = parse_stream_json(r#"{"type":"result","subtype":"success","is_error":false,"duration_ms":412,"duration_api_ms":0,"num_turns":0,"result":"Context Usage","total_cost_usd":0,"usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0},"modelUsage":{}}"#);
+        assert_eq!(evs, vec![AgentEvent::Result { ok: true, summary: "Context Usage".into(), cost: Some(0.0) }]);
         // Sem modelUsage: usa o agregado.
         let evs = parse_stream_json(r#"{"type":"result","subtype":"error_max_turns","is_error":true,"usage":{"input_tokens":1,"output_tokens":2,"cache_read_input_tokens":3,"cache_creation_input_tokens":4}}"#);
         assert!(matches!(&evs[0], AgentEvent::Usage(u) if u.cache_read == 3 && u.cache_write == 4 && u.model.is_none()));
         assert!(matches!(&evs[1], AgentEvent::Result { ok: false, .. }));
+    }
+
+    /// Dois `result` no mesmo processo (a CLI acordou com o fim de um comando em
+    /// segundo plano): o segundo traz o acumulado. Números de uma execução real.
+    #[test]
+    fn second_result_of_a_process_is_cumulative() {
+        let first = r#"{"type":"result","subtype":"success","is_error":false,"session_id":"s1","result":"pronto.","total_cost_usd":0.144613,"modelUsage":{"claude-haiku-4-5-20251001":{"inputTokens":18,"outputTokens":497,"cacheReadInputTokens":0,"cacheCreationInputTokens":71055,"costUSD":0.144613}}}"#;
+        let second = r#"{"type":"result","subtype":"success","is_error":false,"session_id":"s1","result":"Servidor iniciado.","total_cost_usd":0.1669749,"modelUsage":{"claude-haiku-4-5-20251001":{"inputTokens":44,"outputTokens":1080,"cacheReadInputTokens":115149,"cacheCreationInputTokens":75008,"costUSD":0.1669749}}}"#;
+        let p = ClaudeProvider::new();
+        let a = p.parse_line(first);
+        assert!(matches!(&a[0], AgentEvent::Usage(u) if u.cache_write == 71055 && u.cost_usd == Some(0.144613)));
+        let b = p.parse_line(second);
+        match &b[0] {
+            AgentEvent::Usage(u) => {
+                assert_eq!((u.input_tokens, u.output_tokens, u.cache_read, u.cache_write), (26, 583, 115149, 3953));
+                assert!((u.cost_usd.unwrap() - 0.0223619).abs() < 1e-9, "{:?}", u.cost_usd);
+            }
+            o => panic!("{o:?}"),
+        }
+        assert!(matches!(&b[1], AgentEvent::Result { cost: Some(c), .. } if (c - 0.0223619).abs() < 1e-9));
+        // A soma dos eventos é o total real do processo, não o dobro.
+        let total: f64 = [&a[0], &b[0]].iter().map(|e| match e { AgentEvent::Usage(u) => u.cost_usd.unwrap(), _ => 0.0 }).sum();
+        assert!((total - 0.1669749).abs() < 1e-9);
+        // Um terceiro `result` idêntico (nada novo) não gera uso.
+        assert!(matches!(p.parse_line(second).as_slice(), [AgentEvent::Result { cost: Some(c), .. }] if *c == 0.0));
+        // Processo novo da mesma sessão (`--resume`): os totais recomeçam do zero.
+        p.begin_turn(Some("s1"));
+        let c = p.parse_line(second);
+        assert!(matches!(&c[0], AgentEvent::Usage(u) if u.cache_write == 75008 && u.cost_usd == Some(0.1669749)));
+        // Outra sessão não é afetada pelos totais desta.
+        let other = first.replace("\"s1\"", "\"s2\"");
+        assert!(matches!(&p.parse_line(&other)[0], AgentEvent::Usage(u) if u.cache_write == 71055));
+        // Sem `begin_turn`, um total menor que o anterior é tratado como processo novo.
+        assert!(matches!(&p.parse_line(first)[0], AgentEvent::Usage(u) if u.cache_write == 71055));
     }
 
     #[test]

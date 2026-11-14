@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { CmdSpec, CommandSpec, Path, PtyId } from "@/api";
-import { defaultCwd, useLayout, useTerminals } from "@/store";
+import { defaultCwd, useLayout, useTerminals, useWorkbench } from "@/store";
 import { attachSession, detachSession, fitSession, freshTerminalKey, type TerminalSession } from "./session";
 import "./terminal.css";
 
@@ -142,6 +142,14 @@ export default function TerminalView() {
           onClick={() => openTab({ cwd: defaultCwd() })}
         >
           +
+        </button>
+        <button
+          className="tab"
+          title="Novo terminal como aba do editor (pode ser arrastado entre os grupos)"
+          aria-label="Novo terminal como aba do editor"
+          onClick={() => useWorkbench.getState().openTerminal({ cwd: defaultCwd() })}
+        >
+          ⧉
         </button>
       </div>
       <div className="terms">

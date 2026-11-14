@@ -6,6 +6,7 @@ use super::{blocking, err};
 use crate::state::AppCtx;
 use argus_core::db::{now, ProjectUsage, TimeRange, UsageRow};
 use argus_core::metrics::{self, CostLine, Pricing};
+use chrono::{Local, TimeZone};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -42,7 +43,8 @@ fn load_pricing() -> Pricing {
 }
 
 /// Monta o relatório. `days` = tamanho do período (0 = tudo, eixo de até 90 dias).
-pub fn build_report(rows: &[UsageRow], days: i64, has_db: bool, pricing: &Pricing, t: i64) -> Report {
+/// Os dias são os do calendário no fuso `tz` (na interface, o do computador).
+pub fn build_report<Tz: TimeZone>(rows: &[UsageRow], days: i64, has_db: bool, pricing: &Pricing, t: i64, tz: &Tz) -> Report {
     let mut total = metrics::aggregate(rows, pricing, |_| "total".into()).pop().unwrap_or_default();
     total.key = "Total".into();
     let sort = |mut v: Vec<CostLine>| {
@@ -50,20 +52,20 @@ pub fn build_report(rows: &[UsageRow], days: i64, has_db: bool, pricing: &Pricin
         v
     };
     let by_day: HashMap<String, CostLine> =
-        metrics::by_day(rows, pricing).into_iter().map(|l| (l.key.clone(), l)).collect();
+        metrics::by_day_in(rows, pricing, tz).into_iter().map(|l| (l.key.clone(), l)).collect();
     let span = if days > 0 {
         days
     } else {
         rows.iter()
             .map(|r| r.created_at)
             .min()
-            .map(|first| ((t - first) / 86_400 + 1).clamp(1, 90))
+            .map(|first| ((metrics::day_in(t, tz) - metrics::day_in(first, tz)).num_days() + 1).clamp(1, 90))
             .unwrap_or(7)
     };
-    let day_axis = (0..span)
-        .rev()
-        .map(|i| {
-            let day = metrics::day_string(t - i * 86_400);
+    let day_axis = metrics::last_days_in(t, span.max(1) as u64, tz)
+        .into_iter()
+        .map(|d| {
+            let day = d.to_string();
             let line = by_day.get(&day).cloned().unwrap_or_else(|| CostLine { key: day.clone(), ..Default::default() });
             DayLine { day, line }
         })
@@ -83,24 +85,28 @@ pub fn build_report(rows: &[UsageRow], days: i64, has_db: bool, pricing: &Pricin
 pub async fn metrics_report(ctx: State<'_, AppCtx>, days: i64) -> Result<Report, String> {
     let orch = ctx.orch.clone();
     blocking(move || {
-        let range = if days > 0 { TimeRange::last_days(days) } else { TimeRange::all() };
+        let t = now();
+        // O período começa à meia-noite local do primeiro dia do eixo (dias inteiros).
+        let range = match metrics::last_days_in(t, days.max(0) as u64, &Local).first() {
+            Some(first) => TimeRange { from: Some(metrics::day_start_in(*first, &Local)), to: None },
+            None => TimeRange::all(),
+        };
         let pricing = load_pricing();
         Ok(match orch.db() {
-            Some(db) => build_report(&db.usage_rows(range).unwrap_or_default(), days, true, &pricing, now()),
-            None => build_report(&[], days, false, &pricing, now()),
+            Some(db) => build_report(&db.usage_rows(range).unwrap_or_default(), days, true, &pricing, t, &Local),
+            None => build_report(&[], days, false, &pricing, t, &Local),
         })
     })
     .await
 }
 
-/// Tokens e custo equivalente de hoje (dia UTC).
+/// Tokens e custo equivalente de hoje (dia do calendário no fuso do computador).
 #[tauri::command]
 pub async fn metrics_today(ctx: State<'_, AppCtx>) -> Result<TodayUsage, String> {
     let orch = ctx.orch.clone();
     blocking(move || {
         let Some(db) = orch.db() else { return Ok(TodayUsage::default()) };
-        let n = now();
-        let from = n - n.rem_euclid(86_400);
+        let from = metrics::day_start_in(metrics::day_in(now(), &Local), &Local);
         let rows = db.usage_rows(TimeRange { from: Some(from), to: None }).map_err(err)?;
         let pricing = load_pricing();
         Ok(TodayUsage {
@@ -108,7 +114,8 @@ pub async fn metrics_today(ctx: State<'_, AppCtx>) -> Result<TodayUsage, String>
                 .iter()
                 .map(|r| r.usage.input_tokens + r.usage.output_tokens + r.usage.cache_read + r.usage.cache_write)
                 .sum(),
-            cost: rows.iter().map(|r| pricing.cost(&r.usage)).sum(),
+            // A soma de uma lista vazia de f64 é -0.0, que a interface mostrava como "-0,00".
+            cost: rows.iter().map(|r| pricing.cost(&r.usage)).sum::<f64>() + 0.0,
         })
     })
     .await
@@ -171,6 +178,8 @@ mod tests {
             provider: provider.into(),
             usage: TokenUsage { input_tokens: input, output_tokens: 10, ..Default::default() },
             created_at: at,
+            // cada linha de teste é um turno próprio
+            turn: Some(at * 1_000 + input as i64),
         }
     }
 
@@ -178,7 +187,7 @@ mod tests {
     fn report_has_continuous_day_axis_and_totals() {
         let t = 20_000 * 86_400 + 3_600;
         let rows = vec![row("a", "claude", t - 86_400, 100), row("b", "opencode", t, 300), row("a", "claude", t, 50)];
-        let r = build_report(&rows, 7, true, &Pricing::default(), t);
+        let r = build_report(&rows, 7, true, &Pricing::default(), t, &chrono::Utc);
         assert_eq!(r.days.len(), 7);
         assert_eq!(r.days.last().unwrap().day, metrics::day_string(t));
         assert_eq!(r.days[6].line.turns, 2);
@@ -195,11 +204,38 @@ mod tests {
     #[test]
     fn report_all_time_spans_from_first_row() {
         let t = 20_000 * 86_400;
-        let r = build_report(&[row("a", "claude", t - 3 * 86_400, 1)], 0, true, &Pricing::default(), t);
+        let r = build_report(&[row("a", "claude", t - 3 * 86_400, 1)], 0, true, &Pricing::default(), t, &chrono::Utc);
         assert_eq!(r.days.len(), 4);
-        let empty = build_report(&[], 0, false, &Pricing::default(), t);
+        let empty = build_report(&[], 0, false, &Pricing::default(), t, &chrono::Utc);
         assert_eq!(empty.days.len(), 7);
         assert_eq!(empty.total.turns, 0);
         assert!(!empty.has_db);
+    }
+
+    /// "Hoje" segue o fuso: um turno às 22h de Brasília fica no dia local, e um
+    /// turno com dois modelos conta como um turno no dia e no total.
+    #[test]
+    fn report_uses_local_days_and_counts_turns_once() {
+        let brt = chrono::FixedOffset::west_opt(3 * 3600).unwrap();
+        // 2026-11-14 22:30 em Brasília (2026-11-15 01:30 UTC).
+        let t = 1_794_706_200;
+        let two = |model: &str| UsageRow {
+            task_id: 9,
+            project: "a".into(),
+            provider: "claude".into(),
+            usage: TokenUsage { input_tokens: 1, model: Some(model.into()), ..Default::default() },
+            created_at: t - 60,
+            turn: Some(42),
+        };
+        let rows = vec![two("claude-opus-4-7"), two("claude-haiku-4-5")];
+        let r = build_report(&rows, 7, true, &Pricing::default(), t, &brt);
+        assert_eq!(r.days.last().unwrap().day, "2026-11-14");
+        assert_eq!(r.days.last().unwrap().line.turns, 1);
+        assert_eq!(r.days.first().unwrap().day, "2026-11-08");
+        assert_eq!(r.total.turns, 1);
+        assert_eq!(r.projects[0].turns, 1);
+        assert_eq!(r.models.len(), 2);
+        // Em UTC o mesmo instante já cairia no dia seguinte.
+        assert_eq!(build_report(&rows, 7, true, &Pricing::default(), t, &chrono::Utc).days.last().unwrap().day, "2026-11-15");
     }
 }

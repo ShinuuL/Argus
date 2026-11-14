@@ -25,6 +25,8 @@ export interface AutoWorkPanelProps {
 
 export interface AutoWorkBadgeProps {
   taskId: TaskId;
+  /** Sessão encerrada (aplicada ou descartada): mostra só o resultado, sem ações. */
+  readOnly?: boolean;
 }
 
 /** Resumo de um evento de auto-work (dica do selo). */
@@ -59,7 +61,7 @@ const ACTIONS: Record<Action, (task: TaskId) => Promise<boolean>> = {
 };
 
 /** Progresso do auto-work de uma tarefa, com pausar/retomar/parar. Vazio se não houver execução. */
-export function AutoWorkBadge({ taskId }: AutoWorkBadgeProps) {
+export function AutoWorkBadge({ taskId, readOnly = false }: AutoWorkBadgeProps) {
   const ev = useApp((s) => s.autowork[taskId]);
   const [busy, setBusy] = useState(false);
   if (!ev) return null;
@@ -125,7 +127,7 @@ export function AutoWorkBadge({ taskId }: AutoWorkBadgeProps) {
             </button>
           </>
         )}
-        {kind !== "Running" && kind !== "Paused" && (
+        {kind !== "Running" && kind !== "Paused" && !readOnly && (
           <button disabled={busy} onClick={() => void run("start")}>
             Reiniciar auto-work
           </button>

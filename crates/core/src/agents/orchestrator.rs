@@ -57,7 +57,8 @@ pub struct Task {
     pub workdir: Option<PathBuf>,
     /// Sessão da CLI (claude: `session_id`; opencode: `sessionID`), para `reply`.
     pub session_id: Option<String>,
-    /// Número de turnos já iniciados (1 = só o prompt inicial).
+    /// Número de turnos da conversa (1 = só o prompt inicial). Um comando de barra
+    /// que a própria CLI resolve, sem chamar modelo, não conta.
     pub turns: u32,
 }
 
@@ -287,10 +288,7 @@ impl Orchestrator {
             None => return Err(OrchestratorError::NoWorktree),
         };
         let prov = self.provider(&t.provider)?;
-        if let Some(x) = self.inner.tasks.lock().unwrap().get_mut(&id) {
-            x.turns += 1;
-        }
-        self.record(id, &t, AgentEvent::User(message.into()));
+        self.record(id, &t, 0, AgentEvent::User(message.into()));
         let cancel = self.new_cancel(id);
         self.set_state(id, TaskState::Queued);
 
@@ -300,7 +298,15 @@ impl Orchestrator {
             let Some(_permit) = this.acquire(id, &cancel).await else { return };
             this.set_state(id, TaskState::Running);
             let st = match this.run_turn(&t, prov, &message, Some(&session), &workdir, &cancel).await {
-                Ok(s) => s,
+                Ok((s, used_model)) => {
+                    // Conta o turno só se um modelo trabalhou (ou se foi interrompido no meio).
+                    if used_model || s == TaskState::Cancelled {
+                        if let Some(x) = this.inner.tasks.lock().unwrap().get_mut(&id) {
+                            x.turns += 1;
+                        }
+                    }
+                    s
+                }
                 Err(e) => TaskState::Failed(e.to_string()),
             };
             this.finish(id, &cancel, st);
@@ -358,11 +364,12 @@ impl Orchestrator {
             let _ = db.set_task_workdir(id as i64, &workdir.to_string_lossy());
         }
         self.set_state(id, TaskState::Running);
-        self.run_turn(task, prov, &task.prompt, None, &workdir, cancel).await
+        Ok(self.run_turn(task, prov, &task.prompt, None, &workdir, cancel).await?.0)
     }
 
-    /// Grava (se houver banco) e transmite um evento do agente.
-    fn record(&self, id: TaskId, task: &Task, ev: AgentEvent) {
+    /// Grava (se houver banco) e transmite um evento do agente. `turn` identifica
+    /// o turno nas linhas de consumo (um turno com dois modelos grava duas linhas).
+    fn record(&self, id: TaskId, task: &Task, turn: i64, ev: AgentEvent) {
         match &ev {
             AgentEvent::Session(s) => {
                 let changed = {
@@ -384,7 +391,7 @@ impl Orchestrator {
             }
             AgentEvent::Usage(u) => {
                 if let Some(db) = &self.inner.db {
-                    let _ = db.insert_usage(id as i64, &task.project.to_string_lossy(), &task.provider, u);
+                    let _ = db.insert_usage_turn(id as i64, &task.project.to_string_lossy(), &task.provider, u, turn);
                 }
             }
             _ => {}
@@ -395,6 +402,8 @@ impl Orchestrator {
         let _ = self.inner.tx.send(OrchestratorEvent::Agent { task: id, event: ev });
     }
 
+    /// Roda um turno. Devolve o estado final e se algum modelo foi usado (houve
+    /// consumo): um comando de barra resolvido pela própria CLI devolve `false`.
     async fn run_turn(
         &self,
         task: &Task,
@@ -403,10 +412,19 @@ impl Orchestrator {
         session: Option<&str>,
         workdir: &Path,
         cancel: &Notify,
-    ) -> Result<TaskState, OrchestratorError> {
+    ) -> Result<(TaskState, bool), OrchestratorError> {
         let id = task.id;
+        // Identifica o turno nas linhas de consumo: uma tarefa roda um turno por vez.
+        let turn = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        prov.begin_turn(session);
         let spec = prov.task_command(prompt, workdir, session);
         let spec = crate::procs::apply_allowed_tools(spec, &task.project);
+        // Os anexos do chat ficam fora da pasta de trabalho: libera a leitura deles.
+        let dirs = crate::attachments::dirs_for(&crate::attachments::root(), id, &[&task.prompt, prompt]);
+        let spec = crate::attachments::apply_add_dirs(spec, &dirs);
         let mut cmd = build_command(&spec, Some(workdir));
         #[cfg(unix)]
         cmd.process_group(0); // permite matar a árvore inteira no cancelamento
@@ -431,11 +449,16 @@ impl Orchestrator {
         let stderr = child.stderr.take().unwrap();
         let this = self.clone();
         let t = task.clone();
+        let used_model = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let used = used_model.clone();
         let out_task = tokio::spawn(async move {
             let mut lines = BufReader::new(stdout).lines();
             while let Ok(Some(l)) = lines.next_line().await {
                 for ev in prov.parse_line(&l) {
-                    this.record(id, &t, ev);
+                    if matches!(ev.inner(), AgentEvent::Usage(u) if !u.is_empty()) {
+                        used.store(true, Ordering::SeqCst);
+                    }
+                    this.record(id, &t, turn, ev);
                 }
             }
         });
@@ -464,7 +487,7 @@ impl Orchestrator {
                 TaskState::Cancelled
             }
         };
-        Ok(result)
+        Ok((result, used_model.load(Ordering::SeqCst)))
     }
 
     /// Diff das mudanças feitas no worktree da tarefa (inclui arquivos novos).
@@ -597,6 +620,11 @@ pub fn build_command(spec: &CommandSpec, default_cwd: Option<&Path>) -> tokio::p
     cmd.args(&spec.args);
     if let Some(c) = spec.cwd.as_deref().or(default_cwd) {
         cmd.current_dir(c);
+        // Quem abre o Argus por um shell (Git Bash, `npm run tauri dev`) deixa a
+        // variável `PWD` apontando para a pasta de onde ele foi aberto. Há CLI que
+        // confia nela em vez do diretório real: o `opencode run`, visto numa execução
+        // real, trabalhou nessa pasta e não no worktree da tarefa.
+        cmd.env("PWD", c);
     }
     for (k, v) in &spec.env {
         cmd.env(k, v);
@@ -883,7 +911,19 @@ mod tests {
         o.reply(id, "segunda mensagem").unwrap();
         assert!(matches!(o.reply(id, "x"), Err(OrchestratorError::Busy)));
         assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        // A resposta veio sem consumo (como um comando de barra que a própria CLI
+        // resolve): não conta como turno nem grava linha de uso.
+        assert_eq!(o.task(id).unwrap().turns, 1);
+        assert_eq!(o.db().unwrap().usage_rows(crate::db::TimeRange::all()).unwrap().len(), 1);
+        // Com consumo, conta: o provedor falso ecoa "USAGE", que vira um evento de uso.
+        o.reply(id, "USAGE").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
         assert_eq!(o.task(id).unwrap().turns, 2);
+        let rows = o.db().unwrap().usage_rows(crate::db::TimeRange::all()).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r.turn.is_some()));
+        assert_ne!(rows[0].turn, rows[1].turn);
+        assert_eq!(crate::metrics::by_project(&rows, &crate::metrics::Pricing::default())[0].turns, 2);
 
         let h = o.history(id);
         assert_eq!(h.first(), Some(&AgentEvent::User("primeiro".into())));
@@ -893,7 +933,7 @@ mod tests {
         assert!(h.contains(&AgentEvent::Text("segunda mensagem".into())), "{h:?}");
         let usage = o.db().unwrap().usage_by_project(crate::db::TimeRange::all()).unwrap();
         assert_eq!(usage.len(), 1);
-        assert_eq!(usage[0].input_tokens, 10);
+        assert_eq!(usage[0].input_tokens, 20);
         drop(o);
 
         // Recarrega do disco: histórico, sessão e próximo id.
@@ -913,6 +953,24 @@ mod tests {
         let id = o.submit(dir.path(), "fake", "x").unwrap();
         wait_final(&o, id).await;
         assert!(matches!(o.reply(id, "y"), Err(OrchestratorError::NoSession)));
+    }
+
+    /// O processo filho recebe `PWD` igual ao diretório de trabalho (nunca o herdado).
+    #[test]
+    fn child_gets_pwd_of_its_workdir() {
+        let dir = tempfile::tempdir().unwrap();
+        let pwd = |cmd: &tokio::process::Command| {
+            cmd.as_std().get_envs().find(|(k, _)| *k == "PWD").and_then(|(_, v)| v.map(PathBuf::from))
+        };
+        let cmd = build_command(&CommandSpec::new("git"), Some(dir.path()));
+        assert_eq!(pwd(&cmd).as_deref(), Some(dir.path()));
+        assert_eq!(cmd.as_std().get_current_dir(), Some(dir.path()));
+        // O diretório do próprio comando vale sobre o padrão.
+        let own = dir.path().join("sub");
+        let cmd = build_command(&CommandSpec::new("git").cwd(&own), Some(dir.path()));
+        assert_eq!(pwd(&cmd), Some(own));
+        // Sem diretório, nada é imposto.
+        assert_eq!(pwd(&build_command(&CommandSpec::new("git"), None)), None);
     }
 
     #[test]

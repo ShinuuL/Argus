@@ -57,8 +57,13 @@ fn open_db() -> Option<(Db, PathBuf)> {
 impl AppCtx {
     /// Precisa rodar dentro do runtime tokio (o auto-work chama `tokio::spawn`).
     pub fn new() -> Self {
-        let providers: Vec<Arc<dyn AgentProvider>> =
-            vec![Arc::new(ClaudeProvider::new()), Arc::new(OpencodeProvider::new())];
+        // `ARGUS_OPENCODE_MODEL` (`provedor/modelo`, como em `opencode models`) fixa o modelo do
+        // OpenCode; sem ela vale o padrão da própria CLI.
+        let opencode = match std::env::var("ARGUS_OPENCODE_MODEL").ok().map(|m| m.trim().to_string()).filter(|m| !m.is_empty()) {
+            Some(model) => OpencodeProvider::with_model(model),
+            None => OpencodeProvider::new(),
+        };
+        let providers: Vec<Arc<dyn AgentProvider>> = vec![Arc::new(ClaudeProvider::new()), Arc::new(opencode)];
         let (db, db_path) = match open_db() {
             Some((db, p)) => (Some(db), Some(p)),
             None => (None, None),

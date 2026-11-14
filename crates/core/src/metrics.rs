@@ -5,9 +5,10 @@
 //! Preços em USD por 1 milhão de tokens, editáveis via JSON (`pricing.json`).
 
 use crate::agents::provider::TokenUsage;
-use crate::db::{ProjectUsage, UsageRow};
+use crate::db::UsageRow;
+use chrono::{Days, NaiveDate, TimeZone};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// Preço de um modelo (USD por 1M tokens).
@@ -154,26 +155,34 @@ impl CostLine {
     pub fn total_tokens(&self) -> u64 {
         self.input_tokens + self.output_tokens + self.cache_read + self.cache_write
     }
-    fn add(&mut self, u: &TokenUsage, turns: u64, cost: f64) {
+    fn add(&mut self, u: &TokenUsage, cost: f64) {
         self.input_tokens += u.input_tokens;
         self.output_tokens += u.output_tokens;
         self.cache_read += u.cache_read;
         self.cache_write += u.cache_write;
-        self.turns += turns;
         self.api_cost_usd += cost;
     }
 }
 
 /// Agrega linhas por uma chave arbitrária (ordenado pela chave).
+///
+/// `turns` conta turnos, não linhas: um turno que usa dois modelos grava duas
+/// linhas de consumo (uma por modelo) e continua sendo um turno só.
 pub fn aggregate<F: Fn(&UsageRow) -> String>(rows: &[UsageRow], pricing: &Pricing, key: F) -> Vec<CostLine> {
-    let mut m: BTreeMap<String, CostLine> = BTreeMap::new();
+    let mut m: BTreeMap<String, (CostLine, HashSet<(i64, bool, i64)>)> = BTreeMap::new();
     for r in rows {
         let k = key(r);
-        m.entry(k.clone())
-            .or_insert_with(|| CostLine { key: k, ..Default::default() })
-            .add(&r.usage, 1, pricing.cost(&r.usage));
+        let (line, turns) =
+            m.entry(k.clone()).or_insert_with(|| (CostLine { key: k, ..Default::default() }, HashSet::new()));
+        line.add(&r.usage, pricing.cost(&r.usage));
+        turns.insert(r.turn_key());
     }
-    m.into_values().collect()
+    m.into_values()
+        .map(|(mut line, turns)| {
+            line.turns = turns.len() as u64;
+            line
+        })
+        .collect()
 }
 
 pub fn by_project(rows: &[UsageRow], p: &Pricing) -> Vec<CostLine> {
@@ -189,17 +198,30 @@ pub fn by_model(rows: &[UsageRow], p: &Pricing) -> Vec<CostLine> {
 pub fn by_day(rows: &[UsageRow], p: &Pricing) -> Vec<CostLine> {
     aggregate(rows, p, |r| day_string(r.created_at))
 }
+/// Por dia no fuso `tz` ("AAAA-MM-DD"). A interface usa o fuso do computador
+/// (`chrono::Local`): em UTC, o "hoje" de Brasília virava às 21h.
+pub fn by_day_in<Tz: TimeZone>(rows: &[UsageRow], p: &Pricing, tz: &Tz) -> Vec<CostLine> {
+    aggregate(rows, p, |r| day_in(r.created_at, tz).to_string())
+}
 
-/// Resumo por projeto a partir de `Db::usage_by_project` (já agrupado por modelo).
-pub fn summarize_projects(rows: &[ProjectUsage], p: &Pricing) -> Vec<CostLine> {
-    let mut m: BTreeMap<String, CostLine> = BTreeMap::new();
-    for r in rows {
-        let u = r.as_usage();
-        m.entry(r.project.clone())
-            .or_insert_with(|| CostLine { key: r.project.clone(), ..Default::default() })
-            .add(&u, r.turns, p.cost(&u));
-    }
-    m.into_values().collect()
+/// Data (calendário) do instante `ts` no fuso `tz`.
+pub fn day_in<Tz: TimeZone>(ts: i64, tz: &Tz) -> NaiveDate {
+    tz.timestamp_opt(ts, 0).earliest().map(|d| d.date_naive()).unwrap_or_default()
+}
+
+/// Instante (segundos Unix) em que o dia `day` começa no fuso `tz`. Se a
+/// meia-noite não existir (virada de horário de verão), vale a primeira hora válida.
+pub fn day_start_in<Tz: TimeZone>(day: NaiveDate, tz: &Tz) -> i64 {
+    (0..24)
+        .find_map(|h| tz.from_local_datetime(&day.and_hms_opt(h, 0, 0)?).earliest())
+        .map(|d| d.timestamp())
+        .unwrap_or_else(|| day.and_hms_opt(0, 0, 0).map(|d| d.and_utc().timestamp()).unwrap_or(0))
+}
+
+/// Os `n` últimos dias do calendário até o dia de `ts` no fuso `tz`, do mais antigo ao mais novo.
+pub fn last_days_in<Tz: TimeZone>(ts: i64, n: u64, tz: &Tz) -> Vec<NaiveDate> {
+    let today = day_in(ts, tz);
+    (0..n).rev().filter_map(|i| today.checked_sub_days(Days::new(i))).collect()
 }
 
 /// Segundos Unix -> "AAAA-MM-DD" (UTC).
@@ -293,6 +315,7 @@ mod tests {
             provider: prov.into(),
             usage: usage(Some("sonnet"), 1_000_000, 0, 0, 0, c),
             created_at: ts,
+            turn: None,
         };
         let rows = vec![row("/a", "claude", 0, None), row("/a", "claude", 86_400, Some(1.0)), row("/b", "opencode", 86_401, None)];
         let bp = by_project(&rows, &p);
@@ -307,15 +330,59 @@ mod tests {
         assert_eq!(by_model(&rows, &p)[0].key, "sonnet");
     }
 
+    /// Um turno com dois modelos (principal + subagente) é um turno só no total,
+    /// no projeto, no provedor e no dia; cada modelo aparece com 1.
     #[test]
-    fn summarize_from_db() {
+    fn two_models_in_one_turn_count_once() {
         let db = crate::db::Db::open_in_memory().unwrap();
-        db.insert_usage(1, "/a", "claude", &usage(Some("claude-opus-4-7"), 1_000_000, 0, 0, 0, None)).unwrap();
-        db.insert_usage(2, "/a", "claude", &usage(Some("claude-haiku-4-5"), 1_000_000, 0, 0, 0, None)).unwrap();
-        let s = summarize_projects(&db.usage_by_project(crate::db::TimeRange::last_days(1)).unwrap(), &Pricing::default());
+        db.insert_usage_turn(1, "/a", "claude", &usage(Some("claude-opus-4-7"), 1_000_000, 0, 0, 0, None), 500).unwrap();
+        db.insert_usage_turn(1, "/a", "claude", &usage(Some("claude-haiku-4-5"), 1_000_000, 0, 0, 0, None), 500).unwrap();
+        let rows = db.usage_rows(crate::db::TimeRange::last_days(1)).unwrap();
+        let p = Pricing::default();
+        let s = by_project(&rows, &p);
         assert_eq!(s.len(), 1);
         assert!((s[0].api_cost_usd - 6.0).abs() < 1e-9);
-        assert_eq!(s[0].turns, 2);
+        assert_eq!(s[0].turns, 1);
+        assert_eq!(by_provider(&rows, &p)[0].turns, 1);
+        assert_eq!(by_day(&rows, &p)[0].turns, 1);
+        assert_eq!(aggregate(&rows, &p, |_| "total".into())[0].turns, 1);
+        assert_eq!(by_model(&rows, &p).iter().map(|l| l.turns).collect::<Vec<_>>(), [1, 1]);
+        // Outro turno da mesma tarefa, e um turno de outra tarefa com o mesmo número.
+        db.insert_usage_turn(1, "/a", "claude", &usage(Some("claude-opus-4-7"), 1, 0, 0, 0, None), 501).unwrap();
+        db.insert_usage_turn(2, "/a", "claude", &usage(Some("claude-opus-4-7"), 1, 0, 0, 0, None), 500).unwrap();
+        let rows = db.usage_rows(crate::db::TimeRange::last_days(1)).unwrap();
+        assert_eq!(by_project(&rows, &p)[0].turns, 3);
+    }
+
+    /// O dia segue o fuso pedido: 22h30 de Brasília ainda é o mesmo dia (em UTC já seria o seguinte).
+    #[test]
+    fn days_follow_the_time_zone() {
+        let brt = chrono::FixedOffset::west_opt(3 * 3600).unwrap();
+        // 2026-11-14 22:30 em Brasília = 2026-11-15 01:30 UTC.
+        let ts = 1_794_706_200;
+        assert_eq!(day_string(ts), "2026-11-15");
+        assert_eq!(day_in(ts, &brt).to_string(), "2026-11-14");
+        assert_eq!(day_in(ts, &chrono::Utc).to_string(), "2026-11-15");
+        let start = day_start_in(day_in(ts, &brt), &brt);
+        assert_eq!(start, ts - 22 * 3600 - 30 * 60);
+        assert_eq!(day_in(start, &brt).to_string(), "2026-11-14");
+        assert_eq!(day_in(start - 1, &brt).to_string(), "2026-11-13");
+        let days: Vec<String> = last_days_in(ts, 3, &brt).iter().map(ToString::to_string).collect();
+        assert_eq!(days, ["2026-11-12", "2026-11-13", "2026-11-14"]);
+        let p = Pricing::default();
+        let row = |at| UsageRow {
+            task_id: 1,
+            project: "/a".into(),
+            provider: "claude".into(),
+            usage: usage(Some("sonnet"), 1, 0, 0, 0, None),
+            created_at: at,
+            turn: Some(at),
+        };
+        // 20h e 22h30 de Brasília: mesmo dia local, dias diferentes em UTC.
+        let rows = vec![row(ts - 9_000), row(ts)];
+        assert_eq!(by_day_in(&rows, &p, &brt).len(), 1);
+        assert_eq!(by_day_in(&rows, &p, &brt)[0].turns, 2);
+        assert_eq!(by_day(&rows, &p).len(), 2);
     }
 
     #[test]

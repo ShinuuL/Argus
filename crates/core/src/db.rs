@@ -41,6 +41,22 @@ pub struct UsageRow {
     pub provider: String,
     pub usage: TokenUsage,
     pub created_at: i64,
+    /// Identificador do turno que gerou a linha (um turno com dois modelos grava
+    /// duas linhas com o mesmo valor). None nas linhas antigas.
+    #[serde(default)]
+    pub turn: Option<i64>,
+}
+
+impl UsageRow {
+    /// Chave do turno, para contar turnos sem repetir: (tarefa, turno). Nas linhas
+    /// antigas, sem a coluna, vale o segundo da gravação (as linhas de um mesmo
+    /// turno eram gravadas juntas).
+    pub fn turn_key(&self) -> (i64, bool, i64) {
+        match self.turn {
+            Some(t) => (self.task_id, true, t),
+            None => (self.task_id, false, self.created_at),
+        }
+    }
 }
 
 /// Consumo agregado por projeto + provedor + modelo.
@@ -55,6 +71,8 @@ pub struct ProjectUsage {
     pub cache_write: u64,
     /// Soma dos custos informados pela CLI (None se nenhuma linha informou).
     pub reported_cost_usd: Option<f64>,
+    /// Turnos em que este modelo foi usado. Um turno com dois modelos aparece
+    /// nas duas linhas: não some entre modelos (use `metrics::by_project`).
     pub turns: u64,
 }
 
@@ -170,6 +188,12 @@ impl Db {
             conn.execute_batch("ALTER TABLE events ADD COLUMN subagent TEXT;")?;
         }
         conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_events_sub ON events(task_id, subagent);")?;
+        // Idem em `usage`: turno que gerou a linha (para contar turnos, não linhas).
+        let has_turn: bool =
+            conn.prepare("SELECT 1 FROM pragma_table_info('usage') WHERE name='turn'")?.exists([])?;
+        if !has_turn {
+            conn.execute_batch("ALTER TABLE usage ADD COLUMN turn INTEGER;")?;
+        }
         Ok(Self { conn: Mutex::new(conn) })
     }
 
@@ -264,12 +288,31 @@ impl Db {
         self.insert_usage_at(task_id, project, provider, u, now())
     }
 
+    /// Como `insert_usage`, marcando o turno: todas as linhas de um mesmo turno
+    /// (uma por modelo) levam o mesmo `turn`.
+    pub fn insert_usage_turn(&self, task_id: i64, project: &str, provider: &str, u: &TokenUsage, turn: i64) -> rusqlite::Result<i64> {
+        self.insert_usage_full(task_id, project, provider, u, now(), Some(turn))
+    }
+
     /// Como `insert_usage`, com data explícita (importação/testes).
     pub fn insert_usage_at(&self, task_id: i64, project: &str, provider: &str, u: &TokenUsage, at: i64) -> rusqlite::Result<i64> {
+        self.insert_usage_full(task_id, project, provider, u, at, None)
+    }
+
+    /// Data e turno explícitos.
+    pub fn insert_usage_full(
+        &self,
+        task_id: i64,
+        project: &str,
+        provider: &str,
+        u: &TokenUsage,
+        at: i64,
+        turn: Option<i64>,
+    ) -> rusqlite::Result<i64> {
         let c = self.c();
         c.execute(
-            "INSERT INTO usage(task_id, project, provider, model, input_tokens, output_tokens, cache_read, cache_write, cost_usd, created_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+            "INSERT INTO usage(task_id, project, provider, model, input_tokens, output_tokens, cache_read, cache_write, cost_usd, created_at, turn)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
             params![
                 task_id,
                 project,
@@ -280,7 +323,8 @@ impl Db {
                 to_i(u.cache_read),
                 to_i(u.cache_write),
                 u.cost_usd,
-                at
+                at,
+                turn
             ],
         )?;
         Ok(c.last_insert_rowid())
@@ -311,7 +355,7 @@ impl Db {
         let (a, b) = range.bounds();
         let c = self.c();
         let mut st = c.prepare(
-            "SELECT task_id, project, provider, model, input_tokens, output_tokens, cache_read, cache_write, cost_usd, created_at
+            "SELECT task_id, project, provider, model, input_tokens, output_tokens, cache_read, cache_write, cost_usd, created_at, turn
              FROM usage WHERE created_at >= ?1 AND created_at < ?2 ORDER BY created_at, id",
         )?;
         let rows = st.query_map([a, b], |r| {
@@ -328,6 +372,7 @@ impl Db {
                     cost_usd: r.get(8)?,
                 },
                 created_at: r.get(9)?,
+                turn: r.get(10)?,
             })
         })?;
         rows.collect()
@@ -339,7 +384,8 @@ impl Db {
         let c = self.c();
         let mut st = c.prepare(
             "SELECT project, provider, model, SUM(input_tokens), SUM(output_tokens), SUM(cache_read), SUM(cache_write),
-                    SUM(cost_usd), COUNT(*)
+                    SUM(cost_usd),
+                    COUNT(DISTINCT task_id || CASE WHEN turn IS NULL THEN ':s' || created_at ELSE ':t' || turn END)
              FROM usage WHERE created_at >= ?1 AND created_at < ?2
              GROUP BY project, provider, model ORDER BY project, provider, model",
         )?;
@@ -449,6 +495,50 @@ mod tests {
         assert_eq!(r.len(), 1);
         assert_eq!(r[0].input_tokens, 50);
         assert_eq!(db.usage_rows(TimeRange::all()).unwrap().len(), 3);
+    }
+
+    /// Um turno que usa dois modelos grava duas linhas, mas é um turno só.
+    #[test]
+    fn one_turn_two_models_is_one_turn() {
+        let db = Db::open_in_memory().unwrap();
+        let u = |m: &str| TokenUsage { input_tokens: 5, model: Some(m.into()), ..Default::default() };
+        db.insert_usage_turn(1, "/a", "claude", &u("opus"), 77).unwrap();
+        db.insert_usage_turn(1, "/a", "claude", &u("haiku"), 77).unwrap();
+        db.insert_usage_turn(1, "/a", "claude", &u("opus"), 78).unwrap();
+        let rows = db.usage_rows(TimeRange::all()).unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].turn, Some(77));
+        let keys: std::collections::HashSet<_> = rows.iter().map(UsageRow::turn_key).collect();
+        assert_eq!(keys.len(), 2);
+        // Por modelo: opus participou de 2 turnos, haiku de 1.
+        let by = db.usage_by_project(TimeRange::all()).unwrap();
+        let turns = |m: &str| by.iter().find(|r| r.model.as_deref() == Some(m)).unwrap().turns;
+        assert_eq!((turns("opus"), turns("haiku")), (2, 1));
+    }
+
+    /// Banco antigo, sem a coluna `turn`: migra e as linhas antigas contam pelo segundo.
+    #[test]
+    fn migrates_usage_without_turn() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.db");
+        {
+            let c = Connection::open(&p).unwrap();
+            c.execute_batch(
+                "CREATE TABLE usage(id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL, project TEXT NOT NULL,
+                 provider TEXT NOT NULL, model TEXT, input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL,
+                 cache_read INTEGER NOT NULL, cache_write INTEGER NOT NULL, cost_usd REAL, created_at INTEGER NOT NULL);
+                 INSERT INTO usage(task_id, project, provider, model, input_tokens, output_tokens, cache_read, cache_write, created_at)
+                 VALUES (1,'/a','claude','opus',1,1,0,0,100), (1,'/a','claude','haiku',1,1,0,0,100), (1,'/a','claude','opus',1,1,0,0,200);",
+            )
+            .unwrap();
+        }
+        let db = Db::open(&p).unwrap();
+        let rows = db.usage_rows(TimeRange::all()).unwrap();
+        assert!(rows.iter().all(|r| r.turn.is_none()));
+        let keys: std::collections::HashSet<_> = rows.iter().map(UsageRow::turn_key).collect();
+        assert_eq!(keys.len(), 2);
+        drop(db);
+        assert_eq!(Db::open(&p).unwrap().usage_rows(TimeRange::all()).unwrap().len(), 3);
     }
 
     #[test]

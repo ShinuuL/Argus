@@ -65,6 +65,31 @@ pub fn default_shell() -> CommandSpec {
     CommandSpec { program, ..Default::default() }
 }
 
+/// O que o PTY executa de fato para `program args`.
+///
+/// O ConPTY chama `CreateProcessW` com o nome como veio, e a busca do Windows
+/// pega o primeiro arquivo com esse nome no PATH. As CLIs instaladas pelo npm
+/// deixam três lado a lado (`opencode`, um script de shell sem extensão;
+/// `opencode.cmd`; às vezes um `.exe` em outra pasta), e o primeiro não é um
+/// executável do Windows ("não é um aplicativo Win32 válido", erro 193). Por
+/// isso o nome é resolvido antes (`.exe` > `.cmd`/`.bat`), e um `.cmd`/`.bat`
+/// roda por `cmd /c`.
+pub fn launch_target(program: &str, args: &[String]) -> (String, Vec<String>) {
+    let resolved = crate::agents::orchestrator::resolve_program(program);
+    wrap_script(&resolved.to_string_lossy(), args)
+}
+
+/// `.cmd`/`.bat` no Windows viram `cmd /c <script> args`; o resto passa direto.
+fn wrap_script(program: &str, args: &[String]) -> (String, Vec<String>) {
+    let ext = std::path::Path::new(program).extension().map(|e| e.to_string_lossy().to_ascii_lowercase());
+    if cfg!(windows) && matches!(ext.as_deref(), Some("cmd") | Some("bat")) {
+        let mut all = vec!["/c".to_string(), program.to_string()];
+        all.extend(args.iter().cloned());
+        return ("cmd.exe".to_string(), all);
+    }
+    (program.to_string(), args.to_vec())
+}
+
 impl PtyManager {
     pub fn new() -> Self {
         Self::default()
@@ -80,10 +105,13 @@ impl PtyManager {
             .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
             .map_err(|e| anyhow!("openpty: {e}"))?;
 
-        let mut builder = CommandBuilder::new(&cmd.program);
-        builder.args(&cmd.args);
+        let (program, args) = launch_target(&cmd.program, &cmd.args);
+        let mut builder = CommandBuilder::new(&program);
+        builder.args(&args);
         if let Some(cwd) = &cmd.cwd {
             builder.cwd(cwd);
+            // `PWD` herdado de quem abriu o Argus enganaria as CLIs rodadas no terminal.
+            builder.env("PWD", cwd);
         }
         for (k, v) in &cmd.env {
             builder.env(k, v);
@@ -215,6 +243,30 @@ impl PtyManager {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn scripts_run_through_cmd_and_names_are_resolved() {
+        let args = vec!["auth".to_string(), "login".to_string()];
+        let (p, a) = wrap_script(r"C:
+pm\opencode.cmd", &args);
+        if cfg!(windows) {
+            assert_eq!(p, "cmd.exe");
+            assert_eq!(a, ["/c", r"C:
+pm\opencode.cmd", "auth", "login"]);
+        } else {
+            assert_eq!((p.as_str(), a.len()), (r"C:
+pm\opencode.cmd", 2));
+        }
+        // Executável de verdade (ou nome desconhecido) passa direto.
+        assert_eq!(wrap_script(r"C:un\opencode.exe", &args), (r"C:un\opencode.exe".to_string(), args.clone()));
+        assert_eq!(launch_target("programa-que-nao-existe-xyz", &args).0, "programa-que-nao-existe-xyz");
+        // Um nome do PATH vira caminho completo de um executável do sistema, nunca um arquivo sem extensão.
+        #[cfg(windows)]
+        {
+            let (p, _) = launch_target("cmd", &[]);
+            assert!(p.to_ascii_lowercase().ends_with("cmd.exe"), "{p}");
+        }
+    }
 
     #[tokio::test]
     async fn echo_output() {

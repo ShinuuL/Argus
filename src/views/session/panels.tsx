@@ -88,11 +88,13 @@ export function ChangesPanel({ taskId, project }: { taskId: TaskId | null; proje
   const [busy, setBusy] = useState<"apply" | "discard" | null>(null);
   const [reload, setReload] = useState(0);
   const state = task?.state;
+  /** Aplicada ou descartada: o worktree não existe mais, não há diff para calcular. */
+  const ended = state === "Applied" || state === "Discarded";
 
   useEffect(() => {
     setDiff(null);
     setError(null);
-    if (taskId == null) return;
+    if (taskId == null || ended) return;
     let alive = true;
     api.taskDiff(taskId).then(
       (d) => alive && setDiff(d),
@@ -102,7 +104,7 @@ export function ChangesPanel({ taskId, project }: { taskId: TaskId | null; proje
       alive = false;
     };
     // Recarrega quando o turno termina (o estado muda), no /diff e no botão.
-  }, [taskId, rev, reload, state]);
+  }, [taskId, rev, reload, state, ended]);
 
   const files = useMemo(() => (diff ? diffFiles(diff) : []), [diff]);
 
@@ -163,7 +165,9 @@ export function ChangesPanel({ taskId, project }: { taskId: TaskId | null; proje
       {!canAct && busy === null && (
         <p className="rp-hint">
           {closed
-            ? "Esta sessão já foi encerrada."
+            ? task.state === "Applied"
+              ? "Esta sessão já foi encerrada: as alterações foram aplicadas no projeto."
+              : "Esta sessão já foi encerrada: as alterações foram descartadas."
             : isTaskActive(task.state)
               ? "Aguarde o turno terminar para aplicar ou descartar."
               : !hasWorktree
@@ -176,7 +180,7 @@ export function ChangesPanel({ taskId, project }: { taskId: TaskId | null; proje
           {error}
         </div>
       )}
-      {diff === null && !error && <p className="rp-empty">Calculando o diff…</p>}
+      {diff === null && !error && !closed && <p className="rp-empty">Calculando o diff…</p>}
       {diff !== null && !diff.trim() && <p className="rp-empty">Sem alterações nesta sessão.</p>}
       {files.length > 0 && (
         <div className="df-files">

@@ -630,7 +630,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
               )}
               {taskId != null && (
                 <div className="cv-strip">
-                  <AutoWorkBadge taskId={taskId} />
+                  <AutoWorkBadge taskId={taskId} readOnly={closed} />
                 </div>
               )}
               <Composer

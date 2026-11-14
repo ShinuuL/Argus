@@ -56,6 +56,17 @@ pub struct TokenUsage {
     pub cost_usd: Option<f64>,
 }
 
+impl TokenUsage {
+    /// Nenhum token e nenhum custo: o turno não chamou modelo algum.
+    pub fn is_empty(&self) -> bool {
+        self.input_tokens == 0
+            && self.output_tokens == 0
+            && self.cache_read == 0
+            && self.cache_write == 0
+            && self.cost_usd.unwrap_or(0.0) <= 0.0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AgentEvent {
     /// Id de sessão da CLI (para continuar a conversa).
@@ -188,6 +199,10 @@ pub trait AgentProvider: Send + Sync {
     fn task_command(&self, prompt: &str, cwd: &Path, session: Option<&str>) -> CommandSpec;
     /// Uma linha de saída pode gerar vários eventos.
     fn parse_line(&self, line: &str) -> Vec<AgentEvent>;
+    /// Avisa que um processo novo da CLI vai começar para a sessão `session`
+    /// (None = sessão nova). Provedores cujo parser guarda estado por processo
+    /// (totais acumulados) zeram esse estado aqui.
+    fn begin_turn(&self, _session: Option<&str>) {}
 }
 
 /// Localiza um executável no PATH, preferindo `.exe` real a wrappers

@@ -249,12 +249,9 @@ pub struct AttachmentData {
 }
 
 /// `%APPDATA%/argus/anexos` (ou a pasta temporária, se não houver APPDATA).
+/// A mesma pasta que o core libera ao agente com `--add-dir`.
 pub fn attachments_root() -> PathBuf {
-    std::env::var_os("APPDATA")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
-        .join("argus")
-        .join("anexos")
+    argus_core::attachments::root()
 }
 
 /// Nome de arquivo seguro: só o último trecho, sem caracteres de caminho ou de

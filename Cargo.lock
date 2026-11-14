@@ -76,6 +76,7 @@ dependencies = [
  "anyhow",
  "axum",
  "base64 0.23.1",
+ "chrono",
  "futures",
  "git2",
  "local-ip-address",
@@ -101,6 +102,7 @@ version = "0.1.0"
 dependencies = [
  "argus-core",
  "base64 0.23.1",
+ "chrono",
  "rodio",
  "serde",
  "serde_json",

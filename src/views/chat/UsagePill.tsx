@@ -14,6 +14,7 @@ export function tokensPt(n: number): string {
 /** US$ 3,40. */
 export function usdPt(v: number): string {
   const digits = v > 0 && v < 0.01 ? 4 : 2;
+  v = v || 0; // -0 e NaN viram 0 (senão sai "US$ -0,00")
   return `US$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 }
 

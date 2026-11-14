@@ -1,4 +1,5 @@
 ﻿pub mod agents;
+pub mod attachments;
 pub mod autowork;
 pub mod db;
 pub mod deps;

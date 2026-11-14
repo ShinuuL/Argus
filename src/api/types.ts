@@ -343,6 +343,8 @@ export interface UsageRow {
   provider: string;
   usage: TokenUsage;
   created_at: number;
+  /** Turno que gerou a linha (um turno com dois modelos tem duas linhas); null nas linhas antigas. */
+  turn: number | null;
 }
 
 export interface ProjectUsage {

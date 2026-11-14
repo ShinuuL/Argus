@@ -50,6 +50,8 @@ impl AgentProvider for OpencodeProvider {
 
     fn task_command(&self, prompt: &str, cwd: &Path, session: Option<&str>) -> CommandSpec {
         // Sem argumento de mensagem, `opencode run` lê o prompt da entrada padrão.
+        // A pasta da sessão é a do processo; a CLI confia na variável `PWD` quando ela
+        // existe, por isso `build_command` a acerta junto com o diretório.
         let mut c = CommandSpec::new("opencode").arg("run").arg("--format").arg("json");
         if let Some(m) = &self.model {
             c = c.arg("-m").arg(m);
@@ -215,6 +217,23 @@ mod tests {
         assert_eq!(parse_json_event("log solto", None), vec![AgentEvent::Raw("log solto".into())]);
     }
 
+    // Linha real (opencode 2.0.22, `run --format json`, encurtada): o id da
+    // chamada vem em `part.id` ("call_..."), e existe também `part.partID`.
+    const READ: &str = r#"{"type":"tool_use","timestamp":1794677373580,"sessionID":"ses_e24e4b9b4ffe","part":{"partID":"prt_1db1b7974001","sessionID":"ses_e24e4b9b4ffe","messageID":"msg_1db1b738c001","type":"tool","id":"call_ff5bd8c5844a","tool":"read","state":{"status":"completed","input":{"path":"README.md","limit":20},"output":"Read file README.md, lines 1-3","title":"read","time":{"start":1,"end":2}}}}"#;
+
+    #[test]
+    fn parses_real_tool_line_of_v2() {
+        assert!(matches!(
+            parse_json_event(READ, Some("openai/x")).as_slice(),
+            [AgentEvent::ToolUse { name, input }] if name == "read" && input["path"] == "README.md" && input["limit"] == 20
+        ));
+        // A mesma forma com a ferramenta "task": o subagente recebe o id da chamada (`part.id`).
+        let task = READ.replace(r#""tool":"read""#, r#""tool":"task""#);
+        let e = parse_json_event(&task, None);
+        assert!(matches!(&e[1], AgentEvent::SubagentStart { id, .. } if id == "call_ff5bd8c5844a"), "{e:?}");
+        assert!(matches!(&e[2], AgentEvent::SubagentEnd { id, ok: true, .. } if id == "call_ff5bd8c5844a"));
+    }
+
     // Linha SINTÉTICA (formato da ferramenta "task" segundo o código-fonte da CLI;
     // não conferida numa execução real).
     const TASK: &str = r#"{"type":"tool_use","timestamp":2,"sessionID":"ses_1","part":{"type":"tool","id":"prt_9","callID":"call_7","tool":"task","state":{"status":"completed","input":{"description":"Listar","prompt":"liste","subagent_type":"general"},"output":"a.txt","metadata":{"sessionId":"ses_filha"}}}}"#;
@@ -244,6 +263,7 @@ mod tests {
         let p = OpencodeProvider::with_model("openai/gpt");
         let c = p.task_command("a \"b\" %PATH%\nc", Path::new("."), Some("ses_1"));
         assert_eq!(c.args, ["run", "--format", "json", "-m", "openai/gpt", "--session", "ses_1"]);
+        assert_eq!(c.cwd.as_deref(), Some(Path::new(".")));
         assert_eq!(c.stdin.as_deref(), Some("a \"b\" %PATH%\nc"));
     }
 
