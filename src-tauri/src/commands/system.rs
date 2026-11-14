@@ -99,7 +99,7 @@ pub async fn app_info(app: AppHandle, ctx: State<'_, AppCtx>) -> Result<AppInfo,
         version: app.package_info().version.to_string(),
         db_path: ctx.db_path.clone(),
         has_db: ctx.orch.db().is_some(),
-        data_dir: std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("argus")),
+        data_dir: std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join(argus_core::paths::dir_name())),
     })
 }
 

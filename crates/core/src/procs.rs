@@ -424,7 +424,7 @@ fn allowed_file() -> Option<PathBuf> {
     let base = std::env::var_os("APPDATA")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
-    Some(base.join("argus").join("allowed_tools.json"))
+    Some(base.join(crate::paths::dir_name()).join("allowed_tools.json"))
 }
 
 fn load_allowed() -> Option<HashMap<String, Vec<String>>> {

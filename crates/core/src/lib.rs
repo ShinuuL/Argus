@@ -1,4 +1,4 @@
-﻿pub mod agents;
+pub mod agents;
 pub mod attachments;
 pub mod autowork;
 pub mod db;
@@ -6,6 +6,7 @@ pub mod deps;
 pub mod isolation;
 pub mod metrics;
 pub mod monitor;
+pub mod paths;
 pub mod permissions;
 pub mod procs;
 pub mod pty;

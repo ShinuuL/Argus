@@ -36,7 +36,7 @@ pub fn db_path() -> Option<PathBuf> {
         return Some(p);
     }
     let base = std::env::var_os("APPDATA").map(PathBuf::from).or_else(|| std::env::current_dir().ok())?;
-    Some(base.join("argus").join("argus.db"))
+    Some(base.join(argus_core::paths::dir_name()).join("argus.db"))
 }
 
 /// Abre o banco; None (com aviso no stderr) se não for possível.

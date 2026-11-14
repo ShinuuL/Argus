@@ -1,0 +1,17 @@
+{
+  "productName": "Argus Dev",
+  "identifier": "dev.argus.app.dev",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Argus Dev",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 800,
+        "minHeight": 500,
+        "dragDropEnabled": false
+      }
+    ]
+  }
+}

@@ -16,6 +16,11 @@ fn main() {
     // `OLDPWD` apontando para a pasta de onde foi chamado. Os processos filhos
     // (agentes, terminais) herdariam o valor, e há CLI que confia nele em vez do
     // diretório real. Aqui ainda não existe nenhuma outra thread.
+    // Build de depuração (cópia de desenvolvimento) usa a pasta de dados `argus-dev`,
+    // separada das sessões de verdade do app instalado.
+    if cfg!(debug_assertions) && std::env::var_os(argus_core::paths::PROFILE_VAR).is_none() {
+        std::env::set_var(argus_core::paths::PROFILE_VAR, "dev");
+    }
     std::env::remove_var("PWD");
     std::env::remove_var("OLDPWD");
     tauri::Builder::default()

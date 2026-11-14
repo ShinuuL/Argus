@@ -69,9 +69,9 @@ impl Pricing {
     /// Caminho padrão: `%APPDATA%/argus/pricing.json` (ou `~/.config/argus/pricing.json`).
     pub fn default_path() -> Option<PathBuf> {
         if let Some(a) = std::env::var_os("APPDATA") {
-            return Some(PathBuf::from(a).join("argus").join("pricing.json"));
+            return Some(PathBuf::from(a).join(crate::paths::dir_name()).join("pricing.json"));
         }
-        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config").join("argus").join("pricing.json"))
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config").join(crate::paths::dir_name()).join("pricing.json"))
     }
 
     /// Padrões mesclados com o JSON em `path` (se existir e for válido).

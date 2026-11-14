@@ -13,7 +13,7 @@ pub fn root() -> PathBuf {
     std::env::var_os("APPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
-        .join("argus")
+        .join(crate::paths::dir_name())
         .join("anexos")
 }
 
