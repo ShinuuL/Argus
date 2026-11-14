@@ -92,6 +92,43 @@ pub enum AgentEvent {
     /// Evento interno do subagente `subagent` (texto, ferramenta...). Os eventos
     /// do agente principal continuam vindo sem este invólucro.
     Scoped { subagent: String, event: Box<AgentEvent> },
+    /// O usuário trocou o agente (provedor) da conversa: `from` e `to` são ids de
+    /// provedor. Vira a linha divisória "Agente trocado: X → Y" no chat.
+    ProviderSwitch { from: String, to: String },
+    /// A CLI negou uma ferramenta por falta de permissão. `tool` é o nome da
+    /// ferramenta ("Bash", "PowerShell"...) e `command` o comando pedido (vazio
+    /// quando a ferramenta não é de shell).
+    Denied { tool: String, command: String },
+}
+
+/// Opções de um turno, escolhidas por tarefa.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TurnOptions {
+    /// Modelo pedido à CLI (claude: `--model`; opencode: `-m`). None = padrão da CLI.
+    pub model: Option<String>,
+    /// Aviso curto sobre o ambiente (cópia isolada do projeto). O claude o recebe
+    /// por `--append-system-prompt`; quem não tem isso prefixa o primeiro pedido.
+    pub system_note: Option<String>,
+}
+
+/// Um modelo que a CLI aceita.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelInfo {
+    /// Valor passado à CLI.
+    pub value: String,
+    /// Nome para exibir.
+    pub label: String,
+    /// Descrição curta informada pela CLI (pode ser vazia).
+    pub hint: String,
+}
+
+/// Um nome de modelo pode virar argumento de linha de comando? Recusa vazio,
+/// espaços, caracteres de controle e o que começa com `-` (seria lido como opção).
+pub fn valid_model_name(m: &str) -> bool {
+    !m.is_empty()
+        && m.len() <= 200
+        && !m.starts_with('-')
+        && m.chars().all(|c| c.is_ascii_alphanumeric() || "._-/:[]#@+".contains(c))
 }
 
 /// Resumo de um subagente, montado a partir dos eventos de uma tarefa.
@@ -182,6 +219,8 @@ impl AgentEvent {
             AgentEvent::Result { .. } => "Result",
             AgentEvent::Usage(_) => "Usage",
             AgentEvent::Raw(_) => "Raw",
+            AgentEvent::ProviderSwitch { .. } => "ProviderSwitch",
+            AgentEvent::Denied { .. } => "Denied",
         }
     }
 }
@@ -196,7 +235,16 @@ pub trait AgentProvider: Send + Sync {
     fn login_command(&self) -> CommandSpec;
     /// Comando de um turno. O prompt vai em `CommandSpec::stdin`.
     /// Com `session` = Some, continua a conversa existente.
-    fn task_command(&self, prompt: &str, cwd: &Path, session: Option<&str>) -> CommandSpec;
+    fn task_command(&self, prompt: &str, cwd: &Path, session: Option<&str>, opts: &TurnOptions) -> CommandSpec;
+    /// Modelo inicial das conversas novas deste provedor (None = padrão da CLI).
+    fn default_model(&self) -> Option<String> {
+        None
+    }
+    /// Modelos que a CLI aceita, perguntando a ela (bloqueante; pode levar
+    /// segundos). Não inclui o "padrão da CLI".
+    fn list_models(&self) -> Result<Vec<ModelInfo>, String> {
+        Ok(Vec::new())
+    }
     /// Uma linha de saída pode gerar vários eventos.
     fn parse_line(&self, line: &str) -> Vec<AgentEvent>;
     /// Avisa que um processo novo da CLI vai começar para a sessão `session`
@@ -240,6 +288,19 @@ pub(crate) fn run_capture(program: &Path, args: &[&str]) -> Option<(bool, String
     s.push('\n');
     s.push_str(&String::from_utf8_lossy(&out.stderr));
     Some((out.status.success(), s))
+}
+
+/// Como `run_capture`, devolvendo só a saída padrão (stderr descartado).
+pub(crate) fn run_capture_stdout(program: &Path, args: &[&str]) -> Option<(bool, String)> {
+    let mut cmd = std::process::Command::new(program);
+    cmd.args(args).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let out = cmd.output().ok()?;
+    Some((out.status.success(), String::from_utf8_lossy(&out.stdout).into_owned()))
 }
 
 /// Remove sequências ANSI (cores/cursor) de uma saída de terminal.
@@ -308,6 +369,19 @@ mod tests {
         let info = subagents_of(&[start, sc, end]);
         assert_eq!(info.len(), 1);
         assert!(info[0].done && info[0].ok == Some(true) && info[0].result.as_deref() == Some("a"));
+    }
+
+    #[test]
+    fn model_names_are_checked() {
+        for ok in ["opus", "opus[1m]", "claude-fable-5-2[1m]", "openai/gpt-6-luna", "provedor/modelo#variante"] {
+            assert!(valid_model_name(ok), "{ok}");
+        }
+        for bad in ["", "--dangerously", "a b", "a\nb", "x;y", "a\"b"] {
+            assert!(!valid_model_name(bad), "{bad}");
+        }
+        let sw = AgentEvent::ProviderSwitch { from: "claude".into(), to: "opencode".into() };
+        assert_eq!(serde_json::to_string(&sw).unwrap(), r#"{"ProviderSwitch":{"from":"claude","to":"opencode"}}"#);
+        assert_eq!(sw.kind(), "ProviderSwitch");
     }
 
     #[test]

@@ -132,6 +132,50 @@ export interface ProviderInfo {
   /** "claude" ou "opencode". */
   id: string;
   display_name: string;
+  /** Modelo inicial das conversas novas (null = padrão da CLI). */
+  default_model: string | null;
+}
+
+/** Um modelo que a CLI do provedor aceita. */
+export interface ModelInfo {
+  /** Valor passado à CLI. */
+  value: string;
+  label: string;
+  /** Descrição curta informada pela CLI (pode vir vazia). */
+  hint: string;
+}
+
+/**
+ * Onde o agente trabalha: "Isolated" = numa cópia do projeto (git worktree),
+ * com Aplicar/Descartar depois; "Direct" = na própria pasta do projeto.
+ */
+export type WorkMode = "Isolated" | "Direct";
+
+/** Modo de trabalho padrão das conversas novas. */
+export interface WorkModeInfo {
+  global: WorkMode;
+  /** Preferência do projeto (null = segue a geral). */
+  project: WorkMode | null;
+  /** O que vale para uma conversa nova no projeto. */
+  effective: WorkMode;
+  /** false = a pasta não é repositório git: só aceita "Direct". */
+  is_git: boolean;
+}
+
+/** O que existe na pasta do projeto e não existiria numa cópia isolada. */
+export interface IsolationReport {
+  is_git: boolean;
+  /** Não versionados (pasta termina com "/"). */
+  untracked: string[];
+  /** Ignorados pelo git que parecem relevantes (.env, dados locais). */
+  ignored: string[];
+  /** Versionados com alterações não commitadas. */
+  modified: string[];
+  /** Caminhos citados no pedido que não existiriam na cópia. */
+  mentioned: string[];
+  untracked_total: number;
+  ignored_total: number;
+  modified_total: number;
 }
 
 export type LoginStatus = "NotInstalled" | "LoggedOut" | "LoggedIn" | "Unknown";
@@ -164,7 +208,30 @@ export type AgentEvent =
   /** O subagente `id` terminou; `result` é o texto devolvido a quem o chamou. */
   | { SubagentEnd: { id: string; ok: boolean; result: string } }
   /** Evento interno do subagente `subagent`; os do agente principal vêm sem este invólucro. */
-  | { Scoped: { subagent: string; event: AgentEvent } };
+  | { Scoped: { subagent: string; event: AgentEvent } }
+  /** O usuário trocou o agente da conversa (ids de provedor). */
+  | { ProviderSwitch: { from: string; to: string } }
+  /** A CLI negou uma ferramenta por falta de permissão (`command` vazio se não for de shell). */
+  | { Denied: { tool: string; command: string } };
+
+/** Conjunto padrão de comandos liberados ao agente e o que cada nível de git acrescenta. */
+export interface DefaultPermissions {
+  git_read: string[];
+  inspect: string[];
+  inspect_powershell: string[];
+  git_local: string[];
+  git_remote: string[];
+  never: string[];
+}
+
+/** Permissões de comando: o padrão e as preferências dos níveis de git (null = segue o padrão). */
+export interface PermissionsInfo {
+  defaults: DefaultPermissions;
+  global_local: boolean | null;
+  global_remote: boolean | null;
+  project_local: boolean | null;
+  project_remote: boolean | null;
+}
 
 /** Resumo de um subagente de uma tarefa (visão somente leitura). */
 export interface SubagentInfo {
@@ -201,6 +268,11 @@ export interface Task {
   session_id: string | null;
   /** Turnos já iniciados (1 = só o pedido inicial). */
   turns: number;
+  /** Modelo dos próximos turnos (null = padrão da CLI). */
+  model: string | null;
+  mode: WorkMode;
+  /** Houve troca de agente: o próximo turno leva o resumo da conversa. */
+  handoff: boolean;
 }
 
 // ------------------------------------------------------------------ auto-work

@@ -15,6 +15,8 @@
 .cv-hbtn[aria-pressed="true"] { color: var(--text); background: var(--bg-active); }
 .cv-state { flex: none; padding: 1px 8px; border-radius: 9px; background: var(--surface); border: 1px solid var(--border); font-size: 11px; white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
 .cv-state.muted { color: var(--text-2); }
+.cv-agent { flex: 0 2 auto; min-width: 96px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--text-2); cursor: default; }
+@container (max-width: 680px) { .cv-agent { display: none; } }
 .cv-total { flex: none; white-space: nowrap; font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; cursor: default; }
 @container (max-width: 620px) { .cv-total-tok { display: none; } }
 @container (max-width: 520px) { .cv-state { display: none; } .chat-pill-label { display: none; } }
@@ -42,6 +44,39 @@
 .cv-usage { font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .cv-fail { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--err); border-radius: var(--radius-lg); background: var(--err-bg); color: var(--err); }
 .cv-fail-text { color: var(--text); overflow-wrap: anywhere; white-space: pre-wrap; }
+
+/* Divisória "Agente trocado: X → Y". */
+.cv-switch { display: flex; align-items: center; gap: 12px; color: var(--text-2); font-size: 12px; }
+.cv-switch::before, .cv-switch::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.cv-handoff { padding: 0 4px; }
+
+/* Ferramenta negada por falta de permissão. */
+.cv-denied { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border: 1px solid var(--warn); border-radius: var(--radius-lg); background: var(--surface); font-size: 12.5px; }
+.cv-denied > .ic { flex: none; margin-top: 2px; color: var(--warn); }
+.cv-denied-text { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.cv-denied code { font: var(--font-mono); font-size: 12px; padding: 1px 6px; border-radius: 4px; background: var(--bg); border: 1px solid var(--border); overflow-wrap: anywhere; }
+.cv-denied-why { flex-basis: 100%; color: var(--text-2); font-size: 12px; }
+.cv-denied > button { flex: none; align-self: center; padding: 3px 10px; font-size: 12px; }
+
+/* Aviso que segura o envio (modo isolado sem o que o pedido precisa; segunda sessão direta). */
+.cv-hold { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--warn); border-radius: var(--radius-lg); background: var(--surface); font-size: 12.5px; }
+.cv-hold-head { display: flex; align-items: center; gap: 8px; }
+.cv-hold-head > .ic { flex: none; color: var(--warn); }
+.cv-hold-head b { flex: 1; min-width: 0; }
+.cv-hold-x { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; background: none; border: 0; color: var(--text-2); }
+.cv-hold-x:hover { background: var(--bg-hover); color: var(--text); }
+.cv-hold p { margin: 0; color: var(--text-2); line-height: 1.45; }
+.cv-hold p b { color: var(--text); }
+.cv-hold code { font: var(--font-mono); font-size: 12px; padding: 1px 6px; border-radius: 4px; background: var(--bg); border: 1px solid var(--border); overflow-wrap: anywhere; }
+.cv-hold-cited { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; padding: 6px 8px; border-radius: var(--radius); background: var(--bg); border-left: 3px solid var(--warn); }
+.cv-hold-cited code { border-color: var(--warn); font-weight: 600; }
+.cv-hold-group { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.cv-hold-label { flex: none; width: 190px; color: var(--text-2); }
+.cv-hold-items { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; }
+.cv-hold-more { color: var(--text-2); }
+.cv-hold-actions { display: flex; gap: 8px; margin-top: 2px; }
+.cv-hold-actions button { padding: 4px 12px; }
+@container (max-width: 560px) { .cv-hold-group { flex-direction: column; gap: 3px; } .cv-hold-label { width: auto; } }
 
 /* Fala do usuário em caixa; resposta em Markdown corrido, sem balão. */
 .cv .chat-msg.user { align-self: stretch; max-width: none; padding: 10px 13px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); color: var(--text); }

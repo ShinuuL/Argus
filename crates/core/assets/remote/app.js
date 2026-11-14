@@ -471,6 +471,16 @@ function chatEntries(events, owner) {
     } else if ("Result" in event) out.push({ type: "result", ok: !!event.Result.ok, summary: String(event.Result.summary || "") });
     else if ("Usage" in event) out.push({ type: "usage", usage: event.Usage });
     else if ("Raw" in event) pushNotice(out, event.Raw);
+    else if ("Denied" in event) out.push({ type: "denied", tool: String(event.Denied.tool), command: String(event.Denied.command || "") });
+    else if ("ProviderSwitch" in event) {
+      // Trocas seguidas sem mensagem no meio viram uma divisória só.
+      const last = out[out.length - 1];
+      const sw = event.ProviderSwitch;
+      if (last && last.type === "switch") {
+        if (last.from === sw.to) out.pop();
+        else last.to = sw.to;
+      } else out.push({ type: "switch", from: String(sw.from), to: String(sw.to) });
+    }
   }
   return out;
 }
@@ -549,12 +559,14 @@ function splitTurns(entries) {
   const turns = [];
   for (const entry of entries) {
     if (entry.type === "user") turns.push({ user: entry.text, items: [] });
+    // A divisória de troca de agente fica entre os turnos, fora de "N passos".
+    else if (entry.type === "switch") turns.push({ user: null, items: [entry] }, { user: null, items: [] });
     else {
       if (!turns.length) turns.push({ user: null, items: [] });
       turns[turns.length - 1].items.push(entry);
     }
   }
-  return turns;
+  return turns.filter((t) => t.user != null || t.items.length > 0);
 }
 /** Índice da resposta final do turno; o que vem antes vira "N passos". */
 function stepsCut(items) {
@@ -880,6 +892,8 @@ function onEvent(e) {
     case "stderr": {
       const ev = e.type === "agent" ? e.event : { Raw: e.line };
       if (e.type === "stderr" && isHiddenNotice(e.line)) return;
+      // Agente trocado no computador: o provedor e o modelo da sessão mudaram.
+      if (ev && typeof ev === "object" && "ProviderSwitch" in ev) loadTasks();
       if (chat.id === e.task) {
         if (chat.loaded && !chat.loading) {
           chat.events.push(ev);
@@ -1328,6 +1342,23 @@ function entryNode(entry, key, ctx) {
         icon("alert", 18),
         h("span", null, h("b", { text: "Erro: o turno falhou." }), entry.summary.trim() ? h("span", { class: "fail-text", text: " " + entry.summary.trim() }) : null),
       );
+    case "switch":
+      return h("div", { class: "switch-line", role: "separator" }, h("span", { text: "Agente trocado: " + providerName(entry.from) + " → " + providerName(entry.to) }));
+    case "denied": {
+      const shell = entry.tool === "Bash" || entry.tool === "PowerShell";
+      return h(
+        "div",
+        { class: "denied", role: "status" },
+        icon("alert", 16),
+        h(
+          "span",
+          null,
+          h("b", { text: shell ? "Comando negado" : "Ferramenta negada: " + entry.tool }),
+          entry.command ? h("code", { text: entry.command }) : null,
+          h("span", { class: "denied-why", text: "Não está entre os comandos liberados ao agente. Libere no computador, na aba Configurações." }),
+        ),
+      );
+    }
     case "usage": {
       const u = entry.usage;
       const parts = [formatTokens(u.input_tokens) + " entrada", formatTokens(u.output_tokens) + " saída", "cache " + formatTokens(u.cache_read) + " lido", formatTokens(u.cache_write) + " gravado"];
@@ -1521,7 +1552,9 @@ VIEWS.chat = (r, top, view, foot) => {
     if (t) {
       const info = stateInfo(t.state);
       bar.h1.textContent = sessionTitle(t.prompt, 70);
-      bar.sub.textContent = projectName(t.project) + " · " + providerName(t.provider) + " · #" + t.id;
+      // Provedor e modelo atuais (mudam quando o agente é trocado no computador).
+      bar.sub.textContent =
+        projectName(t.project) + " · " + providerName(t.provider) + " · " + (t.model || "modelo padrão") + (t.mode === "Direct" ? " · direto na pasta" : "") + " · #" + t.id;
       bar.sub.hidden = false;
       pill.hidden = false;
       pill.className = "pill " + info.tone;

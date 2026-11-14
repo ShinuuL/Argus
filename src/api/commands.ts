@@ -21,10 +21,13 @@ import type {
   LoginStatus,
   MediaCmd,
   MetricsReport,
+  IsolationReport,
   MissingCommand,
+  ModelInfo,
   MusicFolder,
   Owner,
   Path,
+  PermissionsInfo,
   Pricing,
   Project,
   ProjectAutoWork,
@@ -45,6 +48,8 @@ import type {
   TimeRange,
   TodayUsage,
   UsageRow,
+  WorkMode,
+  WorkModeInfo,
 } from "./types";
 
 // ------------------------------------------------------------------ workspace
@@ -153,9 +158,53 @@ export const tasksList = (): Promise<Task[]> => invoke("tasks_list");
 /** Uma tarefa pelo id (null se não existir). */
 export const taskGet = (id: TaskId): Promise<Task | null> => invoke("task_get", { id });
 
-/** Cria uma tarefa num worktree isolado e devolve o id; o andamento chega em `onOrch`. */
-export const taskCreate = (project: Path, provider: string, prompt: string): Promise<TaskId> =>
-  invoke("task_create", { project, provider, prompt });
+/** Opções de uma conversa nova. */
+export interface TaskCreateOptions {
+  /** Modelo (null ou vazio = padrão da CLI). */
+  model?: string | null;
+  /** Modo de trabalho (ausente = o padrão do projeto). */
+  mode?: WorkMode | null;
+}
+
+/** Cria uma tarefa (isolada num worktree, ou direto na pasta) e devolve o id; o andamento chega em `onOrch`. */
+export const taskCreate = (project: Path, provider: string, prompt: string, opts: TaskCreateOptions = {}): Promise<TaskId> =>
+  invoke("task_create", { project, provider, prompt, model: opts.model || null, mode: opts.mode ?? null });
+
+/** Troca o modelo da tarefa (null = padrão da CLI); vale a partir do próximo turno. */
+export const taskSetModel = (id: TaskId, model: string | null): Promise<void> =>
+  invoke("task_set_model", { id, model: model || null });
+
+/** Troca o agente (provedor) da tarefa, com o turno parado; o próximo turno leva o resumo da conversa. */
+export const taskSetProvider = (id: TaskId, provider: string): Promise<void> =>
+  invoke("task_set_provider", { id, provider });
+
+/** Modelos que a CLI do provedor aceita (sem gastar tokens; a lista fica em memória no backend). */
+export const agentsModels = (provider: string, refresh = false): Promise<ModelInfo[]> =>
+  invoke("agents_models", { provider, refresh });
+
+/** Preferências de modo de trabalho; com `project`, inclui a do projeto e o que vale para ele. */
+export const workmodeGet = (project?: Path | null): Promise<WorkModeInfo> =>
+  invoke("workmode_get", { project: project ?? null });
+
+/** Grava a preferência geral (`project` null) ou a do projeto; `mode` null apaga a do projeto. */
+export const workmodeSet = (project: Path | null, mode: WorkMode | null): Promise<void> =>
+  invoke("workmode_set", { project, mode });
+
+/** Conjunto padrão de comandos liberados e as preferências dos níveis de git (geral e do projeto). */
+export const permissionsGet = (project?: Path | null): Promise<PermissionsInfo> =>
+  invoke("permissions_get", { project: project ?? null });
+
+/** Liga/desliga um nível de git no geral (`project` null) ou no projeto; `on` null apaga a preferência. */
+export const permissionsSet = (project: Path | null, level: "local" | "remote", on: boolean | null): Promise<void> =>
+  invoke("permissions_set", { project, level, on });
+
+/** Acrescenta um comando negado à lista de comandos permitidos do projeto; devolve a lista. */
+export const permissionsAllowDenied = (project: Path, tool: string, command: string): Promise<string[]> =>
+  invoke("permissions_allow_denied", { project, tool, command });
+
+/** O que a cópia isolada do projeto não teria (não versionados, ignorados, não commitados, caminhos citados). */
+export const isolationCheck = (project: Path, prompt: string): Promise<IsolationReport> =>
+  invoke("isolation_check", { project, prompt });
 
 /** Cancela o turno em andamento da tarefa. */
 export const taskCancel = (id: TaskId): Promise<void> => invoke("task_cancel", { id });
@@ -173,7 +222,7 @@ export const taskSubagents = (id: TaskId): Promise<SubagentInfo[]> => invoke("ta
 export const taskSubagentHistory = (id: TaskId, subagent: string): Promise<AgentEvent[]> =>
   invoke("task_subagent_history", { id, subagent });
 
-/** Diff do worktree da tarefa em relação ao projeto ("" = sem alterações). */
+/** Diff da tarefa: o do worktree (isolada) ou o da pasta em relação ao último commit (direta). "" = sem alterações. */
 export const taskDiff = (id: TaskId): Promise<string> => invoke("task_diff", { id });
 
 /** Aplica as alterações da tarefa no projeto. */

@@ -221,8 +221,8 @@ export function AllowedCommands({ project }: { project: Path }) {
     <div className="srv-allowed">
       <b>Comandos permitidos ao agente</b>
       <div className="small muted">
-        Projeto {baseName(project)}. Um padrão por linha (ex.: npm run dev:*). Com acceptEdits o Bash fica bloqueado;
-        cada linha vira --allowedTools "Bash(...)".
+        Projeto {baseName(project)}. Soma ao conjunto padrão (git de leitura e inspeção). Um padrão por linha (ex.: npm run
+        dev:*); cada linha vira --allowedTools "Bash(...)". Para a ferramenta PowerShell, escreva PowerShell(comando).
       </div>
       <textarea
         rows={4}

@@ -18,7 +18,21 @@ pub struct TaskRecord {
     pub created_at: i64,
     pub workdir: Option<String>,
     pub session_id: Option<String>,
+    /// Modelo escolhido para a tarefa (None = padrão da CLI).
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Modo de trabalho ("Isolated" ou "Direct"). None nas tarefas antigas (isoladas).
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// JSON com a sessão e o modelo guardados de cada provedor já usado na tarefa.
+    #[serde(default)]
+    pub provider_state: Option<String>,
+    /// O próximo turno precisa receber o resumo da conversa (houve troca de provedor).
+    #[serde(default)]
+    pub handoff: bool,
 }
+
+const TASK_COLS: &str = "id, project, provider, prompt, state, created_at, workdir, session_id, model, mode, provider_state, handoff";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventRecord {
@@ -169,10 +183,13 @@ impl Db {
              CREATE INDEX IF NOT EXISTS idx_usage_time ON usage(created_at);
              CREATE TABLE IF NOT EXISTS autowork(
                 project TEXT PRIMARY KEY,
-                settings TEXT NOT NULL);",
+                settings TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS settings(
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL);",
         )?;
         // Migração de bancos antigos: colunas novas em `tasks`.
-        for col in ["workdir TEXT", "session_id TEXT"] {
+        for col in ["workdir TEXT", "session_id TEXT", "model TEXT", "mode TEXT", "provider_state TEXT", "handoff INTEGER NOT NULL DEFAULT 0"] {
             let name = col.split_whitespace().next().unwrap();
             let exists: bool = conn
                 .prepare("SELECT 1 FROM pragma_table_info('tasks') WHERE name=?1")?
@@ -226,6 +243,58 @@ impl Db {
         Ok(())
     }
 
+    /// Modelo da tarefa (None = padrão da CLI).
+    pub fn set_task_model(&self, id: i64, model: Option<&str>) -> rusqlite::Result<()> {
+        self.c().execute("UPDATE tasks SET model=?2 WHERE id=?1", params![id, model])?;
+        Ok(())
+    }
+
+    /// Modo de trabalho da tarefa ("Isolated" ou "Direct").
+    pub fn set_task_mode(&self, id: i64, mode: &str) -> rusqlite::Result<()> {
+        self.c().execute("UPDATE tasks SET mode=?2 WHERE id=?1", params![id, mode])?;
+        Ok(())
+    }
+
+    /// Troca de provedor: grava de uma vez o provedor novo, a sessão e o modelo
+    /// dele, o que ficou guardado dos outros e a marca de resumo pendente.
+    pub fn set_task_provider(
+        &self,
+        id: i64,
+        provider: &str,
+        session_id: Option<&str>,
+        model: Option<&str>,
+        provider_state: &str,
+        handoff: bool,
+    ) -> rusqlite::Result<()> {
+        self.c().execute(
+            "UPDATE tasks SET provider=?2, session_id=?3, model=?4, provider_state=?5, handoff=?6 WHERE id=?1",
+            params![id, provider, session_id, model, provider_state, handoff],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_task_handoff(&self, id: i64, handoff: bool) -> rusqlite::Result<()> {
+        self.c().execute("UPDATE tasks SET handoff=?2 WHERE id=?1", params![id, handoff])?;
+        Ok(())
+    }
+
+    /// Preferência geral do app (chave e valor em texto).
+    pub fn get_setting(&self, key: &str) -> rusqlite::Result<Option<String>> {
+        self.c().query_row("SELECT value FROM settings WHERE key=?1", [key], |r| r.get(0)).optional()
+    }
+
+    /// Grava a preferência; `None` apaga.
+    pub fn set_setting(&self, key: &str, value: Option<&str>) -> rusqlite::Result<()> {
+        match value {
+            Some(v) => self.c().execute(
+                "INSERT INTO settings(key, value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                params![key, v],
+            )?,
+            None => self.c().execute("DELETE FROM settings WHERE key=?1", [key])?,
+        };
+        Ok(())
+    }
+
     pub fn max_task_id(&self) -> rusqlite::Result<i64> {
         self.c().query_row("SELECT COALESCE(MAX(id),0) FROM tasks", [], |r| r.get(0))
     }
@@ -233,7 +302,7 @@ impl Db {
     pub fn get_task(&self, id: i64) -> rusqlite::Result<Option<TaskRecord>> {
         self.c()
             .query_row(
-                "SELECT id, project, provider, prompt, state, created_at, workdir, session_id FROM tasks WHERE id=?1",
+                &format!("SELECT {TASK_COLS} FROM tasks WHERE id=?1"),
                 [id],
                 task_row,
             )
@@ -242,9 +311,7 @@ impl Db {
 
     pub fn list_tasks(&self) -> rusqlite::Result<Vec<TaskRecord>> {
         let c = self.c();
-        let mut st = c.prepare(
-            "SELECT id, project, provider, prompt, state, created_at, workdir, session_id FROM tasks ORDER BY id DESC",
-        )?;
+        let mut st = c.prepare(&format!("SELECT {TASK_COLS} FROM tasks ORDER BY id DESC"))?;
         let rows = st.query_map([], task_row)?;
         rows.collect()
     }
@@ -427,6 +494,10 @@ fn task_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskRecord> {
         created_at: r.get(5)?,
         workdir: r.get(6)?,
         session_id: r.get(7)?,
+        model: r.get(8)?,
+        mode: r.get(9)?,
+        provider_state: r.get(10)?,
+        handoff: r.get::<_, Option<i64>>(11)?.unwrap_or(0) != 0,
     })
 }
 
@@ -560,6 +631,23 @@ mod tests {
         let db = Db::open(&p).unwrap();
         let t = db.get_task(1).unwrap().unwrap();
         assert_eq!(t.session_id, None);
+        // Colunas novas da tarefa: modelo, modo de trabalho, estado por provedor e resumo pendente.
+        assert_eq!((t.model.clone(), t.mode.clone(), t.provider_state.clone(), t.handoff), (None, None, None, false));
+        db.set_task_model(1, Some("sonnet")).unwrap();
+        db.set_task_mode(1, "Direct").unwrap();
+        db.set_task_provider(1, "opencode", None, Some("a/b"), "{\"claude\":{}}", true).unwrap();
+        let t = db.get_task(1).unwrap().unwrap();
+        assert_eq!((t.provider.as_str(), t.model.as_deref(), t.mode.as_deref()), ("opencode", Some("a/b"), Some("Direct")));
+        assert_eq!((t.session_id.clone(), t.provider_state.as_deref(), t.handoff), (None, Some("{\"claude\":{}}"), true));
+        db.set_task_handoff(1, false).unwrap();
+        assert!(!db.get_task(1).unwrap().unwrap().handoff);
+        // A tabela de preferências também nasce na migração.
+        assert_eq!(db.get_setting("work_mode").unwrap(), None);
+        db.set_setting("work_mode", Some("Direct")).unwrap();
+        db.set_setting("work_mode", Some("Isolated")).unwrap();
+        assert_eq!(db.get_setting("work_mode").unwrap().as_deref(), Some("Isolated"));
+        db.set_setting("work_mode", None).unwrap();
+        assert_eq!(db.get_setting("work_mode").unwrap(), None);
         db.set_task_session(1, "s").unwrap();
         // Eventos antigos continuam legíveis, sem subagente; os novos aceitam a coluna.
         db.insert_event_sub(1, "Text", "\"novo\"", Some("toolu_1")).unwrap();

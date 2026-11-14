@@ -51,11 +51,19 @@ impl AgentProvider for ClaudeProvider {
         CommandSpec::new("claude").arg("auth").arg("login")
     }
 
-    fn task_command(&self, prompt: &str, cwd: &Path, session: Option<&str>) -> CommandSpec {
+    fn task_command(&self, prompt: &str, cwd: &Path, session: Option<&str>, opts: &TurnOptions) -> CommandSpec {
         // `claude -p` sem argumento de prompt lê o prompt da entrada padrão.
         let mut c = CommandSpec::new("claude").arg("-p");
         if let Some(s) = session {
             c = c.arg("--resume").arg(s);
+        }
+        // O modelo vale por processo: acompanha também o `--resume`.
+        if let Some(m) = opts.model.as_deref().filter(|m| valid_model_name(m)) {
+            c = c.arg("--model").arg(m);
+        }
+        // O aviso de ambiente também vale por processo (todo turno o repete).
+        if let Some(n) = opts.system_note.as_deref().filter(|n| !n.is_empty()) {
+            c = c.arg("--append-system-prompt").arg(n);
         }
         // Em `-p` não há quem aprove permissões: sem isto toda edição de arquivo
         // é negada. `acceptEdits` libera só edições (Bash continua bloqueado).
@@ -78,6 +86,90 @@ impl AgentProvider for ClaudeProvider {
             self.parser.lock().unwrap_or_else(|e| e.into_inner()).totals.remove(s);
         }
     }
+
+    fn list_models(&self) -> Result<Vec<ModelInfo>, String> {
+        probe_models()
+    }
+}
+
+/// Lê a lista de modelos da resposta ao pedido de controle `initialize` do
+/// stream-json (conferido no claude 2.1.220: `response.response.models`, cada
+/// item com `value`, `displayName` e `description`). O item "default" fica de
+/// fora: a interface já oferece "Padrão da CLI". Nenhum outro campo da resposta
+/// (conta, organização) é lido.
+pub fn models_from_initialize(v: &Value) -> Option<Vec<ModelInfo>> {
+    if v.get("type").and_then(Value::as_str) != Some("control_response") {
+        return None;
+    }
+    let list = v.pointer("/response/response/models")?.as_array()?;
+    Some(
+        list.iter()
+            .filter_map(|m| {
+                let value = m.get("value")?.as_str()?;
+                if value == "default" || !valid_model_name(value) {
+                    return None;
+                }
+                // O rótulo é o próprio valor aceito em `--model` (há nomes de exibição
+                // repetidos); a dica é o começo da descrição ("Opus 5 with 1M context · ...").
+                let about = s(m, "description").split(" · ").next().unwrap_or_default().trim();
+                let hint = if about.is_empty() { s(m, "displayName") } else { about };
+                Some(ModelInfo { value: value.to_string(), label: value.to_string(), hint: hint.to_string() })
+            })
+            .collect(),
+    )
+}
+
+/// Sobe um `claude -p` que não grava sessão, manda só o pedido de controle
+/// `initialize` (nenhuma mensagem: nenhum modelo é chamado), lê a resposta e
+/// mata o processo.
+fn probe_models() -> Result<Vec<ModelInfo>, String> {
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::{Command, Stdio};
+
+    let exe = which_bin("claude").ok_or_else(|| "A CLI claude não está instalada.".to_string())?;
+    let mut cmd = Command::new(exe);
+    cmd.args(["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--no-session-persistence"])
+        .current_dir(std::env::temp_dir())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let mut child = cmd.spawn().map_err(|e| format!("Não foi possível executar o claude: {e}"))?;
+    // O stdin fica aberto até a resposta: fechá-lo antes encerraria a CLI.
+    let mut stdin = child.stdin.take();
+    if let Some(stdin) = stdin.as_mut() {
+        let line = serde_json::json!({ "type": "control_request", "request_id": "argus-modelos", "request": { "subtype": "initialize" } });
+        let _ = stdin.write_all(format!("{line}\n").as_bytes());
+        let _ = stdin.flush();
+    }
+    let Some(stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("O claude não abriu a saída.".into());
+    };
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+            if let Some(models) = models_from_initialize(&v) {
+                let _ = tx.send(models);
+                return;
+            }
+        }
+    });
+    let got = rx.recv_timeout(std::time::Duration::from_secs(45));
+    let _ = child.kill();
+    let _ = child.wait();
+    drop(stdin);
+    got.map_err(|_| "O claude não informou a lista de modelos a tempo.".to_string())
+}
+
+fn ev_is_empty_denial(ev: &AgentEvent) -> bool {
+    matches!(ev, AgentEvent::Denied { tool, .. } if tool.is_empty())
 }
 
 /// Lê `loggedIn` da saída JSON de `claude auth status` (só o booleano).
@@ -312,6 +404,19 @@ impl StreamParser {
                 // modelo foi chamado, tudo vem zerado. Sem evento de uso, o turno não entra
                 // nas métricas nem na contagem de turnos da tarefa.
                 evs.extend(usages.into_iter().filter(|u| !u.is_empty()).map(AgentEvent::Usage));
+                // Ferramentas negadas por falta de permissão (conferido no claude 2.1.220:
+                // `permission_denials: [{ tool_name, tool_use_id, tool_input }]`).
+                if let Some(denials) = v.get("permission_denials").and_then(Value::as_array) {
+                    for d in denials {
+                        let ev = AgentEvent::Denied {
+                            tool: s(d, "tool_name").to_string(),
+                            command: d.pointer("/tool_input/command").and_then(Value::as_str).unwrap_or_default().to_string(),
+                        };
+                        if !ev_is_empty_denial(&ev) && !evs.contains(&ev) {
+                            evs.push(ev);
+                        }
+                    }
+                }
                 let is_error = v.get("is_error").and_then(Value::as_bool).unwrap_or(false);
                 let sub_ok = v.get("subtype").and_then(Value::as_str).map_or(true, |s| s == "success");
                 evs.push(AgentEvent::Result {
@@ -440,12 +545,50 @@ mod tests {
 
     #[test]
     fn task_command_shape() {
-        let c = ClaudeProvider::new().task_command("oi \"x\" 100%\nlinha", Path::new("."), None);
+        let c = ClaudeProvider::new().task_command("oi \"x\" 100%\nlinha", Path::new("."), None, &TurnOptions::default());
         let tail = ["--permission-mode", "acceptEdits", "--output-format", "stream-json", "--verbose"];
         assert_eq!(c.args, [&["-p"][..], &tail].concat());
         assert_eq!(c.stdin.as_deref(), Some("oi \"x\" 100%\nlinha"));
-        let c = ClaudeProvider::new().task_command("e agora?", Path::new("."), Some("abc"));
+        let c = ClaudeProvider::new().task_command("e agora?", Path::new("."), Some("abc"), &TurnOptions::default());
         assert_eq!(c.args, [&["-p", "--resume", "abc"][..], &tail].concat());
+        // Modelo e aviso de ambiente acompanham também a retomada; nunca entra `--add-dir` do projeto.
+        let opts = TurnOptions { model: Some("opus[1m]".into()), system_note: Some("cópia isolada do projeto x".into()) };
+        let c = ClaudeProvider::new().task_command("oi", Path::new("."), Some("abc"), &opts);
+        let extra = ["-p", "--resume", "abc", "--model", "opus[1m]", "--append-system-prompt", "cópia isolada do projeto x"];
+        assert_eq!(c.args, [&extra[..], &tail].concat());
+        assert!(!c.args.iter().any(|a| a == "--add-dir"));
+        let bad = TurnOptions { model: Some("--dangerously-skip-permissions".into()), system_note: None };
+        assert_eq!(ClaudeProvider::new().task_command("oi", Path::new("."), None, &bad).args, [&["-p"][..], &tail].concat());
+    }
+
+    /// Linha real (claude 2.1.220, encurtada): `git push` negado com o padrão.
+    #[test]
+    fn denied_tools_become_events() {
+        let line = r#"{"type":"result","subtype":"success","is_error":false,"session_id":"s9","result":"feito","total_cost_usd":0.1,"modelUsage":{},"permission_denials":[{"tool_name":"PowerShell","tool_use_id":"toolu_01","tool_input":{"command":"git push .","description":"Execute git push ."}},{"tool_name":"PowerShell","tool_use_id":"toolu_02","tool_input":{"command":"git push .","description":"de novo"}},{"tool_name":"Read","tool_use_id":"toolu_03","tool_input":{"file_path":"C:\\fora.txt"}}]}"#;
+        let evs = parse_stream_json(line);
+        let denied: Vec<&AgentEvent> = evs.iter().filter(|e| matches!(e, AgentEvent::Denied { .. })).collect();
+        assert_eq!(denied.len(), 2, "o mesmo comando negado duas vezes aparece uma vez: {evs:?}");
+        assert_eq!(denied[0], &AgentEvent::Denied { tool: "PowerShell".into(), command: "git push .".into() });
+        assert_eq!(denied[1], &AgentEvent::Denied { tool: "Read".into(), command: String::new() });
+        assert!(matches!(evs.last(), Some(AgentEvent::Result { ok: true, .. })));
+    }
+
+    #[test]
+    fn models_come_from_the_initialize_response() {
+        // Forma real da resposta (claude 2.1.220), encurtada.
+        let v = serde_json::json!({"type":"control_response","response":{"subtype":"success","request_id":"r1","response":{
+            "account": {"qualquer": "coisa"},
+            "models":[
+                {"value":"default","displayName":"Default (recommended)","description":"d"},
+                {"value":"opus[1m]","displayName":"Opus (1M context)","description":"Opus 5 with 1M context · Best for everyday, complex tasks"},
+                {"value":"haiku","displayName":"Haiku","description":""},
+                {"value":"com espaço","displayName":"x","description":""}
+            ]}}});
+        let m = models_from_initialize(&v).unwrap();
+        assert_eq!(m.len(), 2, "sem o default e sem nome inválido: {m:?}");
+        assert_eq!((m[0].value.as_str(), m[0].label.as_str(), m[0].hint.as_str()), ("opus[1m]", "opus[1m]", "Opus 5 with 1M context"));
+        assert_eq!((m[1].value.as_str(), m[1].label.as_str(), m[1].hint.as_str()), ("haiku", "haiku", "Haiku"));
+        assert_eq!(models_from_initialize(&serde_json::json!({"type":"system","subtype":"init"})), None);
     }
 
     #[test]

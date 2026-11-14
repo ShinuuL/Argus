@@ -38,7 +38,7 @@
   background: var(--bg); color: var(--text); font: inherit;
   border: 1px solid var(--border); border-radius: var(--radius); outline: none;
 }
-.sel-search:focus { border-color: var(--focus); }
+.sel-search:focus, .sel-search:focus-visible { border-color: var(--focus); outline: none; }
 .sel-search::placeholder { color: var(--text-2); }
 .sel-list { overflow-y: auto; padding: 4px; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
 .sel-opt {
@@ -48,8 +48,9 @@
 .sel-opt.on { background: var(--bg-hover); }
 .sel-opt.cur { color: var(--accent-text); font-weight: 600; }
 .sel-opt.cur.on { background: var(--selection); }
-.sel-opt-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.sel-opt-hint { flex: none; color: var(--text-2); font-size: 12px; font-weight: 400; }
+.sel-opt-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sel-opt-hint { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); font-size: 12px; font-weight: 400; }
+.sel-note { flex: none; padding: 6px 12px; border-top: 1px solid var(--border); color: var(--text-2); font-size: 12px; }
 .sel-check { flex: none; }
 .sel-empty { padding: 8px; color: var(--text-2); }
 

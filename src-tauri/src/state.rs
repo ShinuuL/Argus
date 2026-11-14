@@ -57,8 +57,9 @@ fn open_db() -> Option<(Db, PathBuf)> {
 impl AppCtx {
     /// Precisa rodar dentro do runtime tokio (o auto-work chama `tokio::spawn`).
     pub fn new() -> Self {
-        // `ARGUS_OPENCODE_MODEL` (`provedor/modelo`, como em `opencode models`) fixa o modelo do
-        // OpenCode; sem ela vale o padrão da própria CLI.
+        // `ARGUS_OPENCODE_MODEL` (`provedor/modelo`, como em `opencode models`) é só o modelo
+        // inicial das conversas novas do OpenCode; o de cada conversa é escolhido na interface
+        // e fica gravado na tarefa. Sem ela, o inicial é o padrão da própria CLI.
         let opencode = match std::env::var("ARGUS_OPENCODE_MODEL").ok().map(|m| m.trim().to_string()).filter(|m| !m.is_empty()) {
             Some(model) => OpencodeProvider::with_model(model),
             None => OpencodeProvider::new(),
@@ -68,7 +69,7 @@ impl AppCtx {
             Some((db, p)) => (Some(db), Some(p)),
             None => (None, None),
         };
-        let orch = Orchestrator::with_db(providers.clone(), 2, true, db);
+        let orch = Orchestrator::with_db(providers.clone(), 2, db);
         let autowork = AutoWork::start(orch.clone());
         let remote = RemoteServer::new();
         remote.set_autowork(autowork.clone());

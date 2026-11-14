@@ -1007,7 +1007,7 @@ mod tests {
         fn login_command(&self) -> CommandSpec {
             CommandSpec::new("cmd")
         }
-        fn task_command(&self, p: &str, cwd: &Path, _s: Option<&str>) -> CommandSpec {
+        fn task_command(&self, p: &str, cwd: &Path, _s: Option<&str>, _o: &crate::agents::provider::TurnOptions) -> CommandSpec {
             let mut c;
             if cfg!(windows) {
                 c = CommandSpec::new("powershell").cwd(cwd).stdin(p);
@@ -1042,7 +1042,7 @@ mod tests {
     async fn run_loop(marks: bool, doc: &str, s: AutoWorkSettings) -> (AutoWorkEvent, String, Vec<AutoWorkEvent>) {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join(FILE_NAME), doc).unwrap();
-        let orch = Orchestrator::new(vec![Arc::new(Fake { marks })], 1, false);
+        let orch = Orchestrator::new(vec![Arc::new(Fake { marks })], 1);
         let mut rx = orch.subscribe();
         let aw = AutoWork::start(orch.clone());
         aw.set_settings(dir.path(), AutoWorkSettings { run_checks: false, enabled: true, ..s });

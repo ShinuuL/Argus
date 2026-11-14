@@ -775,7 +775,7 @@ mod tests {
     #[tokio::test]
     async fn auth_flow() {
         let srv = RemoteServer::new();
-        let orch = Orchestrator::new(vec![], 1, false);
+        let orch = Orchestrator::new(vec![], 1);
         let info = srv.start(orch, 0).await.unwrap();
         assert!(info.qr_svg.contains("<svg"));
         let port = info.port;
@@ -826,7 +826,7 @@ mod tests {
     #[tokio::test]
     async fn every_route_requires_the_token() {
         let srv = RemoteServer::new();
-        let port = srv.start(Orchestrator::new(vec![], 1, false), 0).await.unwrap().port;
+        let port = srv.start(Orchestrator::new(vec![], 1), 0).await.unwrap().port;
         let token = srv.token.read().unwrap().clone();
         let gets = [
             "/", "/app.js", "/style.css", "/manifest.webmanifest", "/icon.svg", "/api/tasks", "/api/tasks/1", "/api/projects",
@@ -856,7 +856,7 @@ mod tests {
     #[tokio::test]
     async fn stopping_the_server_closes_open_websockets() {
         let srv = RemoteServer::new();
-        let port = srv.start(Orchestrator::new(vec![], 1, false), 0).await.unwrap().port;
+        let port = srv.start(Orchestrator::new(vec![], 1), 0).await.unwrap().port;
         let token = srv.token.read().unwrap().clone();
         let req = format!(
             "GET /api/stream HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nCookie: {COOKIE}={token}\r\n\r\n"
@@ -882,7 +882,7 @@ mod tests {
     #[tokio::test]
     async fn unauthorized_page_is_clear_and_leaks_nothing() {
         let srv = RemoteServer::new();
-        let port = srv.start(Orchestrator::new(vec![], 1, false), 0).await.unwrap().port;
+        let port = srv.start(Orchestrator::new(vec![], 1), 0).await.unwrap().port;
         let token = srv.token.read().unwrap().clone();
         let missing = http(port, get("/pair", "")).await;
         let wrong = http(port, get("/pair?token=errado", "")).await;
@@ -909,7 +909,7 @@ mod tests {
         std::fs::create_dir(&alfa).unwrap();
         let srv = RemoteServer::new();
         srv.set_projects(vec![alfa.clone()]);
-        let port = srv.start(Orchestrator::new(vec![], 1, false), 0).await.unwrap().port;
+        let port = srv.start(Orchestrator::new(vec![], 1), 0).await.unwrap().port;
         let auth = format!("Authorization: Bearer {}\r\n", srv.token.read().unwrap());
 
         let r = http(port, get("/api/projects", &auth)).await;

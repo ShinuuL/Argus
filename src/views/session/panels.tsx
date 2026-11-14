@@ -110,6 +110,34 @@ export function ChangesPanel({ taskId, project }: { taskId: TaskId | null; proje
 
   if (taskId == null || !task) return <ProjectChanges project={project} />;
 
+  if (task.mode === "Direct") {
+    return (
+      <div className="rp-body">
+        <div className="rp-head">
+          <b className="ellipsis">Sessão #{taskId} · direto na pasta</b>
+          <button className="wb-sbtn" title="Recarregar o diff" aria-label="Recarregar o diff" onClick={() => setReload((n) => n + 1)}>
+            <Icon name="refresh" size={14} />
+          </button>
+        </div>
+        <div className="rp-direct" role="note">
+          <Icon name="folderOpen" size={14} />
+          <span>
+            Esta sessão trabalha direto na pasta do projeto: as alterações já valem, <b>não há o que aplicar nem descartar</b>.
+            Abaixo, o diff da pasta em relação ao último commit (inclui o que já estava alterado antes da sessão).
+          </span>
+        </div>
+        {error && (
+          <div className="err small" role="alert">
+            {error}
+          </div>
+        )}
+        {diff === null && !error && <p className="rp-empty">Calculando o diff…</p>}
+        {diff !== null && !diff.trim() && <p className="rp-empty">Nenhuma alteração em relação ao último commit.</p>}
+        <DiffBody diff={diff} files={files} />
+      </div>
+    );
+  }
+
   const finished = isTaskFinished(task.state);
   const hasWorktree = task.workdir != null && !samePath(task.workdir, task.project);
   const canAct = finished && hasWorktree && busy === null;
@@ -182,6 +210,15 @@ export function ChangesPanel({ taskId, project }: { taskId: TaskId | null; proje
       )}
       {diff === null && !error && !closed && <p className="rp-empty">Calculando o diff…</p>}
       {diff !== null && !diff.trim() && <p className="rp-empty">Sem alterações nesta sessão.</p>}
+      <DiffBody diff={diff} files={files} />
+    </div>
+  );
+}
+
+/** Lista de arquivos do diff e o diff colorido. */
+function DiffBody({ diff, files }: { diff: string | null; files: { file: string; add: number; del: number }[] }) {
+  return (
+    <>
       {files.length > 0 && (
         <div className="df-files">
           {files.map((f) => (
@@ -202,7 +239,7 @@ export function ChangesPanel({ taskId, project }: { taskId: TaskId | null; proje
           ))}
         </pre>
       )}
-    </div>
+    </>
   );
 }
 

@@ -25,7 +25,7 @@ export const LOCAL_COMMANDS: LocalCommand[] = [
   { name: "aplicar", aliases: ["apply"], description: "Aplica as alterações no projeto", needsTask: true },
   { name: "descartar", aliases: ["discard"], description: "Descarta as alterações da tarefa", needsTask: true },
   { name: "sessoes", aliases: ["sessions", "sessões"], description: "Lista as tarefas para trocar de conversa" },
-  { name: "modelo", aliases: ["model", "models", "modelos"], description: "Troca o modelo", args: "<modelo>" },
+  { name: "modelo", aliases: ["model", "models", "modelos"], description: "Escolhe o modelo da conversa", args: "[modelo]" },
   { name: "ajuda", aliases: ["help", "?"], description: "Lista os comandos" },
 ];
 

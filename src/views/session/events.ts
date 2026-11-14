@@ -33,6 +33,10 @@ export type ChatEntry =
   | { type: "usage"; usage: TokenUsage }
   | { type: "notices"; lines: string[] }
   | { type: "subagent"; id: string }
+  /** Linha divisória "Agente trocado: X → Y" (ids de provedor). */
+  | { type: "switch"; from: string; to: string }
+  /** Ferramenta negada por falta de permissão. */
+  | { type: "denied"; tool: string; command: string }
   | { type: "unknown"; kind: string };
 
 /** Ferramentas que criam subagente: o `SubagentStart` já vira o cartão. */
@@ -83,6 +87,19 @@ export function chatEntries(events: AgentEvent[], owner: string | null): ChatEnt
     }
     if ("SubagentEnd" in event) continue;
     if (evOwner !== owner) continue;
+    if ("Denied" in event) {
+      out.push({ type: "denied", ...event.Denied });
+      continue;
+    }
+    if ("ProviderSwitch" in event) {
+      const last = out[out.length - 1];
+      // Trocas seguidas sem nenhuma mensagem no meio viram uma divisória só.
+      if (last?.type === "switch") {
+        if (last.from === event.ProviderSwitch.to) out.pop();
+        else last.to = event.ProviderSwitch.to;
+      } else out.push({ type: "switch", ...event.ProviderSwitch });
+      continue;
+    }
     if ("User" in event) out.push({ type: "user", text: event.User });
     else if ("Text" in event) {
       if (event.Text.trim()) out.push({ type: "text", text: event.Text });
@@ -265,12 +282,14 @@ export function splitTurns(entries: ChatEntry[]): Turn[] {
   const turns: Turn[] = [];
   for (const entry of entries) {
     if (entry.type === "user") turns.push({ user: entry.text, items: [] });
+    // A divisória de troca de agente fica entre os turnos, fora do agrupamento de passos.
+    else if (entry.type === "switch") turns.push({ user: null, items: [entry] }, { user: null, items: [] });
     else {
       if (turns.length === 0) turns.push({ user: null, items: [] });
       turns[turns.length - 1].items.push(entry);
     }
   }
-  return turns;
+  return turns.filter((t) => t.user != null || t.items.length > 0);
 }
 
 /**

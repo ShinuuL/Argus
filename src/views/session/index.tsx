@@ -22,9 +22,11 @@ import {
   totalTokens,
   variantOf,
   type Path,
+  type IsolationReport,
   type Pricing,
   type Task,
   type TaskId,
+  type WorkMode,
 } from "@/api";
 import { Icon } from "@/shell/icons";
 import { useApp, useLayout, useWorkbench } from "@/store";
@@ -39,6 +41,7 @@ import {
   splitPrompt,
   toolCallAsText,
   useChat,
+  chatKey,
   type ComposerHandle,
   type LocalCommandName,
 } from "@/views/chat";
@@ -55,6 +58,7 @@ import {
   type ChatEntry,
   type SubagentNode,
 } from "./events";
+import { DirectHold, hasGaps, IsolationHold, ModelPill, ModePill, useWorkModeInfo, WORK_MODE_HELP, WORK_MODE_LABEL } from "./pills";
 import { Transcript } from "./Transcript";
 import { useTaskEvents } from "./useTaskEvents";
 import "./session.css";
@@ -250,8 +254,8 @@ const SUGGESTIONS = [
   "Revise as alterações pendentes e aponte riscos.",
 ];
 
-function Welcome(props: { project: Path | null; hasRoot: boolean; onPick(text: string): void }) {
-  const { project, hasRoot, onPick } = props;
+function Welcome(props: { project: Path | null; hasRoot: boolean; mode: WorkMode; onPick(text: string): void }) {
+  const { project, hasRoot, mode, onPick } = props;
   const pickRoot = useApp((s) => s.pickRoot);
   return (
     <div className="cv-welcome">
@@ -261,7 +265,11 @@ function Welcome(props: { project: Path | null; hasRoot: boolean; onPick(text: s
           <h2>
             O que vamos fazer em <b>{baseName(project)}</b>?
           </h2>
-          <p>Escreva o pedido abaixo. O agente trabalha num worktree isolado; você revisa e aplica as alterações depois.</p>
+          <p>
+            {mode === "Isolated"
+              ? "Escreva o pedido abaixo. No modo Isolado o agente trabalha numa cópia do projeto, só com o que está commitado; você revisa e aplica as alterações depois."
+              : "Escreva o pedido abaixo. No modo Direto na pasta o agente trabalha na própria pasta do projeto, enxerga tudo, e as alterações valem na hora."}
+          </p>
           <div className="cv-suggest">
             {SUGGESTIONS.map((s) => (
               <button key={s} onClick={() => onPick(s)}>
@@ -303,6 +311,17 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   const { events, times, loaded, error: loadError } = useTaskEvents(taskId, busy);
   const pricing = usePricing();
   const [provider, setProvider] = useState("");
+  /** Modelo escolhido para a conversa nova (undefined = o inicial do provedor). */
+  const [modelChoice, setModelChoice] = useState<string | undefined>(undefined);
+  /** Modo de trabalho escolhido para a conversa nova (null = o padrão do projeto). */
+  const [modeChoice, setModeChoice] = useState<WorkMode | null>(null);
+  /** Pedido segurado por um aviso, antes de ser enviado. */
+  const [hold, setHold] = useState<
+    | { kind: "isolation"; prompt: string; report: IsolationReport }
+    | { kind: "direct"; prompt: string; mode: WorkMode | null; others: TaskId[] }
+    | null
+  >(null);
+  const [holdBusy, setHoldBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   /** Quantidade de itens do chat quando o aviso de "chamada como texto" foi fechado. */
@@ -314,6 +333,14 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   const newProject =
     projects.find((p) => samePath(p.path, tabProject ?? selectedProject))?.path ?? projects[0]?.path ?? null;
   const project = task?.project ?? newProject;
+  const modeInfo = useWorkModeInfo(taskId == null ? newProject : null, active);
+  const isGit = modeInfo?.is_git ?? true;
+  /** Modo da conversa nova: sem git só existe o direto. */
+  const newMode: WorkMode = !isGit ? "Direct" : (modeChoice ?? modeInfo?.effective ?? "Isolated");
+  const newModel = modelChoice ?? providers.find((p) => p.id === providerId)?.default_model ?? "";
+  // Trocar de projeto ou de provedor desfaz a escolha feita para o anterior.
+  useEffect(() => setModeChoice(null), [newProject]);
+  useEffect(() => setModelChoice(undefined), [providerId]);
 
   const nodes = useMemo(() => subagentTree(events, times), [events, times]);
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
@@ -372,18 +399,91 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
     }
   };
 
-  /** Envia: na conversa nova cria a tarefa e esta mesma aba vira a sessão dela. */
-  const send = async (prompt: string) => {
+  /** Outras sessões rodando agora em "Direto na pasta" no mesmo projeto. */
+  const directBusy = (where: Path): TaskId[] =>
+    useApp
+      .getState()
+      .tasks.filter((t) => t.id !== taskId && t.mode === "Direct" && isTaskActive(t.state) && samePath(t.project, where))
+      .map((t) => t.id);
+
+  /**
+   * Envia: na conversa nova cria a tarefa e esta mesma aba vira a sessão dela.
+   * Antes, confere o que pode dar errado e segura o pedido num aviso (`hold`):
+   * no modo isolado, o que a cópia não teria; no direto, outra sessão na pasta.
+   */
+  const send = async (prompt: string, opts: { mode?: WorkMode; skipIsolation?: boolean; skipDirect?: boolean } = {}) => {
     setError(null);
     if (taskId != null) {
+      if (task?.mode === "Direct" && !opts.skipDirect) {
+        const others = directBusy(task.project);
+        if (others.length) return setHold({ kind: "direct", prompt, mode: null, others });
+      }
       await api.taskReply(taskId, prompt);
       void useApp.getState().refreshTasks();
       return;
     }
     if (!newProject) throw new Error("Abra uma pasta raiz e escolha um projeto para conversar.");
-    const id = await api.taskCreate(newProject, providerId, prompt);
+    const mode = opts.mode ?? newMode;
+    if (mode === "Isolated" && !opts.skipIsolation) {
+      // Sem resposta do git, segue: o aviso é uma ajuda, não uma trava.
+      const report = await api.isolationCheck(newProject, prompt).catch(() => null);
+      if (report && hasGaps(report)) return setHold({ kind: "isolation", prompt, report });
+    }
+    if (mode === "Direct" && !opts.skipDirect) {
+      const others = directBusy(newProject);
+      if (others.length) return setHold({ kind: "direct", prompt, mode, others });
+    }
+    const id = await api.taskCreate(newProject, providerId, prompt, { model: newModel, mode });
     await useApp.getState().refreshTasks();
     useWorkbench.getState().bindChat(tabId, id);
+  };
+
+  /** Resolve o aviso: envia o pedido segurado com a escolha feita. */
+  const releaseHold = async (opts: { mode?: WorkMode; skipIsolation?: boolean; skipDirect?: boolean }) => {
+    if (!hold) return;
+    const prompt = hold.prompt;
+    setHoldBusy(true);
+    try {
+      setHold(null);
+      await send(prompt, opts);
+    } catch (e) {
+      // Não foi: o pedido volta para a caixa.
+      useChat.getState().setDraft(chatKey(taskId), prompt);
+      setError(errorMessage(e));
+    } finally {
+      setHoldBusy(false);
+    }
+  };
+
+  /** Desiste do envio: o pedido volta para a caixa de composição. */
+  const cancelHold = () => {
+    if (!hold) return;
+    const key = chatKey(taskId);
+    if (!(useChat.getState().drafts[key] ?? "")) useChat.getState().setDraft(key, hold.prompt);
+    setHold(null);
+    composer.current?.focus();
+  };
+
+  const changeModel = async (model: string) => {
+    if (taskId == null) return setModelChoice(model);
+    try {
+      await api.taskSetModel(taskId, model || null);
+      await useApp.getState().refreshTasks();
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
+
+  const changeProvider = async (id: string) => {
+    if (taskId == null) return setProvider(id);
+    try {
+      await api.taskSetProvider(taskId, id);
+      await useApp.getState().refreshTasks();
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
   };
 
   const newChat = (draft?: string) => {
@@ -396,6 +496,25 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
       case "nova":
         newChat(args || undefined);
         return;
+      case "modelo": {
+        const wanted = args.trim();
+        const pill = () => document.querySelector<HTMLButtonElement>(`[data-chat-tab="${tabId}"] .sel-btn[aria-label="Modelo"]`);
+        if (!wanted) {
+          // Sem nome: abre a lista da pílula de modelo.
+          window.setTimeout(() => pill()?.click(), 0);
+          return;
+        }
+        const current = task?.provider ?? providerId;
+        if (/^(padr[aã]o|default)$/i.test(wanted)) return void (await changeModel(""));
+        const list = await api.agentsModels(current);
+        const found = list.find((m) => m.value.toLowerCase() === wanted.toLowerCase());
+        if (!found) {
+          window.setTimeout(() => pill()?.click(), 0);
+          throw new Error(`A CLI não informa o modelo "${wanted}". Escolha um da lista.`);
+        }
+        await changeModel(found.value);
+        return;
+      }
       case "sessoes":
         document.querySelector<HTMLButtonElement>(`[data-chat-tab="${tabId}"] .cv-title`)?.click();
         return;
@@ -425,7 +544,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   const tokens = totalTokens(totals);
   const closed = task != null && (task.state === "Applied" || task.state === "Discarded");
   /** Sem sessão da CLI não há como continuar (com o turno rodando, a mensagem entra na fila). */
-  const noSession = task != null && !busy && task.session_id == null;
+  const noSession = task != null && !busy && task.session_id == null && !task.handoff;
   const missing = taskId != null && !task;
   const placeholder = closed
     ? "Esta tarefa foi encerrada. Use + para começar outra conversa."
@@ -472,8 +591,10 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
             placeholder={providerId}
             value={providerId}
             options={providers.map((p) => ({ value: p.id, label: p.display_name }))}
-            onChange={setProvider}
+            onChange={(v) => void changeProvider(v)}
           />
+          <ModelPill provider={providerId} value={newModel} onChange={(v) => void changeModel(v)} />
+          {newProject && <ModePill value={newMode} isGit={isGit} onChange={setModeChoice} />}
         </>
       ) : (
         task && (
@@ -482,9 +603,37 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
               <Icon name="folder" size={12} />
               {projectName}
             </span>
-            <span className="chat-pill static" title="Agente desta conversa">
-              <Icon name="bot" size={12} />
-              {providerName(task.provider)}
+            <Select
+              variant="pill"
+              ariaLabel="Provedor"
+              title={
+                busy
+                  ? "Aguarde o turno terminar para trocar de agente."
+                  : closed
+                    ? "Esta tarefa foi encerrada."
+                    : "Agente desta conversa. Ao trocar, a tarefa e a pasta continuam as mesmas: o outro agente abre uma sessão nova e recebe um resumo da conversa até aqui."
+              }
+              icon={<Icon name="bot" size={12} />}
+              placeholder={providerName(task.provider)}
+              value={task.provider}
+              disabled={busy || closed}
+              options={providers.map((p) => ({ value: p.id, label: p.display_name }))}
+              onChange={(v) => void changeProvider(v)}
+            />
+            <ModelPill
+              provider={task.provider}
+              value={task.model ?? ""}
+              disabled={closed}
+              title={
+                busy
+                  ? "Modelo dos próximos turnos (o turno em andamento segue com o modelo com que começou)"
+                  : "Modelo dos próximos turnos desta conversa"
+              }
+              onChange={(v) => void changeModel(v)}
+            />
+            <span className="chat-pill static" title={WORK_MODE_HELP[task.mode]}>
+              <Icon name={task.mode === "Isolated" ? "box" : "folderOpen"} size={12} />
+              <span className="chat-pill-label">{task.mode === "Isolated" ? "Isolado" : "Direto na pasta"}</span>
             </span>
           </>
         )
@@ -520,6 +669,14 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
               {state.label.split(":")[0]}
             </span>
           )}
+          {task && (
+            <span
+              className="cv-agent"
+              title={`Agente: ${providerName(task.provider)}\nModelo: ${task.model ?? "padrão da CLI"}\nModo de trabalho: ${WORK_MODE_LABEL[task.mode]}${task.handoff ? "\nO próximo turno leva o resumo da conversa para o agente novo." : ""}`}
+            >
+              {providerName(task.provider)} · {task.model ?? "modelo padrão"}
+            </span>
+          )}
           {taskId != null && <SessionServersBadge taskId={taskId} />}
           {totals.turns > 0 && (
             <span
@@ -548,7 +705,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
         {taskId == null ? (
           <div className="cv-scroll">
             <div className="cv-col cv-center">
-              <Welcome project={newProject} hasRoot={root != null} onPick={(text) => composer.current?.insertText(text)} />
+              <Welcome project={newProject} hasRoot={root != null} mode={newMode} onPick={(text) => composer.current?.insertText(text)} />
             </div>
           </div>
         ) : (
@@ -559,6 +716,8 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
             now={now}
             pricing={current ? null : pricing}
             onOpenSubagent={selectSub}
+            providerName={providerName}
+            project={project}
             group={!current}
             resetKey={current ? current.id : "main"}
             before={
@@ -623,6 +782,28 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                   </button>
                 </div>
               )}
+              {hold?.kind === "isolation" && (
+                <IsolationHold
+                  report={hold.report}
+                  busy={holdBusy}
+                  onDirect={() => void releaseHold({ mode: "Direct" })}
+                  onIsolated={() => void releaseHold({ mode: "Isolated", skipIsolation: true })}
+                  onCancel={cancelHold}
+                />
+              )}
+              {hold?.kind === "direct" && (
+                <DirectHold
+                  others={hold.others}
+                  busy={holdBusy}
+                  onGo={() => void releaseHold({ mode: hold.mode ?? undefined, skipDirect: true })}
+                  onCancel={cancelHold}
+                />
+              )}
+              {task?.handoff && !busy && !closed && (
+                <div className="cv-note cv-handoff">
+                  Agente trocado para {providerName(task.provider)}: o próximo pedido leva junto um resumo da conversa até aqui.
+                </div>
+              )}
               {taskId != null && (
                 <div className="cv-strip">
                   <AutoWorkBadge taskId={taskId} readOnly={closed} />
@@ -632,11 +813,11 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                 ref={composer}
                 taskId={taskId}
                 busy={busy}
-                disabled={closed || noSession || (taskId == null && !newProject)}
+                disabled={closed || noSession || hold != null || (taskId == null && !newProject)}
                 workdir={task ? (task.workdir ?? task.project) : newProject}
                 provider={task?.provider ?? providerId}
                 placeholder={placeholder}
-                onSend={send}
+                onSend={(prompt) => send(prompt)}
                 onStop={taskId != null && !cancelling ? cancel : undefined}
                 onCommand={onCommand}
                 toolbar={pills}

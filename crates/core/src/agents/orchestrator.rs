@@ -1,8 +1,9 @@
 //! Orquestrador de tarefas de agentes: fila, limite de concorrência,
-//! um git worktree por tarefa, sessões conversacionais (vários turnos),
-//! eventos via broadcast e persistência opcional em SQLite.
+//! modo de trabalho por tarefa (git worktree isolado ou direto na pasta do
+//! projeto), sessões conversacionais (vários turnos), modelo e provedor
+//! trocáveis por tarefa, eventos via broadcast e persistência opcional em SQLite.
 
-use super::provider::{subagents_of, AgentEvent, AgentProvider, CommandSpec, SubagentInfo};
+use super::provider::{subagents_of, valid_model_name, AgentEvent, AgentProvider, CommandSpec, SubagentInfo, TurnOptions};
 use crate::db::Db;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -46,6 +47,50 @@ impl TaskState {
     }
 }
 
+/// Onde o agente de uma tarefa trabalha.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum WorkMode {
+    /// Numa cópia do projeto (git worktree próprio): as alterações são revisadas
+    /// e aplicadas depois. Só enxerga o que está versionado.
+    #[default]
+    Isolated,
+    /// Na própria pasta do projeto: enxerga tudo e as alterações valem na hora.
+    Direct,
+}
+
+impl WorkMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WorkMode::Isolated => "Isolated",
+            WorkMode::Direct => "Direct",
+        }
+    }
+    pub fn parse(s: &str) -> Option<WorkMode> {
+        match s {
+            "Isolated" => Some(WorkMode::Isolated),
+            "Direct" => Some(WorkMode::Direct),
+            _ => None,
+        }
+    }
+}
+
+/// O que fica guardado de um provedor que já atendeu a tarefa, para voltar a ele.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderState {
+    /// Sessão da CLI desse provedor (retomada com `--resume`/`--session`).
+    pub session: Option<String>,
+    pub model: Option<String>,
+}
+
+/// Escolhas de uma tarefa nova.
+#[derive(Debug, Clone, Default)]
+pub struct SubmitOptions {
+    /// Modelo (None = padrão da CLI).
+    pub model: Option<String>,
+    /// Modo de trabalho (None = o padrão configurado para o projeto).
+    pub mode: Option<WorkMode>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub id: TaskId,
@@ -53,13 +98,38 @@ pub struct Task {
     pub provider: String,
     pub prompt: String,
     pub state: TaskState,
-    /// Diretório onde o agente roda (worktree, ou o próprio projeto se worktrees desligados).
+    /// Diretório onde o agente roda (o worktree, ou o próprio projeto no modo direto).
     pub workdir: Option<PathBuf>,
     /// Sessão da CLI (claude: `session_id`; opencode: `sessionID`), para `reply`.
     pub session_id: Option<String>,
     /// Número de turnos da conversa (1 = só o prompt inicial). Um comando de barra
     /// que a própria CLI resolve, sem chamar modelo, não conta.
     pub turns: u32,
+    /// Modelo dos próximos turnos (None = padrão da CLI).
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub mode: WorkMode,
+    /// Houve troca de provedor: o próximo turno leva o resumo da conversa.
+    #[serde(default)]
+    pub handoff: bool,
+    /// Sessão e modelo dos provedores que já atenderam a tarefa (por id).
+    #[serde(skip)]
+    pub others: HashMap<String, ProviderState>,
+}
+
+/// Aviso de ambiente para o agente que roda numa cópia isolada. Uma linha só, sem
+/// aspas nem caracteres especiais de shell: vai como argumento de linha de comando.
+pub fn isolation_note(project: &Path) -> String {
+    let name = project.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    format!(
+        "Você está trabalhando numa cópia isolada (git worktree) do projeto {name}, cuja pasta original é {}. \
+         Esta cópia só tem os arquivos versionados no git: pastas e arquivos não versionados ou ignorados da pasta original \
+         (por exemplo .env, dados locais e pastas fora do git) e alterações ainda não commitadas não existem aqui. \
+         Se o pedido depender de algo assim, diga isso em uma frase logo no começo da resposta, sem gastar passos procurando, \
+         e não leia nem edite a pasta original.",
+        project.display()
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +155,8 @@ pub enum OrchestratorError {
     Busy,
     #[error("tarefa encerrada (aplicada ou descartada)")]
     Closed,
+    #[error("modelo inválido: {0}")]
+    InvalidModel(String),
     #[error("git falhou: {0}")]
     Git(String),
     #[error("banco de dados: {0}")]
@@ -100,8 +172,20 @@ struct Inner {
     sem: Arc<Semaphore>,
     tx: broadcast::Sender<OrchestratorEvent>,
     next_id: AtomicU64,
-    use_worktrees: bool,
     db: Option<Arc<Db>>,
+}
+
+/// Chave da preferência de um nível de git ("local" ou "remote") no banco.
+fn git_key(project: Option<&Path>, level: &str) -> String {
+    mode_key(project).replacen("work_mode", &format!("git_{level}"), 1)
+}
+
+/// Chave das preferências de modo de trabalho no banco (geral, ou de um projeto).
+fn mode_key(project: Option<&Path>) -> String {
+    match project {
+        Some(p) => format!("work_mode:{}", p.to_string_lossy().replace('\\', "/").trim_end_matches('/').to_lowercase()),
+        None => "work_mode".to_string(),
+    }
 }
 
 #[derive(Clone)]
@@ -110,8 +194,8 @@ pub struct Orchestrator {
 }
 
 impl Orchestrator {
-    pub fn new(providers: Vec<Arc<dyn AgentProvider>>, max_concurrent: usize, use_worktrees: bool) -> Self {
-        Self::with_db(providers, max_concurrent, use_worktrees, None)
+    pub fn new(providers: Vec<Arc<dyn AgentProvider>>, max_concurrent: usize) -> Self {
+        Self::with_db(providers, max_concurrent, None)
     }
 
     /// Como `new`, gravando tarefas/eventos/consumo em `db` e recarregando o
@@ -119,7 +203,6 @@ impl Orchestrator {
     pub fn with_db(
         providers: Vec<Arc<dyn AgentProvider>>,
         max_concurrent: usize,
-        use_worktrees: bool,
         db: Option<Db>,
     ) -> Self {
         let (tx, _) = broadcast::channel(1024);
@@ -148,6 +231,15 @@ impl Orchestrator {
                                 workdir: r.workdir.map(PathBuf::from),
                                 session_id: r.session_id,
                                 turns: 1,
+                                model: r.model,
+                                // Tarefas antigas (sem a coluna) rodaram todas em worktree.
+                                mode: r.mode.as_deref().and_then(WorkMode::parse).unwrap_or_default(),
+                                handoff: r.handoff,
+                                others: r
+                                    .provider_state
+                                    .as_deref()
+                                    .and_then(|s| serde_json::from_str(s).ok())
+                                    .unwrap_or_default(),
                             },
                         );
                     }
@@ -163,7 +255,6 @@ impl Orchestrator {
                 sem: Arc::new(Semaphore::new(max_concurrent.max(1))),
                 tx,
                 next_id: AtomicU64::new(next),
-                use_worktrees,
                 db,
             }),
         }
@@ -232,19 +323,101 @@ impl Orchestrator {
             .collect()
     }
 
-    /// Enfileira uma tarefa. Precisa estar dentro de um runtime tokio.
+    /// Preferência de modo de trabalho gravada: a geral (`project` = None) ou a de
+    /// um projeto. None = nunca escolhida.
+    pub fn work_mode_setting(&self, project: Option<&Path>) -> Option<WorkMode> {
+        let db = self.inner.db.as_ref()?;
+        db.get_setting(&mode_key(project)).ok().flatten().as_deref().and_then(WorkMode::parse)
+    }
+
+    /// Grava a preferência de modo de trabalho (None apaga: volta a valer a geral
+    /// ou, na geral, o padrão "Isolado"). Sem banco, não faz nada.
+    pub fn set_work_mode_setting(&self, project: Option<&Path>, mode: Option<WorkMode>) -> Result<(), OrchestratorError> {
+        if let Some(db) = &self.inner.db {
+            db.set_setting(&mode_key(project), mode.map(WorkMode::as_str))?;
+        }
+        Ok(())
+    }
+
+    /// Preferência gravada de um nível de git ("local" ou "remote"): a geral
+    /// (`project` = None) ou a de um projeto. None = segue o padrão.
+    pub fn git_setting(&self, project: Option<&Path>, level: &str) -> Option<bool> {
+        let db = self.inner.db.as_ref()?;
+        match db.get_setting(&git_key(project, level)).ok().flatten().as_deref() {
+            Some("on") => Some(true),
+            Some("off") => Some(false),
+            _ => None,
+        }
+    }
+
+    /// Grava a preferência de um nível de git (None apaga). Sem banco, não faz nada.
+    pub fn set_git_setting(&self, project: Option<&Path>, level: &str, on: Option<bool>) -> Result<(), OrchestratorError> {
+        if let Some(db) = &self.inner.db {
+            db.set_setting(&git_key(project, level), on.map(|b| if b { "on" } else { "off" }))?;
+        }
+        Ok(())
+    }
+
+    /// Níveis de git que valem para um turno em `project` no modo `mode`: a
+    /// preferência do projeto, depois a geral, depois o padrão do modo ("Git local"
+    /// ligado só na cópia isolada; "Git remoto" desligado).
+    pub fn git_levels(&self, project: &Path, mode: WorkMode) -> crate::permissions::GitLevels {
+        let def = crate::permissions::GitLevels::defaults(mode);
+        let pick = |level: &str, d: bool| self.git_setting(Some(project), level).or_else(|| self.git_setting(None, level)).unwrap_or(d);
+        crate::permissions::GitLevels { local: pick("local", def.local), remote: pick("remote", def.remote) }
+    }
+
+    /// Modo de trabalho de uma conversa nova em `project` quando ninguém escolhe:
+    /// a preferência do projeto, depois a geral, depois "Isolado". Um projeto que
+    /// não é repositório git só aceita "Direto na pasta".
+    pub fn default_mode(&self, project: &Path) -> WorkMode {
+        if !crate::isolation::is_git_repo(project) {
+            return WorkMode::Direct;
+        }
+        self.work_mode_setting(Some(project)).or_else(|| self.work_mode_setting(None)).unwrap_or_default()
+    }
+
+    /// Enfileira uma tarefa com o modelo inicial do provedor e o modo de trabalho
+    /// padrão do projeto. Precisa estar dentro de um runtime tokio.
     pub fn submit(&self, project: impl Into<PathBuf>, provider: &str, prompt: &str) -> Result<TaskId, OrchestratorError> {
+        let model = self.provider(provider)?.default_model();
+        self.submit_with(project, provider, prompt, SubmitOptions { model, mode: None })
+    }
+
+    /// Como `submit`, com o modelo e o modo de trabalho escolhidos.
+    pub fn submit_with(
+        &self,
+        project: impl Into<PathBuf>,
+        provider: &str,
+        prompt: &str,
+        opts: SubmitOptions,
+    ) -> Result<TaskId, OrchestratorError> {
         let prov = self.provider(provider)?;
+        let project: PathBuf = project.into();
+        let model = opts.model.map(|m| m.trim().to_string()).filter(|m| !m.is_empty());
+        if let Some(m) = model.as_deref().filter(|m| !valid_model_name(m)) {
+            return Err(OrchestratorError::InvalidModel(m.to_string()));
+        }
+        // Sem repositório git não existe cópia isolada.
+        let mode = match opts.mode {
+            Some(WorkMode::Isolated) if crate::isolation::is_git_repo(&project) => WorkMode::Isolated,
+            Some(_) => WorkMode::Direct,
+            None => self.default_mode(&project),
+        };
         let id = self.inner.next_id.fetch_add(1, Ordering::SeqCst);
         let task = Task {
             id,
-            project: project.into(),
+            project,
             provider: provider.into(),
             prompt: prompt.into(),
             state: TaskState::Queued,
             workdir: None,
             session_id: None,
             turns: 1,
+            model,
+            mode,
+            handoff: false,
+            others: HashMap::new(),
         };
         if let Some(db) = &self.inner.db {
             db.insert_task(
@@ -254,6 +427,10 @@ impl Orchestrator {
                 prompt,
                 &TaskState::Queued.to_db(),
             )?;
+            db.set_task_mode(id as i64, mode.as_str())?;
+            if task.model.is_some() {
+                db.set_task_model(id as i64, task.model.as_deref())?;
+            }
             let _ = db.insert_event(id as i64, "User", &json(&AgentEvent::User(prompt.into())));
         }
         self.inner.tasks.lock().unwrap().insert(id, task.clone());
@@ -281,13 +458,20 @@ impl Orchestrator {
             TaskState::Applied | TaskState::Discarded => return Err(OrchestratorError::Closed),
             _ => {}
         }
-        let session = t.session_id.clone().ok_or(OrchestratorError::NoSession)?;
+        // Depois de uma troca de provedor a sessão pode não existir ainda: o turno
+        // abre uma nova e leva o resumo da conversa.
+        let session = t.session_id.clone();
+        if session.is_none() && !t.handoff {
+            return Err(OrchestratorError::NoSession);
+        }
         let workdir = match &t.workdir {
             Some(w) => w.clone(),
-            None if !self.inner.use_worktrees => t.project.clone(),
+            None if t.mode == WorkMode::Direct => t.project.clone(),
             None => return Err(OrchestratorError::NoWorktree),
         };
         let prov = self.provider(&t.provider)?;
+        // O histórico até aqui (sem a mensagem nova) é a matéria do resumo.
+        let before = if t.handoff { self.history(id) } else { Vec::new() };
         self.record(id, &t, 0, AgentEvent::User(message.into()));
         let cancel = self.new_cancel(id);
         self.set_state(id, TaskState::Queued);
@@ -297,8 +481,24 @@ impl Orchestrator {
         tokio::spawn(async move {
             let Some(_permit) = this.acquire(id, &cancel).await else { return };
             this.set_state(id, TaskState::Running);
-            let st = match this.run_turn(&t, prov, &message, Some(&session), &workdir, &cancel).await {
+            let mut prompt = message;
+            if t.handoff {
+                let ctx = this.handoff_context(&t, &before, &workdir).await;
+                if !ctx.is_empty() {
+                    // O usuário não vê este bloco: no histórico fica só a mensagem dele.
+                    prompt = format!("{ctx}\n\n{prompt}");
+                }
+            }
+            let opts = this.turn_options(&t);
+            let st = match this.run_turn(&t, prov, &prompt, session.as_deref(), &workdir, &opts, &cancel).await {
                 Ok((s, used_model)) => {
+                    if t.handoff {
+                        // O resumo foi entregue: o turno terminou, ou a sessão nova já existe.
+                        let opened = session.is_none() && this.task(id).is_some_and(|x| x.session_id.is_some());
+                        if s == TaskState::Completed || opened {
+                            this.set_handoff(id, false);
+                        }
+                    }
                     // Conta o turno só se um modelo trabalhou (ou se foi interrompido no meio).
                     if used_model || s == TaskState::Cancelled {
                         if let Some(x) = this.inner.tasks.lock().unwrap().get_mut(&id) {
@@ -312,6 +512,108 @@ impl Orchestrator {
             this.finish(id, &cancel, st);
         });
         Ok(())
+    }
+
+    /// Troca o modelo da tarefa; vale a partir do próximo turno (o que está em
+    /// andamento segue com o modelo com que começou). `None` = padrão da CLI.
+    pub fn set_model(&self, id: TaskId, model: Option<&str>) -> Result<(), OrchestratorError> {
+        let model = model.map(str::trim).filter(|m| !m.is_empty());
+        if let Some(m) = model.filter(|m| !valid_model_name(m)) {
+            return Err(OrchestratorError::InvalidModel(m.to_string()));
+        }
+        {
+            let mut tasks = self.inner.tasks.lock().unwrap();
+            let t = tasks.get_mut(&id).ok_or(OrchestratorError::UnknownTask(id))?;
+            t.model = model.map(str::to_string);
+        }
+        if let Some(db) = &self.inner.db {
+            db.set_task_model(id as i64, model)?;
+        }
+        Ok(())
+    }
+
+    /// Troca o agente (provedor) que atende a tarefa, com o turno parado. A tarefa,
+    /// a pasta de trabalho e o histórico continuam os mesmos. A sessão e o modelo do
+    /// provedor que sai ficam guardados; se o que entra já atendeu a tarefa, a sessão
+    /// dele é retomada. O próximo turno leva um resumo da conversa (`handoff`).
+    pub fn set_provider(&self, id: TaskId, provider: &str) -> Result<(), OrchestratorError> {
+        let prov = self.provider(provider)?;
+        let (from, task) = {
+            let mut tasks = self.inner.tasks.lock().unwrap();
+            let t = tasks.get_mut(&id).ok_or(OrchestratorError::UnknownTask(id))?;
+            match t.state {
+                ref s if s.is_active() => return Err(OrchestratorError::Busy),
+                TaskState::Applied | TaskState::Discarded => return Err(OrchestratorError::Closed),
+                _ => {}
+            }
+            if t.provider == provider {
+                return Ok(());
+            }
+            let from = std::mem::replace(&mut t.provider, provider.to_string());
+            let leaving = ProviderState { session: t.session_id.take(), model: t.model.take() };
+            t.others.insert(from.clone(), leaving);
+            match t.others.remove(provider) {
+                Some(saved) => {
+                    t.session_id = saved.session;
+                    t.model = saved.model;
+                }
+                None => t.model = prov.default_model(),
+            }
+            t.handoff = true;
+            (from, t.clone())
+        };
+        if let Some(db) = &self.inner.db {
+            db.set_task_provider(
+                id as i64,
+                provider,
+                task.session_id.as_deref(),
+                task.model.as_deref(),
+                &serde_json::to_string(&task.others).unwrap_or_default(),
+                true,
+            )?;
+        }
+        self.record(id, &task, 0, AgentEvent::ProviderSwitch { from, to: provider.to_string() });
+        Ok(())
+    }
+
+    fn set_handoff(&self, id: TaskId, on: bool) {
+        if let Some(t) = self.inner.tasks.lock().unwrap().get_mut(&id) {
+            t.handoff = on;
+        }
+        if let Some(db) = &self.inner.db {
+            let _ = db.set_task_handoff(id as i64, on);
+        }
+    }
+
+    /// Modelo e aviso de ambiente do próximo turno de `t`.
+    fn turn_options(&self, t: &Task) -> TurnOptions {
+        TurnOptions {
+            model: t.model.clone(),
+            system_note: (t.mode == WorkMode::Isolated).then(|| isolation_note(&t.project)),
+        }
+    }
+
+    /// Resumo da conversa para o provedor que assume a tarefa (ver `handoff`).
+    async fn handoff_context(&self, t: &Task, before: &[AgentEvent], workdir: &Path) -> String {
+        // Quem atendia: o `from` da última troca.
+        let from = before.iter().rev().find_map(|e| match e {
+            AgentEvent::ProviderSwitch { from, .. } => Some(from.clone()),
+            _ => None,
+        });
+        let from_name = from
+            .and_then(|f| self.inner.providers.get(&f).map(|p| p.display_name().to_string()).or(Some(f)))
+            .unwrap_or_else(|| "outro agente".to_string());
+        // Arquivos alterados na pasta de trabalho (no worktree, é o que a tarefa mudou).
+        let files = match git(workdir, &["status", "--porcelain=v1", "-z", "--untracked-files=all"]).await {
+            Ok(raw) => {
+                let (untracked, _, modified) = crate::isolation::parse_status(raw.as_bytes());
+                let mut v: Vec<String> = modified.into_iter().chain(untracked).filter(|p| !crate::isolation::is_noise(p)).collect();
+                v.sort();
+                v
+            }
+            Err(_) => Vec::new(),
+        };
+        super::handoff::build_context(before, &t.provider, &from_name, t.session_id.is_some(), &files, super::handoff::MAX_CHARS)
     }
 
     /// Cancela (mata o processo, ou retira da fila).
@@ -352,10 +654,9 @@ impl Orchestrator {
 
     async fn first_turn(&self, task: &Task, prov: Arc<dyn AgentProvider>, cancel: &Notify) -> Result<TaskState, OrchestratorError> {
         let id = task.id;
-        let workdir = if self.inner.use_worktrees {
-            create_worktree(&task.project, id).await?
-        } else {
-            task.project.clone()
+        let workdir = match task.mode {
+            WorkMode::Isolated => create_worktree(&task.project, id).await?,
+            WorkMode::Direct => task.project.clone(),
         };
         if let Some(t) = self.inner.tasks.lock().unwrap().get_mut(&id) {
             t.workdir = Some(workdir.clone());
@@ -364,7 +665,8 @@ impl Orchestrator {
             let _ = db.set_task_workdir(id as i64, &workdir.to_string_lossy());
         }
         self.set_state(id, TaskState::Running);
-        Ok(self.run_turn(task, prov, &task.prompt, None, &workdir, cancel).await?.0)
+        let opts = self.turn_options(task);
+        Ok(self.run_turn(task, prov, &task.prompt, None, &workdir, &opts, cancel).await?.0)
     }
 
     /// Grava (se houver banco) e transmite um evento do agente. `turn` identifica
@@ -411,6 +713,7 @@ impl Orchestrator {
         prompt: &str,
         session: Option<&str>,
         workdir: &Path,
+        opts: &TurnOptions,
         cancel: &Notify,
     ) -> Result<(TaskState, bool), OrchestratorError> {
         let id = task.id;
@@ -420,8 +723,10 @@ impl Orchestrator {
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
         prov.begin_turn(session);
-        let spec = prov.task_command(prompt, workdir, session);
-        let spec = crate::procs::apply_allowed_tools(spec, &task.project);
+        let spec = prov.task_command(prompt, workdir, session, opts);
+        // Comandos de shell liberados: o padrão (git de leitura, inspeção), os níveis
+        // de git do projeto neste modo e a lista "Comandos permitidos" do projeto.
+        let spec = crate::permissions::apply(spec, &task.project, self.git_levels(&task.project, task.mode));
         // Os anexos do chat ficam fora da pasta de trabalho: libera a leitura deles.
         let dirs = crate::attachments::dirs_for(&crate::attachments::root(), id, &[&task.prompt, prompt]);
         let spec = crate::attachments::apply_add_dirs(spec, &dirs);
@@ -451,10 +756,17 @@ impl Orchestrator {
         let t = task.clone();
         let used_model = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let used = used_model.clone();
+        let turn_model = opts.model.clone();
         let out_task = tokio::spawn(async move {
             let mut lines = BufReader::new(stdout).lines();
             while let Ok(Some(l)) = lines.next_line().await {
-                for ev in prov.parse_line(&l) {
+                for mut ev in prov.parse_line(&l) {
+                    // CLI que não informa o modelo no uso (opencode): vale o da tarefa.
+                    if let AgentEvent::Usage(u) = &mut ev {
+                        if u.model.is_none() {
+                            u.model = turn_model.clone();
+                        }
+                    }
                     if matches!(ev.inner(), AgentEvent::Usage(u) if !u.is_empty()) {
                         used.store(true, Ordering::SeqCst);
                     }
@@ -490,8 +802,14 @@ impl Orchestrator {
         Ok((result, used_model.load(Ordering::SeqCst)))
     }
 
-    /// Diff das mudanças feitas no worktree da tarefa (inclui arquivos novos).
+    /// Diff das mudanças da tarefa (inclui arquivos novos). No modo isolado, o que
+    /// mudou no worktree; no modo direto, a pasta do projeto em relação ao último
+    /// commit (sem tocar no índice do git do usuário).
     pub async fn diff(&self, id: TaskId) -> Result<String, OrchestratorError> {
+        let t = self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
+        if t.mode == WorkMode::Direct {
+            return direct_diff(&t.project).await;
+        }
         let wt = self.worktree_of(id)?;
         git(&wt, &["add", "-A", "-N"]).await?;
         git(&wt, &["diff", "HEAD"]).await
@@ -522,11 +840,13 @@ impl Orchestrator {
         Ok(())
     }
 
+    /// Worktree da tarefa; no modo direto não há (nada a aplicar nem a descartar).
     fn worktree_of(&self, id: TaskId) -> Result<PathBuf, OrchestratorError> {
-        if !self.inner.use_worktrees {
+        let t = self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
+        if t.mode != WorkMode::Isolated {
             return Err(OrchestratorError::NoWorktree);
         }
-        self.task(id).ok_or(OrchestratorError::UnknownTask(id))?.workdir.ok_or(OrchestratorError::NoWorktree)
+        t.workdir.ok_or(OrchestratorError::NoWorktree)
     }
 
     fn set_state(&self, id: TaskId, st: TaskState) {
@@ -573,6 +893,28 @@ async fn remove_worktree(project: &Path, wt: &Path, branch: &str) -> Result<(), 
     git(project, &["worktree", "remove", "--force", &wt_s]).await?;
     git(project, &["branch", "-D", branch]).await?;
     Ok(())
+}
+
+/// Diff da pasta do projeto em relação ao último commit, com os arquivos novos
+/// (não versionados e não ignorados) no fim. Só lê: não usa `git add -N`.
+async fn direct_diff(project: &Path) -> Result<String, OrchestratorError> {
+    if !crate::isolation::is_git_repo(project) {
+        return Err(OrchestratorError::Git("a pasta do projeto não é um repositório git: não há commit para comparar".into()));
+    }
+    // Repositório sem nenhum commit: não há HEAD; ficam só os arquivos novos.
+    let mut out = git(project, &["diff", "HEAD"]).await.unwrap_or_default();
+    let new_files = git(project, &["ls-files", "--others", "--exclude-standard", "-z"]).await.unwrap_or_default();
+    const MAX_NEW: usize = 60;
+    for file in new_files.split('\0').filter(|f| !f.is_empty() && !crate::isolation::is_noise(f)).take(MAX_NEW) {
+        // `--no-index` sai com código 1 quando há diferença: a saída vale mesmo assim.
+        let raw = build_command(&CommandSpec::new("git"), Some(project))
+            .args(["diff", "--no-index", "--", "/dev/null", file])
+            .stdin(Stdio::null())
+            .output()
+            .await?;
+        out.push_str(&String::from_utf8_lossy(&raw.stdout));
+    }
+    Ok(out)
 }
 
 async fn git(dir: &Path, args: &[&str]) -> Result<String, OrchestratorError> {
@@ -669,7 +1011,7 @@ mod tests {
         fn login_command(&self) -> CommandSpec {
             CommandSpec::new("cmd")
         }
-        fn task_command(&self, p: &str, cwd: &Path, session: Option<&str>) -> CommandSpec {
+        fn task_command(&self, p: &str, cwd: &Path, session: Option<&str>, _o: &TurnOptions) -> CommandSpec {
             let mut c = CommandSpec::new(if cfg!(windows) { "cmd" } else { "sh" }).cwd(cwd).stdin(p);
             c.args = if session.is_some() { stdin_echo_args() } else { self.0.clone() };
             c
@@ -709,7 +1051,7 @@ mod tests {
         fn login_command(&self) -> CommandSpec {
             CommandSpec::new("cmd")
         }
-        fn task_command(&self, _p: &str, cwd: &Path, _s: Option<&str>) -> CommandSpec {
+        fn task_command(&self, _p: &str, cwd: &Path, _s: Option<&str>, _o: &TurnOptions) -> CommandSpec {
             let f = self.0.to_string_lossy().into_owned();
             let c = if cfg!(windows) {
                 CommandSpec::new("cmd").arg("/c").arg("type").arg(f.replace('/', "\\"))
@@ -731,7 +1073,7 @@ mod tests {
         let dbp = dir.path().join("h.db");
         let mk = || {
             let prov: Arc<dyn AgentProvider> = Arc::new(Replay(fixture.clone(), Default::default()));
-            Orchestrator::with_db(vec![prov], 1, false, Some(Db::open(&dbp).unwrap()))
+            Orchestrator::with_db(vec![prov], 1, Some(Db::open(&dbp).unwrap()))
         };
         let o = mk();
         let mut rx = o.subscribe();
@@ -819,7 +1161,7 @@ mod tests {
     #[tokio::test]
     async fn runs_fake_and_broadcasts() {
         let dir = tempfile::tempdir().unwrap();
-        let o = Orchestrator::new(vec![Arc::new(Fake(echo_args("ola")))], 2, false);
+        let o = Orchestrator::new(vec![Arc::new(Fake(echo_args("ola")))], 2);
         let mut rx = o.subscribe();
         let id = o.submit(dir.path(), "fake", "x").unwrap();
         assert_eq!(wait_final(&o, id).await, TaskState::Completed);
@@ -836,7 +1178,7 @@ mod tests {
     #[tokio::test]
     async fn cancel_kills() {
         let dir = tempfile::tempdir().unwrap();
-        let o = Orchestrator::new(vec![Arc::new(Fake(sleep_args()))], 1, false);
+        let o = Orchestrator::new(vec![Arc::new(Fake(sleep_args()))], 1);
         let id = o.submit(dir.path(), "fake", "x").unwrap();
         let id2 = o.submit(dir.path(), "fake", "x").unwrap(); // fica na fila
         tokio::time::sleep(Duration::from_millis(300)).await;
@@ -865,9 +1207,11 @@ mod tests {
         }
         let write = if cfg!(windows) { "echo novo> b.txt" } else { "echo novo > b.txt" };
         let args = if cfg!(windows) { vec!["/c".into(), write.into()] } else { vec!["-c".into(), write.into()] };
-        let o = Orchestrator::new(vec![Arc::new(Fake(args))], 1, true);
+        let o = Orchestrator::new(vec![Arc::new(Fake(args))], 1);
         let id = o.submit(&proj, "fake", "x").unwrap();
         assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        // Repositório git sem preferência gravada: o padrão é a cópia isolada.
+        assert_eq!(o.task(id).unwrap().mode, WorkMode::Isolated);
         let wt = o.task(id).unwrap().workdir.unwrap();
         assert_eq!(wt, worktree_path(&proj, id));
         let d = o.diff(id).await.unwrap();
@@ -880,7 +1224,7 @@ mod tests {
     #[tokio::test]
     async fn prompt_goes_through_stdin() {
         let dir = tempfile::tempdir().unwrap();
-        let o = Orchestrator::new(vec![Arc::new(Fake(stdin_echo_args()))], 1, false);
+        let o = Orchestrator::new(vec![Arc::new(Fake(stdin_echo_args()))], 1);
         let mut rx = o.subscribe();
         let prompt = "aspas \"x\" 100% %PATH% & | > fim";
         let id = o.submit(dir.path(), "fake", prompt).unwrap();
@@ -899,7 +1243,7 @@ mod tests {
     async fn reply_resumes_session_and_persists() {
         let dir = tempfile::tempdir().unwrap();
         let mk = |db| {
-            Orchestrator::with_db(vec![Arc::new(Fake(script_args(&["SESSION:abc", "ola", "USAGE"])))], 1, false, db)
+            Orchestrator::with_db(vec![Arc::new(Fake(script_args(&["SESSION:abc", "ola", "USAGE"])))], 1, db)
         };
         let dbp = dir.path().join("h.db");
         let o = mk(Some(Db::open(&dbp).unwrap()));
@@ -949,10 +1293,295 @@ mod tests {
     #[tokio::test]
     async fn reply_without_session_fails() {
         let dir = tempfile::tempdir().unwrap();
-        let o = Orchestrator::new(vec![Arc::new(Fake(echo_args("ola")))], 1, false);
+        let o = Orchestrator::new(vec![Arc::new(Fake(echo_args("ola")))], 1);
         let id = o.submit(dir.path(), "fake", "x").unwrap();
         wait_final(&o, id).await;
         assert!(matches!(o.reply(id, "y"), Err(OrchestratorError::NoSession)));
+    }
+
+    /// Provedor que registra o comando de cada turno (modelo, aviso de ambiente,
+    /// sessão, pasta e o texto recebido) e responde com uma sessão própria.
+    struct Spy {
+        id: &'static str,
+        default_model: Option<&'static str>,
+        seen: Arc<Mutex<Vec<Seen>>>,
+    }
+    #[derive(Debug, Clone)]
+    struct Seen {
+        provider: &'static str,
+        prompt: String,
+        cwd: PathBuf,
+        session: Option<String>,
+        opts: TurnOptions,
+    }
+    impl AgentProvider for Spy {
+        fn id(&self) -> &str {
+            self.id
+        }
+        fn display_name(&self) -> &str {
+            if self.id == "um" { "Agente Um" } else { "Agente Dois" }
+        }
+        fn detect(&self) -> Option<PathBuf> {
+            None
+        }
+        fn login_status(&self) -> LoginStatus {
+            LoginStatus::Unknown
+        }
+        fn login_command(&self) -> CommandSpec {
+            CommandSpec::new("cmd")
+        }
+        fn default_model(&self) -> Option<String> {
+            self.default_model.map(str::to_string)
+        }
+        fn task_command(&self, p: &str, cwd: &Path, session: Option<&str>, o: &TurnOptions) -> CommandSpec {
+            self.seen.lock().unwrap().push(Seen {
+                provider: self.id,
+                prompt: p.to_string(),
+                cwd: cwd.to_path_buf(),
+                session: session.map(str::to_string),
+                opts: o.clone(),
+            });
+            let mut c = CommandSpec::new(if cfg!(windows) { "cmd" } else { "sh" }).cwd(cwd);
+            c.args = script_args(&[&format!("SESSION:ses-{}", self.id), &format!("resposta do {}", self.id), "USAGE"]);
+            c
+        }
+        fn parse_line(&self, l: &str) -> Vec<AgentEvent> {
+            let l = l.trim();
+            if let Some(s) = l.strip_prefix("SESSION:") {
+                return vec![AgentEvent::Session(s.to_string())];
+            }
+            if l == "USAGE" {
+                // Sem modelo, como o opencode: o orquestrador preenche com o da tarefa.
+                return vec![AgentEvent::Usage(crate::agents::provider::TokenUsage { input_tokens: 10, ..Default::default() })];
+            }
+            if l.is_empty() { vec![] } else { vec![AgentEvent::Text(l.to_string())] }
+        }
+    }
+
+    fn spies() -> (Vec<Arc<dyn AgentProvider>>, Arc<Mutex<Vec<Seen>>>) {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let a: Arc<dyn AgentProvider> = Arc::new(Spy { id: "um", default_model: None, seen: seen.clone() });
+        let b: Arc<dyn AgentProvider> = Arc::new(Spy { id: "dois", default_model: Some("x/padrao"), seen: seen.clone() });
+        (vec![a, b], seen)
+    }
+
+    async fn git_repo(dir: &Path) {
+        std::fs::write(dir.join("a.txt"), "a\n").unwrap();
+        for a in [
+            vec!["init", "-q"],
+            vec!["-c", "user.email=t@t", "-c", "user.name=t", "add", "."],
+            vec!["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"],
+        ] {
+            git(dir, &a).await.unwrap();
+        }
+    }
+
+    fn plain_other(root: &tempfile::TempDir) -> PathBuf {
+        root.path().join("outro-projeto")
+    }
+
+    /// O modelo é da tarefa: vai em todo turno, pode ser trocado entre turnos, fica
+    /// no banco e marca as linhas de uso de quem não informa o modelo.
+    #[tokio::test]
+    async fn model_is_per_task_and_changes_between_turns() {
+        let dir = tempfile::tempdir().unwrap();
+        let dbp = dir.path().join("h.db");
+        let (provs, seen) = spies();
+        let o = Orchestrator::with_db(provs, 1, Some(Db::open(&dbp).unwrap()));
+        assert!(matches!(
+            o.submit_with(dir.path(), "um", "x", SubmitOptions { model: Some("--perigo".into()), mode: None }),
+            Err(OrchestratorError::InvalidModel(_))
+        ));
+        let id = o.submit_with(dir.path(), "um", "primeiro", SubmitOptions { model: Some("rapido".into()), mode: None }).unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        assert!(matches!(o.set_model(id, Some("a b")), Err(OrchestratorError::InvalidModel(_))));
+        o.set_model(id, Some("forte[1m]")).unwrap();
+        o.reply(id, "segundo").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        o.set_model(id, None).unwrap();
+        o.reply(id, "terceiro").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        let models: Vec<Option<String>> = seen.lock().unwrap().iter().map(|s| s.opts.model.clone()).collect();
+        assert_eq!(models, [Some("rapido".to_string()), Some("forte[1m]".to_string()), None]);
+        assert_eq!(seen.lock().unwrap()[1].session.as_deref(), Some("ses-um"), "o modelo novo acompanha a retomada da sessão");
+        let rows = o.db().unwrap().usage_rows(crate::db::TimeRange::all()).unwrap();
+        let used: Vec<Option<&str>> = rows.iter().map(|r| r.usage.model.as_deref()).collect();
+        assert_eq!(used, [Some("rapido"), Some("forte[1m]"), None]);
+        // `submit` simples usa o modelo inicial do provedor.
+        let id2 = o.submit(dir.path(), "dois", "outro").unwrap();
+        assert_eq!(o.task(id2).unwrap().model.as_deref(), Some("x/padrao"));
+        wait_final(&o, id2).await;
+        o.set_model(id, Some("gravado")).unwrap();
+        drop(o);
+        let (provs, _) = spies();
+        let o = Orchestrator::with_db(provs, 1, Some(Db::open(&dbp).unwrap()));
+        assert_eq!(o.task(id).unwrap().model.as_deref(), Some("gravado"));
+        assert_eq!(o.task(id2).unwrap().model.as_deref(), Some("x/padrao"));
+    }
+
+    /// Troca de provedor: mesma tarefa e mesma pasta, sessão antiga guardada, sessão
+    /// nova no provedor novo recebendo o resumo, divisória no histórico, uso por provedor.
+    #[tokio::test]
+    async fn provider_switch_hands_over_the_conversation() {
+        let dir = tempfile::tempdir().unwrap();
+        let dbp = dir.path().join("h.db");
+        let (provs, seen) = spies();
+        let o = Orchestrator::with_db(provs, 1, Some(Db::open(&dbp).unwrap()));
+        let id = o.submit_with(dir.path(), "um", "crie o módulo", SubmitOptions { model: Some("m-um".into()), mode: None }).unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        let workdir = o.task(id).unwrap().workdir.unwrap();
+        assert!(matches!(o.set_provider(id, "nenhum"), Err(OrchestratorError::UnknownProvider(_))));
+
+        o.set_provider(id, "dois").unwrap();
+        let t = o.task(id).unwrap();
+        assert_eq!((t.provider.as_str(), t.session_id.clone(), t.handoff), ("dois", None, true));
+        assert_eq!(t.model.as_deref(), Some("x/padrao"), "modelo inicial do provedor novo");
+        assert_eq!(t.others["um"], ProviderState { session: Some("ses-um".into()), model: Some("m-um".into()) });
+        assert_eq!(t.workdir.as_deref(), Some(workdir.as_path()));
+
+        // Sem sessão no provedor novo, a resposta abre uma (não é mais "sem sessão").
+        o.reply(id, "continue daqui").unwrap();
+        assert!(matches!(o.set_provider(id, "um"), Err(OrchestratorError::Busy)), "troca só com o turno parado");
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        let turn = seen.lock().unwrap().last().unwrap().clone();
+        assert_eq!((turn.provider, turn.session.clone(), turn.cwd.as_path()), ("dois", None, workdir.as_path()));
+        assert!(turn.prompt.contains("Usuário: crie o módulo"), "{}", turn.prompt);
+        assert!(turn.prompt.contains("Agente: resposta do um"));
+        assert!(turn.prompt.contains("outro agente (Agente Um)"));
+        assert!(turn.prompt.ends_with("[Fim do contexto. Pedido atual do usuário:]\n\ncontinue daqui"), "{}", turn.prompt);
+        let t = o.task(id).unwrap();
+        assert_eq!((t.session_id.as_deref(), t.handoff), (Some("ses-dois"), false));
+
+        // O usuário não vê o bloco de contexto: o histórico tem a mensagem dele e a divisória.
+        let h = o.history(id);
+        assert!(h.contains(&AgentEvent::ProviderSwitch { from: "um".into(), to: "dois".into() }));
+        assert!(h.contains(&AgentEvent::User("continue daqui".into())));
+        assert!(!h.iter().any(|e| matches!(e, AgentEvent::User(u) if u.contains("Contexto montado"))));
+        // Turno seguinte no mesmo provedor: sessão retomada, sem resumo.
+        o.reply(id, "mais uma").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        let turn = seen.lock().unwrap().last().unwrap().clone();
+        assert_eq!((turn.session.as_deref(), turn.prompt.as_str()), (Some("ses-dois"), "mais uma"));
+
+        // Uso somado na mesma tarefa, separado por provedor e modelo.
+        let rows = o.db().unwrap().usage_rows(crate::db::TimeRange::all()).unwrap();
+        let by: Vec<(i64, &str, Option<&str>)> = rows.iter().map(|r| (r.task_id, r.provider.as_str(), r.usage.model.as_deref())).collect();
+        let idi = id as i64;
+        assert_eq!(by, [(idi, "um", Some("m-um")), (idi, "dois", Some("x/padrao")), (idi, "dois", Some("x/padrao"))]);
+        drop(o);
+
+        // Depois de reabrir, volta ao primeiro provedor: retoma a sessão guardada dele
+        // e só recebe o que perdeu.
+        let (provs, seen) = spies();
+        let o = Orchestrator::with_db(provs, 1, Some(Db::open(&dbp).unwrap()));
+        assert_eq!(o.task(id).unwrap().others["um"].session.as_deref(), Some("ses-um"));
+        o.set_provider(id, "um").unwrap();
+        let t = o.task(id).unwrap();
+        assert_eq!((t.session_id.as_deref(), t.model.as_deref(), t.handoff), (Some("ses-um"), Some("m-um"), true));
+        assert_eq!(t.others["dois"].session.as_deref(), Some("ses-dois"));
+        o.reply(id, "voltei").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        let turn = seen.lock().unwrap().last().unwrap().clone();
+        assert_eq!((turn.provider, turn.session.as_deref()), ("um", Some("ses-um")));
+        assert!(turn.prompt.contains("Enquanto você esteve fora") && turn.prompt.contains("Usuário: continue daqui"));
+        assert!(!turn.prompt.contains("crie o módulo"), "o que ele já viu não volta: {}", turn.prompt);
+        assert!(!o.task(id).unwrap().handoff);
+        // Tarefa encerrada não troca de provedor.
+        let o2 = Orchestrator::new(spies().0, 1);
+        assert!(matches!(o2.set_provider(99, "um"), Err(OrchestratorError::UnknownTask(99))));
+    }
+
+    /// O modo de trabalho é da tarefa: no mesmo orquestrador, uma roda no worktree
+    /// (e é avisada disso) e outra direto na pasta (sem aplicar nem descartar).
+    #[tokio::test]
+    async fn work_mode_is_per_task() {
+        if which::which("git").is_err() {
+            return;
+        }
+        let root = tempfile::tempdir().unwrap();
+        let proj = root.path().join("proj");
+        std::fs::create_dir(&proj).unwrap();
+        git_repo(&proj).await;
+        std::fs::create_dir(proj.join("comite")).unwrap();
+        std::fs::write(proj.join("comite").join("ata.md"), "fora do git\n").unwrap();
+        let dbp = root.path().join("h.db");
+        let (provs, seen) = spies();
+        let o = Orchestrator::with_db(provs, 2, Some(Db::open(&dbp).unwrap()));
+
+        let iso = o.submit_with(&proj, "um", "isolada", SubmitOptions { model: None, mode: Some(WorkMode::Isolated) }).unwrap();
+        assert_eq!(wait_final(&o, iso).await, TaskState::Completed);
+        let direct = o.submit_with(&proj, "um", "direta", SubmitOptions { model: None, mode: Some(WorkMode::Direct) }).unwrap();
+        assert_eq!(wait_final(&o, direct).await, TaskState::Completed);
+
+        let t = o.task(iso).unwrap();
+        assert_eq!((t.mode, t.workdir.clone()), (WorkMode::Isolated, Some(worktree_path(&proj, iso))));
+        assert!(!worktree_path(&proj, iso).join("comite").exists(), "o worktree só tem o que está versionado");
+        let t = o.task(direct).unwrap();
+        assert_eq!((t.mode, t.workdir.as_deref()), (WorkMode::Direct, Some(proj.as_path())));
+        assert!(!worktree_path(&proj, direct).exists(), "modo direto não cria worktree");
+
+        // O agente isolado é avisado de onde está; o direto, não.
+        let seen = seen.lock().unwrap().clone();
+        let note = seen[0].opts.system_note.clone().unwrap();
+        assert!(note.contains("git worktree") && note.contains("proj") && note.contains(&proj.display().to_string()), "{note}");
+        assert!(!note.contains('\n') && !note.contains('"'));
+        assert_eq!(seen[1].opts.system_note, None);
+        assert_eq!(seen[1].cwd, proj);
+
+        // Direto: o diff é o da pasta em relação ao último commit, com os arquivos novos,
+        // e não há o que aplicar nem descartar.
+        std::fs::write(proj.join("a.txt"), "a\nmudou\n").unwrap();
+        let d = o.diff(direct).await.unwrap();
+        assert!(d.contains("a.txt") && d.contains("+mudou"), "{d}");
+        assert!(d.contains("comite/ata.md") && d.contains("+fora do git"), "{d}");
+        assert_eq!(git(&proj, &["diff", "--cached", "--name-only"]).await.unwrap().trim(), "", "o índice do usuário não é tocado");
+        assert!(matches!(o.apply(direct).await, Err(OrchestratorError::NoWorktree)));
+        assert!(matches!(o.discard(direct).await, Err(OrchestratorError::NoWorktree)));
+        assert_eq!(o.task(direct).unwrap().state, TaskState::Completed);
+        // Resposta no modo direto continua na pasta do projeto.
+        o.reply(direct, "de novo").unwrap();
+        assert_eq!(wait_final(&o, direct).await, TaskState::Completed);
+
+        // Níveis de git: o padrão segue o modo; a preferência do projeto vale sobre a geral.
+        use crate::permissions::GitLevels;
+        assert_eq!(o.git_levels(&proj, WorkMode::Isolated), GitLevels { local: true, remote: false });
+        assert_eq!(o.git_levels(&proj, WorkMode::Direct), GitLevels { local: false, remote: false });
+        o.set_git_setting(None, "remote", Some(true)).unwrap();
+        o.set_git_setting(Some(&proj), "local", Some(false)).unwrap();
+        assert_eq!(o.git_levels(&proj, WorkMode::Isolated), GitLevels { local: false, remote: true });
+        o.set_git_setting(Some(&proj), "remote", Some(false)).unwrap();
+        assert_eq!(o.git_levels(&proj, WorkMode::Direct), GitLevels { local: false, remote: false });
+        assert_eq!(o.git_levels(&plain_other(&root), WorkMode::Direct), GitLevels { local: false, remote: true });
+        for level in ["local", "remote"] {
+            o.set_git_setting(None, level, None).unwrap();
+            o.set_git_setting(Some(&proj), level, None).unwrap();
+        }
+        assert_eq!(o.git_levels(&proj, WorkMode::Isolated), GitLevels { local: true, remote: false });
+
+        // Preferências: geral e por projeto; pasta sem git só aceita o modo direto.
+        assert_eq!(o.default_mode(&proj), WorkMode::Isolated);
+        o.set_work_mode_setting(None, Some(WorkMode::Direct)).unwrap();
+        assert_eq!(o.default_mode(&proj), WorkMode::Direct);
+        o.set_work_mode_setting(Some(&proj), Some(WorkMode::Isolated)).unwrap();
+        assert_eq!(o.default_mode(&proj), WorkMode::Isolated);
+        o.set_work_mode_setting(Some(&proj), None).unwrap();
+        assert_eq!(o.default_mode(&proj), WorkMode::Direct);
+        let id3 = o.submit(&proj, "um", "pelo padrão").unwrap();
+        assert_eq!(o.task(id3).unwrap().mode, WorkMode::Direct);
+        wait_final(&o, id3).await;
+        let plain = root.path().join("sem-git");
+        std::fs::create_dir(&plain).unwrap();
+        let id4 = o.submit_with(&plain, "um", "x", SubmitOptions { model: None, mode: Some(WorkMode::Isolated) }).unwrap();
+        assert_eq!(o.task(id4).unwrap().mode, WorkMode::Direct);
+        wait_final(&o, id4).await;
+        assert!(o.diff(id4).await.is_err(), "sem git não há commit para comparar");
+
+        o.discard(iso).await.unwrap();
+        drop(o);
+        // O modo fica gravado na tarefa.
+        let o = Orchestrator::with_db(spies().0, 1, Some(Db::open(&dbp).unwrap()));
+        assert_eq!(o.task(iso).unwrap().mode, WorkMode::Isolated);
+        assert_eq!(o.task(direct).unwrap().mode, WorkMode::Direct);
     }
 
     /// O processo filho recebe `PWD` igual ao diretório de trabalho (nunca o herdado).

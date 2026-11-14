@@ -12,7 +12,8 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Default, Clone)]
 pub struct OpencodeProvider {
-    /// Modelo opcional (`provedor/modelo`), repassado com `-m`.
+    /// Modelo inicial das conversas novas (`provedor/modelo`). O modelo de cada
+    /// turno vem da tarefa (`TurnOptions::model`).
     pub model: Option<String>,
 }
 
@@ -48,23 +49,58 @@ impl AgentProvider for OpencodeProvider {
         CommandSpec::new("opencode").arg("auth").arg("login")
     }
 
-    fn task_command(&self, prompt: &str, cwd: &Path, session: Option<&str>) -> CommandSpec {
+    fn task_command(&self, prompt: &str, cwd: &Path, session: Option<&str>, opts: &TurnOptions) -> CommandSpec {
         // Sem argumento de mensagem, `opencode run` lê o prompt da entrada padrão.
         // A pasta da sessão é a do processo; a CLI confia na variável `PWD` quando ela
         // existe, por isso `build_command` a acerta junto com o diretório.
         let mut c = CommandSpec::new("opencode").arg("run").arg("--format").arg("json");
-        if let Some(m) = &self.model {
+        if let Some(m) = opts.model.as_deref().filter(|m| valid_model_name(m)) {
             c = c.arg("-m").arg(m);
         }
         if let Some(s) = session {
             c = c.arg("--session").arg(s);
         }
-        c.cwd(cwd).stdin(prompt)
+        // O `opencode run` não tem opção de prompt de sistema (conferido no `--help`
+        // da 2.3.0): o aviso de ambiente vai na frente do primeiro pedido da sessão.
+        let text = match opts.system_note.as_deref().filter(|n| !n.is_empty() && session.is_none()) {
+            Some(n) => format!("[Aviso do ambiente] {n}\n\n{prompt}"),
+            None => prompt.to_string(),
+        };
+        c.cwd(cwd).stdin(text)
     }
 
+    /// O modelo das linhas de uso é preenchido pelo orquestrador (o da tarefa).
     fn parse_line(&self, line: &str) -> Vec<AgentEvent> {
-        parse_json_event(line, self.model.as_deref())
+        parse_json_event(line, None)
     }
+
+    fn default_model(&self) -> Option<String> {
+        self.model.clone().filter(|m| valid_model_name(m))
+    }
+
+    fn list_models(&self) -> Result<Vec<ModelInfo>, String> {
+        let bin = self.detect().ok_or_else(|| "A CLI opencode não está instalada.".to_string())?;
+        match run_capture_stdout(&bin, &["models"]) {
+            Some((true, out)) => Ok(parse_models(&out)),
+            Some((false, _)) => Err("O comando opencode models falhou.".into()),
+            None => Err("Não foi possível executar o opencode.".into()),
+        }
+    }
+}
+
+/// Saída de `opencode models`: um `provedor/modelo` por linha.
+pub fn parse_models(out: &str) -> Vec<ModelInfo> {
+    let mut seen = std::collections::HashSet::new();
+    strip_ansi(out)
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.contains('/') && valid_model_name(l))
+        .filter(|l| seen.insert(l.to_string()))
+        .map(|l| {
+            let (prov, name) = l.split_once('/').unwrap_or(("", l));
+            ModelInfo { value: l.to_string(), label: name.to_string(), hint: prov.to_string() }
+        })
+        .collect()
 }
 
 /// Interpreta `opencode auth list`: só conta as linhas de credenciais
@@ -260,11 +296,30 @@ mod tests {
 
     #[test]
     fn command_uses_stdin() {
+        // O modelo vem da tarefa; o do provedor é só o valor inicial das conversas novas.
         let p = OpencodeProvider::with_model("openai/gpt");
-        let c = p.task_command("a \"b\" %PATH%\nc", Path::new("."), Some("ses_1"));
-        assert_eq!(c.args, ["run", "--format", "json", "-m", "openai/gpt", "--session", "ses_1"]);
+        assert_eq!(p.default_model().as_deref(), Some("openai/gpt"));
+        let opts = TurnOptions { model: Some("google/gemini".into()), system_note: Some("cópia isolada".into()) };
+        let c = p.task_command("a \"b\" %PATH%\nc", Path::new("."), Some("ses_1"), &opts);
+        assert_eq!(c.args, ["run", "--format", "json", "-m", "google/gemini", "--session", "ses_1"]);
         assert_eq!(c.cwd.as_deref(), Some(Path::new(".")));
+        // Sessão existente: o aviso de ambiente já foi dado no primeiro pedido.
         assert_eq!(c.stdin.as_deref(), Some("a \"b\" %PATH%\nc"));
+        let c = p.task_command("oi", Path::new("."), None, &opts);
+        assert_eq!(c.stdin.as_deref(), Some("[Aviso do ambiente] cópia isolada\n\noi"));
+        // Sem modelo na tarefa, vale o padrão da CLI (nenhum `-m`); nome inválido é ignorado.
+        let c = p.task_command("oi", Path::new("."), None, &TurnOptions::default());
+        assert_eq!(c.args, ["run", "--format", "json"]);
+        let bad = TurnOptions { model: Some("--auto".into()), ..Default::default() };
+        assert_eq!(p.task_command("oi", Path::new("."), None, &bad).args, ["run", "--format", "json"]);
+    }
+
+    #[test]
+    fn models_list() {
+        let out = "\u{1b}[90mgoogle/gemini-2.5-pro\u{1b}[0m\nopenai/gpt-6-luna\n\nopenai/gpt-6-luna\naviso solto\n";
+        let m = parse_models(out);
+        assert_eq!(m.len(), 2);
+        assert_eq!((m[0].value.as_str(), m[0].label.as_str(), m[0].hint.as_str()), ("google/gemini-2.5-pro", "gemini-2.5-pro", "google"));
     }
 
     #[test]

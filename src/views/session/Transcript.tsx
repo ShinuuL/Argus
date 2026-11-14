@@ -3,8 +3,8 @@
  * usuário em caixa, resposta em Markdown, ferramentas em linhas recolhidas e,
  * no turno terminado, os passos intermediários agrupados em "N passos".
  */
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
-import { formatTokens, formatUsd, type Pricing, type TokenUsage } from "@/api";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { api, errorMessage, formatTokens, formatUsd, type Path, type Pricing, type TokenUsage } from "@/api";
 import { Icon } from "@/shell/icons";
 import { MessageView } from "@/views/chat";
 import {
@@ -40,6 +40,56 @@ function UsageLine({ usage, pricing }: { usage: TokenUsage; pricing: Pricing | n
       {formatTokens(usage.cache_read)} lido · {formatTokens(usage.cache_write)} gravado
       {usage.model && ` · ${usage.model}`}
       {pricing && ` · ${formatUsd(usageCost(usage, pricing))} equivalente em API`}
+    </div>
+  );
+}
+
+/**
+ * Ferramenta negada por falta de permissão: diz qual comando foi negado e
+ * oferece liberá-lo no projeto (entra em "Comandos permitidos ao agente").
+ */
+function DeniedLine({ tool, command, project }: { tool: string; command: string; project: Path | null }) {
+  const [state, setState] = useState<"idle" | "saving" | "done">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const shell = tool === "Bash" || tool === "PowerShell";
+  const canAllow = shell && !!command && !command.includes("\n") && project != null;
+  const allow = async () => {
+    if (!project) return;
+    setState("saving");
+    try {
+      await api.permissionsAllowDenied(project, tool, command);
+      setState("done");
+      setError(null);
+    } catch (e) {
+      setState("idle");
+      setError(errorMessage(e));
+    }
+  };
+  return (
+    <div className="cv-denied" role="status">
+      <Icon name="shield" size={14} />
+      <span className="cv-denied-text">
+        <b>{shell ? "Comando negado" : `Ferramenta negada: ${tool}`}</b>
+        {command && <code>{command}</code>}
+        <span className="cv-denied-why">
+          {state === "done"
+            ? "Liberado neste projeto. Vale a partir do próximo turno: peça de novo."
+            : shell
+              ? "Não está entre os comandos liberados ao agente."
+              : "O agente não tem permissão para isso nesta pasta."}
+          {error && <span className="err"> {error}</span>}
+        </span>
+      </span>
+      {canAllow && state !== "done" && (
+        <button
+          type="button"
+          disabled={state === "saving"}
+          title="Acrescenta este comando exato aos comandos permitidos do projeto (aba Configurações)"
+          onClick={() => void allow()}
+        >
+          {state === "saving" ? "Liberando…" : "Liberar este comando neste projeto"}
+        </button>
+      )}
     </div>
   );
 }
@@ -88,10 +138,15 @@ export interface TranscriptProps {
   after?: ReactNode;
   /** Muda quando o chat exibido troca: volta a rolagem para o fim. */
   resetKey?: string;
+  /** Nome de exibição de um provedor (para a divisória de troca de agente). */
+  providerName?(id: string): string;
+  /** Projeto da conversa (para liberar um comando negado). */
+  project?: Path | null;
 }
 
 export function Transcript(props: TranscriptProps) {
   const { entries, subagents, taskActive, now, pricing, onOpenSubagent, group = true, before, after, resetKey } = props;
+  const nameOf = props.providerName ?? ((id: string) => id);
   const ref = useRef<HTMLDivElement>(null);
   /** Só acompanha o fim se o usuário não rolou para cima para ler. */
   const stick = useRef(true);
@@ -137,6 +192,16 @@ export function Transcript(props: TranscriptProps) {
         const node = subagents.get(entry.id);
         return node ? <SubagentCard key={key} node={node} taskActive={taskActive} now={now} onOpen={onOpenSubagent} /> : null;
       }
+      case "denied":
+        return <DeniedLine key={key} tool={entry.tool} command={entry.command} project={props.project ?? null} />;
+      case "switch":
+        return (
+          <div key={key} className="cv-switch" role="separator" title="A partir daqui, outro agente atende esta conversa. Ele recebeu um resumo do que veio antes.">
+            <span>
+              Agente trocado: {nameOf(entry.from)} → {nameOf(entry.to)}
+            </span>
+          </div>
+        );
       case "unknown":
         return (
           <div key={key} className="small muted">

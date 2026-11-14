@@ -334,6 +334,13 @@ a { color: inherit; text-decoration: none; }
 
 .usage { font-size: 12px; line-height: 1.5; color: var(--text-2); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .line-note { font-size: 13px; color: var(--text-2); }
+.switch-line { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--text-2); text-align: center; }
+.switch-line::before, .switch-line::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.denied { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--warn); border-radius: 12px; background: var(--surface); line-height: 1.45; font-size: 13.5px; }
+.denied .ic { flex: none; margin-top: 2px; color: var(--warn); }
+.denied > span { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; min-width: 0; }
+.denied code { padding: 1px 6px; border-radius: 5px; background: var(--bg); border: 1px solid var(--border); font-size: 12.5px; overflow-wrap: anywhere; }
+.denied-why { flex-basis: 100%; color: var(--text-2); font-size: 12.5px; }
 .working { display: flex; align-items: center; gap: 8px; color: var(--run); font-size: 13.500px; }
 .fail { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--err); border-radius: 12px; background: var(--err-bg); color: var(--err); line-height: 1.45; }
 .fail .ic { margin-top: 1px; }

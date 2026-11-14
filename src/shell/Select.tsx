@@ -24,6 +24,12 @@ export interface SelectProps {
   icon?: ReactNode;
   /** Dica ao passar o mouse. */
   title?: string;
+  /** Chamado cada vez que a lista abre (para carregar as opções sob demanda). */
+  onOpen?(): void;
+  /** Linha de aviso no fim da lista (ex.: "consultando…"). */
+  note?: string | null;
+  /** Largura mínima da lista aberta, em px (padrão 200). */
+  popWidth?: number;
 }
 
 /** A partir de quantas opções a lista ganha campo de busca. */
@@ -46,6 +52,9 @@ export function Select({
   variant = "field",
   icon,
   title,
+  onOpen,
+  note,
+  popWidth = 200,
 }: SelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -76,6 +85,7 @@ export function Select({
     if (disabled) return;
     setActive(Math.max(0, options.findIndex((o) => o.value === value)));
     setOpen(true);
+    onOpen?.();
   };
 
   // Posição: abaixo do botão; acima quando não há espaço embaixo.
@@ -85,7 +95,7 @@ export function Select({
     const below = window.innerHeight - r.bottom - 8;
     const above = r.top - 8;
     const up = below < 180 && above > below;
-    const width = Math.min(Math.max(r.width, 200), window.innerWidth - 16);
+    const width = Math.min(Math.max(r.width, popWidth), window.innerWidth - 16);
     const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
     setPos({
       left,
@@ -93,8 +103,14 @@ export function Select({
       maxHeight: Math.min(MAX_HEIGHT, up ? above : below),
       ...(up ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
     });
-    (withSearch ? search.current : pop.current)?.focus();
-  }, [open, withSearch]);
+  }, [open, popWidth]);
+
+  // O foco só pode ir para a lista depois que ela existe (ela nasce quando a
+  // posição é conhecida): sem isto, digitar para filtrar e as setas não valiam.
+  const placed = open && pos != null;
+  useEffect(() => {
+    if (placed) (withSearch ? search.current : pop.current)?.focus();
+  }, [placed, withSearch]);
 
   useEffect(() => {
     if (!open) return;
@@ -102,13 +118,13 @@ export function Select({
       const t = e.target as Node;
       if (!pop.current?.contains(t) && !btn.current?.contains(t)) close(false);
     };
+    // A janela perder o foco não fecha a lista: uma consulta à CLI (lista de
+    // modelos) pode tirar o foco por um instante, e a lista sumia no meio.
     const shut = () => close(false);
     document.addEventListener("mousedown", onDown, true);
-    window.addEventListener("blur", shut);
     window.addEventListener("resize", shut);
     return () => {
       document.removeEventListener("mousedown", onDown, true);
-      window.removeEventListener("blur", shut);
       window.removeEventListener("resize", shut);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -203,6 +219,7 @@ export function Select({
               ))}
               {!shown.length && <div className="sel-empty">Nada encontrado.</div>}
             </div>
+            {note && <div className="sel-note">{note}</div>}
           </div>,
           document.body,
         )}
