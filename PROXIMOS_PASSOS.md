@@ -258,6 +258,7 @@ Em aberto:
 - [ ] `anexos\novo\` é compartilhada por todas as conversas novas: o `--add-dir` dessa pasta deixa o agente de uma conversa ler os anexos recentes das outras (até a limpeza de 1 dia).
 - [ ] Edição de arquivos pelo OpenCode v2 não conferida: sem `--auto`, o `run` pode negar a permissão de escrita.
 - [ ] Um turno retomado gravou um evento de resultado vazio (ok, custo 0) logo no começo, antes das ferramentas. Não aparece na conversa; causa não investigada.
+- [ ] Pareamento pelo celular dava "Não autorizado" ao abrir o link do QR (visto pelo Tailscale). Causa provável: cookie `SameSite=Strict`, que o navegador do celular não envia quando o link vem da câmera ou de outro app. Corrigido no código (cookie `Lax` e página de pareamento que segue sozinha para a tela inicial); **falta confirmar num aparelho**.
 
 ## Próximos passos (em ordem)
 

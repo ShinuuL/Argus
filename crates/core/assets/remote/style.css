@@ -26,40 +26,42 @@
 
 /* ---------- Nebulosa ---------- */
 [data-theme="nebulosa"] {
-  --bg: #10002b;
-  --surface: #240046;
-  --surface-2: #3c096c;
-  --border: color-mix(in srgb, #3c096c 55%, #5a189a);
-  --border-strong: #5a189a;
-  --text: color-mix(in srgb, #e0aaff 55%, #ffffff);
-  --text-2: #c77dff;
+  /* Fundo quase preto com um toque da paleta; o roxo fica no destaque, nas bordas e na seleção. */
+  --bg: #0d061c;
+  --surface: #1a0a2a;
+  --surface-2: #281140;
+  --border: #341752;
+  --border-strong: #441770;
+  --text: #eee2f7;
+  --text-2: #bf9edc;
   --accent: #7b2cbf;
   --accent-hover: color-mix(in srgb, #7b2cbf 50%, #9d4edd);
-  --on-accent: color-mix(in srgb, #e0aaff 15%, #ffffff);
+  --on-accent: #ffffff;
   --accent-text: #c77dff;
-  --selection: color-mix(in srgb, #3c096c 40%, #5a189a);
+  --selection: #37105c;
   --focus: #c77dff;
   --status-bg: #3c096c;
-  --on-status: color-mix(in srgb, #e0aaff 55%, #ffffff);
+  --on-status: #eee2f7;
 }
 
 /* ---------- Brasa ---------- */
 [data-theme="brasa"] {
+  /* Os vermelhos escuros da paleta entram nos controles, nas bordas, na seleção e na barra de status. */
   --bg: #0b090a;
   --surface: #161a1d;
-  --surface-2: color-mix(in srgb, #161a1d 86%, #b1a7a6);
-  --border: color-mix(in srgb, #161a1d 78%, #b1a7a6);
-  --border-strong: color-mix(in srgb, #161a1d 60%, #b1a7a6);
+  --surface-2: #2e1417;
+  --border: #3e1113;
+  --border-strong: #660708;
   --text: #f5f3f4;
   --text-2: #b1a7a6;
   --accent: #ba181b;
   --accent-hover: color-mix(in srgb, #ba181b 50%, #e5383b);
   --on-accent: #ffffff;
   --accent-text: color-mix(in srgb, #e5383b 65%, #f5f3f4);
-  --selection: color-mix(in srgb, #660708 65%, #161a1d);
-  --focus: #d3d3d3;
-  --status-bg: #660708;
-  --on-status: #f5f3f4;
+  --selection: #560b0c;
+  --focus: #e5383b;
+  --status-bg: #a4161a;
+  --on-status: #ffffff;
 }
 
 :root {

@@ -16,7 +16,7 @@ use axum::{
     },
     http::{header, HeaderMap, StatusCode},
     middleware::{self, Next},
-    response::{IntoResponse, Redirect, Response},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -44,7 +44,7 @@ const CSP_UNAUTHORIZED: &str = "default-src 'none'; style-src 'unsafe-inline'; b
 /// destaque). O manifest e o ícone acompanham o tema escolhido no aparelho.
 fn theme_colors(theme: Option<&str>) -> (&'static str, &'static str, &'static str) {
     match theme {
-        Some("nebulosa") => ("#10002b", "#240046", "#9d4edd"),
+        Some("nebulosa") => ("#0d061c", "#1a0a2a", "#9d4edd"),
         Some("brasa") => ("#0b090a", "#161a1d", "#e5383b"),
         _ => ("#0d1b2a", "#1b263b", "#778da9"),
     }
@@ -255,14 +255,32 @@ async fn pair(State(st): State<AppState>, q: Result<Query<PairQuery>, axum::extr
     if !st.check(&token) {
         return unauthorized_page();
     }
-    let cookie = format!("{COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000");
-    // O redirecionamento tira o token da barra de endereço.
+    // SameSite=Lax: o link do QR é aberto pela câmera ou por outro app, e nesse caso o
+    // navegador do celular não manda cookie Strict na navegação seguinte (dava "Não autorizado").
+    let cookie = format!("{COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000");
+    // Em vez de redirecionar, devolve uma página que segue sozinha para a tela inicial: a
+    // navegação passa a partir do próprio site, e o token sai da barra de endereço.
     (
-        [(header::SET_COOKIE, cookie.as_str()), (header::CACHE_CONTROL, "no-store"), (header::REFERRER_POLICY, "no-referrer")],
-        Redirect::to("/?pareado=1"),
+        [
+            (header::SET_COOKIE, cookie.as_str()),
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+            (header::CONTENT_SECURITY_POLICY, CSP_UNAUTHORIZED),
+            (header::REFERRER_POLICY, "no-referrer"),
+        ],
+        PAIRED_PAGE,
     )
         .into_response()
 }
+
+const PAIRED_PAGE: &str = r#"<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="0;url=/?pareado=1">
+<title>Argus</title></head>
+<body style="font-family:system-ui,sans-serif;background:#0d1b2a;color:#e0e1dd;padding:24px">
+<p>Aparelho pareado.</p><p><a href="/?pareado=1" style="color:#e0e1dd">Abrir o Argus</a></p>
+</body></html>"#;
 
 fn asset(ct: &'static str, body: impl Into<String>) -> Response {
     (
@@ -744,7 +762,7 @@ mod tests {
         assert!(r.ends_with("[]"));
         // pareamento define cookie
         let r = http(port, get(&format!("/pair?token={token}"), "")).await;
-        assert!(r.starts_with("HTTP/1.1 303"), "{r}");
+        assert!(r.starts_with("HTTP/1.1 200"), "{r}");
         assert!(r.contains("HttpOnly"));
         let ck = format!("Cookie: {COOKIE}={token}\r\n");
         assert!(http(port, get("/", &ck)).await.starts_with("HTTP/1.1 200"));
@@ -849,7 +867,7 @@ mod tests {
         assert_eq!(body(&missing), body(&wrong));
         // Pareamento certo: cookie e redirecionamento sem o token no endereço.
         let ok = http(port, get(&format!("/pair?token={token}"), "")).await;
-        assert!(ok.starts_with("HTTP/1.1 303") && ok.contains("location: /?pareado=1"), "{ok}");
+        assert!(ok.starts_with("HTTP/1.1 200") && ok.contains("url=/?pareado=1") && ok.contains("SameSite=Lax"), "{ok}");
         srv.stop();
     }
 
@@ -891,7 +909,7 @@ mod tests {
         let r = http(port, get("/manifest.webmanifest?tema=%3Cx%3E", &auth)).await;
         assert!(r.contains("#0d1b2a") && r.contains("tema=oceano"), "{r}");
         let r = http(port, get("/icon.svg?tema=nebulosa", &auth)).await;
-        assert!(r.contains("#10002b") && r.contains("<svg"), "{r}");
+        assert!(r.contains("#0d061c") && r.contains("<svg"), "{r}");
         // A página não carrega nada de fora nem tem script ou estilo inline.
         let r = http(port, get("/", &auth)).await;
         assert!(r.contains("content-security-policy: default-src 'self'"), "{r}");
