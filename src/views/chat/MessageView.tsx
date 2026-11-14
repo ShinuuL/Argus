@@ -25,12 +25,14 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 function flash(button: HTMLElement, ok: boolean) {
+  // Botão só com ícone (copiar a mensagem): troca o ícone pela classe, sem mexer no conteúdo.
+  const iconOnly = button.classList.contains("chat-msg-copy");
   const before = button.textContent;
-  button.textContent = ok ? "Copiado" : "Falhou";
-  button.classList.add("done");
+  if (!iconOnly) button.textContent = ok ? "Copiado" : "Falhou";
+  button.classList.add(ok ? "done" : "fail");
   window.setTimeout(() => {
-    button.textContent = before;
-    button.classList.remove("done");
+    if (!iconOnly) button.textContent = before;
+    button.classList.remove("done", "fail");
   }, 1200);
 }
 
@@ -68,20 +70,28 @@ export const Markdown = memo(function Markdown({ text, copyable = false, classNa
 
   return (
     <div className={`chat-md-wrap${className ? ` ${className}` : ""}`}>
-      {copyable && (
-        <button
-          type="button"
-          className="chat-copy chat-msg-copy"
-          title="Copiar a mensagem"
-          onClick={(e) => {
-            const button = e.currentTarget;
-            void copyText(text).then((ok) => flash(button, ok));
-          }}
-        >
-          Copiar
-        </button>
-      )}
       <div className="chat-md" onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />
+      {copyable && (
+        <div className="chat-msg-actions">
+          <button
+            type="button"
+            className="chat-msg-copy"
+            title="Copiar a mensagem"
+            aria-label="Copiar a mensagem"
+            onClick={(e) => {
+              const button = e.currentTarget;
+              void copyText(text).then((ok) => flash(button, ok));
+            }}
+          >
+            <svg className="i-copy" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9 9h10a1 1 0 011 1v10a1 1 0 01-1 1H9a1 1 0 01-1-1V10a1 1 0 011-1zM5 15H4a1 1 0 01-1-1V4a1 1 0 011-1h10a1 1 0 011 1v1" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <svg className="i-done" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 12l5 5L20 6" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+      )}
     </div>
   );
 });

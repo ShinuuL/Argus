@@ -2,6 +2,7 @@
  * Configurações (aba): tema de cores, auto-work por projeto (liga/desliga e
  * limites) e os comandos que o agente pode executar em cada projeto.
  */
+import { Select } from "@/shell/Select";
 import { useState } from "react";
 import { samePath, type Path } from "@/api";
 import { THEMES, useApp, useTheme } from "@/store";
@@ -62,13 +63,12 @@ export default function SettingsView() {
           <>
             <label className="set-field">
               <span className="small">Projeto</span>
-              <select value={project.path} onChange={(e) => setChosen(e.target.value)}>
-                {projects.map((p) => (
-                  <option key={p.path} value={p.path}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+              <Select
+                ariaLabel="Projeto"
+                value={project.path}
+                options={projects.map((p) => ({ value: p.path, label: p.name }))}
+                onChange={setChosen}
+              />
             </label>
             <div className="set-card">
               <AutoWorkPanel key={project.path} project={project.path} />

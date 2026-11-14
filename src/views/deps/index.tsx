@@ -5,6 +5,7 @@
  * que sempre mostra o comando exato. A execução acontece numa aba do terminal
  * embutido, onde o usuário acompanha (e pode interromper) a instalação.
  */
+import { Select } from "@/shell/Select";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage, samePath, type DepIssue, type DepKind, type Path } from "@/api";
 import { useApp, useTerminals } from "@/store";
@@ -148,18 +149,13 @@ export default function DepsView() {
 
   return (
     <div className="side-pad">
-      <select
-        aria-label="Projeto"
+      <Select
+        ariaLabel="Projeto"
+        placeholder="Escolha um projeto..."
         value={current?.path ?? ""}
-        onChange={(e) => select(e.target.value || null)}
-      >
-        <option value="">Escolha um projeto...</option>
-        {projects.map((p) => (
-          <option key={p.path} value={p.path}>
-            {p.name}
-          </option>
-        ))}
-      </select>
+        options={projects.map((p) => ({ value: p.path, label: p.name }))}
+        onChange={(v) => select(v || null)}
+      />
       {current ? (
         <DepsPanel key={current.path} project={current.path} />
       ) : (

@@ -11,6 +11,7 @@
 import { useEffect } from "react";
 import { useApp, useLayout, useWorkbench } from "@/store";
 import { InstallPrompt } from "@/views/deps";
+import { Tooltips } from "./Tooltips";
 import ProjectsView from "@/views/projects";
 import WorkbenchView from "@/views/workbench";
 import { BottomPanel } from "./BottomPanel";
@@ -64,6 +65,7 @@ export function Shell() {
       </div>
       <StatusBar />
       <InstallPrompt />
+      <Tooltips />
     </div>
   );
 }

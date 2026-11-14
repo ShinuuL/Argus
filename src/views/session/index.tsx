@@ -7,6 +7,7 @@
  * tarefa e a MESMA aba passa a ser a sessão dela. O chat de um subagente é
  * somente leitura: não tem caixa de resposta.
  */
+import { Select } from "@/shell/Select";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
@@ -453,32 +454,26 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
     <>
       {taskId == null ? (
         <>
-          <label className="chat-pill chat-pill-select" title="Projeto em que a conversa vai acontecer">
-            <Icon name="folder" size={12} />
-            <select
-              aria-label="Projeto"
-              value={newProject ?? ""}
-              onChange={(e) => useWorkbench.getState().setChatProject(tabId, e.target.value || null)}
-            >
-              {!projects.length && <option value="">nenhum projeto</option>}
-              {projects.map((p) => (
-                <option key={p.path} value={p.path}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="chat-pill chat-pill-select" title="Agente que vai atender (a CLI oficial, com o seu login)">
-            <Icon name="bot" size={12} />
-            <select aria-label="Provedor" value={providerId} onChange={(e) => setProvider(e.target.value)}>
-              {!providers.length && <option value={providerId}>{providerId}</option>}
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.display_name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <Select
+            variant="pill"
+            ariaLabel="Projeto"
+            title="Projeto em que a conversa vai acontecer"
+            icon={<Icon name="folder" size={12} />}
+            placeholder="nenhum projeto"
+            value={newProject ?? ""}
+            options={projects.map((p) => ({ value: p.path, label: p.name }))}
+            onChange={(v) => useWorkbench.getState().setChatProject(tabId, v || null)}
+          />
+          <Select
+            variant="pill"
+            ariaLabel="Provedor"
+            title="Agente que vai atender (a CLI oficial, com o seu login)"
+            icon={<Icon name="bot" size={12} />}
+            placeholder={providerId}
+            value={providerId}
+            options={providers.map((p) => ({ value: p.id, label: p.display_name }))}
+            onChange={setProvider}
+          />
         </>
       ) : (
         task && (

@@ -110,12 +110,19 @@ button.chat-sub:hover { background: var(--bg-hover); }
 }
 .chat-copy:hover { background: var(--bg-control-hover); color: var(--text-strong); }
 .chat-copy.done { color: var(--ok); }
+/* Ações da mensagem: linha própria abaixo do texto, para não cobrir nada. */
+.chat-msg-actions { display: flex; gap: 2px; height: 24px; margin-top: 2px; opacity: 0; transition: opacity 0.12s; }
+.chat-md-wrap:hover > .chat-msg-actions, .chat-msg-actions:focus-within { opacity: 1; }
 .chat-msg-copy {
-  position: absolute; top: -4px; right: 0; z-index: 1;
-  background: var(--bg-control); border-color: var(--border-control);
-  opacity: 0; transition: opacity 0.12s;
+  display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: var(--radius); background: none; color: var(--text-dim); cursor: pointer;
 }
-.chat-md-wrap:hover > .chat-msg-copy, .chat-msg-copy:focus-visible, .chat-msg-copy.done { opacity: 1; }
+.chat-msg-copy:hover { background: var(--bg-hover); color: var(--text-strong); }
+.chat-msg-copy .i-done { display: none; }
+.chat-msg-copy.done { color: var(--ok); }
+.chat-msg-copy.done .i-copy { display: none; }
+.chat-msg-copy.done .i-done { display: block; }
+.chat-msg-copy.fail { color: var(--err); }
 
 /* --------------------------------------------------------------- anexos */
 .chat-shot {

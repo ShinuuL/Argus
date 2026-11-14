@@ -315,6 +315,7 @@ Em aberto:
     - Se a porta estiver em uso, escolher a livre mais próxima quando o comando aceitar a porta por parâmetro.
     - Lembrar o último comando usado em cada projeto e permitir "iniciar todos" de um conjunto.
     - Aproveita o rastreamento de processos e portas de `crates/core/src/procs.rs`.
+14. **Refazer o ícone do app (não crítico).** O olho atual é provisório; redesenhar o ícone do Argus (janela, barra de tarefas, instalador e web app do celular).
 
 ## Notas
 

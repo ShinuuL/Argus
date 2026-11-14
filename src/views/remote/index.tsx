@@ -1,3 +1,4 @@
+import { Select } from "@/shell/Select";
 import { useEffect, useState } from "react";
 import { api, errorMessage, type AddrKind, type RemoteInfo } from "@/api";
 import "./remote.css";
@@ -114,18 +115,14 @@ export default function RemoteView() {
               <label className="small" htmlFor="rx-host">
                 Endereço IP
               </label>
-              <select
+              <Select
                 id="rx-host"
+                ariaLabel="Endereço IP"
                 value={info.host}
                 disabled={busy}
-                onChange={(e) => void run(() => api.remoteSetHost(e.target.value || null))}
-              >
-                {info.hosts.map((h) => (
-                  <option key={h.ip} value={h.ip}>
-                    {h.ip} — {h.iface} ({KIND_LABEL[h.kind] ?? h.kind})
-                  </option>
-                ))}
-              </select>
+                options={info.hosts.map((h) => ({ value: h.ip, label: h.ip, hint: `${h.iface} · ${KIND_LABEL[h.kind] ?? h.kind}` }))}
+                onChange={(v) => void run(() => api.remoteSetHost(v || null))}
+              />
               <p className="small muted rx-p">
                 Se o celular não abrir, escolha o IP da mesma rede Wi-Fi do celular. IPs VPN/virtuais só funcionam
                 com o celular na mesma VPN.
