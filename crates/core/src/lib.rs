@@ -3,6 +3,7 @@ pub mod attachments;
 pub mod autowork;
 pub mod db;
 pub mod deps;
+pub mod devices;
 pub mod isolation;
 pub mod metrics;
 pub mod monitor;

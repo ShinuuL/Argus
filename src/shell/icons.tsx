@@ -6,6 +6,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowUp,
+  TabletSmartphone,
   Bot,
   ChartColumn,
   Check,
@@ -75,6 +76,7 @@ const ICONS = {
   box: Package,
   chart: ChartColumn,
   phone: Smartphone,
+  devices: TabletSmartphone,
   gear: Settings,
   clip: Paperclip,
   send: ArrowUp,

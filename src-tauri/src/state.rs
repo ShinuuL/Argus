@@ -7,6 +7,7 @@ use argus_core::agents::orchestrator::Orchestrator;
 use argus_core::agents::provider::AgentProvider;
 use argus_core::autowork::AutoWork;
 use argus_core::db::Db;
+use argus_core::devices::ScreenMirror;
 use argus_core::monitor::WatchHandle;
 use argus_core::pty::PtyManager;
 use argus_core::remote::RemoteServer;
@@ -32,6 +33,8 @@ pub struct AppCtx {
     pub suggested: Mutex<HashSet<String>>,
     pub sys: Arc<Mutex<Option<sysinfo::System>>>,
     pub audio: OnceLock<crate::commands::media::LocalAudio>,
+    /// Screen-Mirror (celulares Android) rodando como processo auxiliar.
+    pub mirror: ScreenMirror,
 }
 
 /// Caminho do banco: `ARGUS_DB` (testes) ou `%APPDATA%/argus/argus.db`.
@@ -41,6 +44,12 @@ pub fn db_path() -> Option<PathBuf> {
     }
     let base = std::env::var_os("APPDATA").map(PathBuf::from).or_else(|| std::env::current_dir().ok())?;
     Some(base.join(argus_core::paths::dir_name()).join("argus.db"))
+}
+
+/// Arquivo na pasta de dados do Argus (`%APPDATA%/argus/`).
+fn data_file(name: &str) -> Option<PathBuf> {
+    let base = std::env::var_os("APPDATA").map(PathBuf::from)?;
+    Some(base.join(argus_core::paths::dir_name()).join(name))
 }
 
 /// Abre o banco; None (com aviso no stderr) se não for possível.
@@ -96,6 +105,7 @@ impl AppCtx {
             suggested: Mutex::new(HashSet::new()),
             sys: Arc::new(Mutex::new(None)),
             audio: OnceLock::new(),
+            mirror: ScreenMirror::new(data_file("screen_mirror.json")),
         }
     }
 

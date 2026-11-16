@@ -127,6 +127,12 @@ fn main() {
             servers::server_restart,
             servers::allowed_commands_get,
             servers::allowed_commands_set,
+            // celulares (Screen-Mirror)
+            devices::devices_status,
+            devices::devices_start,
+            devices::devices_stop,
+            devices::devices_set_dir,
+            devices::devices_list,
             // dependências
             deps::deps_analyze,
             deps::deps_detect_missing_command,
@@ -161,6 +167,14 @@ fn main() {
             system::system_confirm,
             system::app_info,
         ])
-        .run(tauri::generate_context!())
-        .expect("falha ao iniciar o Argus");
+        .build(tauri::generate_context!())
+        .expect("falha ao iniciar o Argus")
+        .run(|app, event| {
+            // Processos auxiliares não podem sobreviver à janela.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(ctx) = app.try_state::<state::AppCtx>() {
+                    ctx.mirror.stop();
+                }
+            }
+        });
 }

@@ -635,3 +635,30 @@ export interface RememberedServer {
   project: Path;
   command_id: string;
 }
+
+// ------------------------------------------------------------ celulares (Screen-Mirror)
+
+/** Espelha `argus_core::devices::MirrorStatus`. */
+export interface MirrorStatus {
+  dir: Path | null;
+  node: string | null;
+  nodeTooOld: boolean;
+  needsInstall: boolean;
+  /** URL do painel quando o servidor está no ar. */
+  url: string | null;
+  pid: number | null;
+  error: string | null;
+}
+
+export interface Device {
+  serial: string;
+  /** device, unauthorized, offline... */
+  state: string;
+  model: string | null;
+  connection: string | null;
+}
+
+export interface DeviceList {
+  devices: Device[];
+  mirroring: string[];
+}
