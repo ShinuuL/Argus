@@ -28,7 +28,9 @@ export function sessionTitle(prompt: string, max = 80): string {
 export type ChatEntry =
   | { type: "user"; text: string }
   | { type: "text"; text: string }
-  | { type: "tool"; name: string; input: unknown }
+  /** `result` chega depois (ToolResult); null = ainda sem saída (rodando, ou histórico antigo). */
+  | { type: "tool"; name: string; input: unknown; result: { ok: boolean; output: string } | null }
+  | { type: "thinking"; text: string }
   | { type: "result"; ok: boolean; summary: string }
   | { type: "usage"; usage: TokenUsage }
   | { type: "notices"; lines: string[] }
@@ -74,6 +76,8 @@ export function chatEntries(events: AgentEvent[], owner: string | null): ChatEnt
   const out: ChatEntry[] = [];
   /** Posições dos `ToolUse` de criação ainda sem cartão; o `SubagentStart` os substitui. */
   const spawnTools: number[] = [];
+  /** Ferramentas comuns ainda sem saída, em ordem: o próximo `ToolResult` é da primeira. */
+  const pending: Extract<ChatEntry, { type: "tool" }>[] = [];
   for (const raw of events) {
     const { owner: evOwner, event } = unwrap(raw);
     const { kind } = variantOf(event);
@@ -87,6 +91,8 @@ export function chatEntries(events: AgentEvent[], owner: string | null): ChatEnt
     }
     if ("SubagentEnd" in event || "SubagentStats" in event) continue;
     if (evOwner !== owner) continue;
+    // Um turno novo descarta saídas que nunca vieram (turno interrompido).
+    if ("User" in event) pending.length = 0;
     if ("Denied" in event) {
       out.push({ type: "denied", ...event.Denied });
       continue;
@@ -104,8 +110,15 @@ export function chatEntries(events: AgentEvent[], owner: string | null): ChatEnt
     else if ("Text" in event) {
       if (event.Text.trim()) out.push({ type: "text", text: event.Text });
     } else if ("ToolUse" in event) {
+      const tool: Extract<ChatEntry, { type: "tool" }> = { type: "tool", name: event.ToolUse.name, input: event.ToolUse.input, result: null };
       if (SPAWN_TOOLS.has(event.ToolUse.name.toLowerCase())) spawnTools.push(out.length);
-      out.push({ type: "tool", name: event.ToolUse.name, input: event.ToolUse.input });
+      else pending.push(tool);
+      out.push(tool);
+    } else if ("ToolResult" in event) {
+      const tool = pending.shift();
+      if (tool) tool.result = { ok: event.ToolResult.ok, output: event.ToolResult.output };
+    } else if ("Thinking" in event) {
+      if (event.Thinking.trim()) out.push({ type: "thinking", text: event.Thinking });
     } else if ("Result" in event) out.push({ type: "result", ok: event.Result.ok, summary: event.Result.summary });
     else if ("Usage" in event) out.push({ type: "usage", usage: event.Usage });
     else if ("Raw" in event) pushNotice(out, event.Raw);

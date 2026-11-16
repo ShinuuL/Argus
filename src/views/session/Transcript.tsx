@@ -7,6 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { api, errorMessage, formatTokens, formatUsd, type Path, type Pricing, type TokenUsage } from "@/api";
 import { Icon } from "@/shell/icons";
 import { MessageView } from "@/views/chat";
+import { Dot, ThinkingRow, TimelineItem, ToolRow } from "./ToolRow";
 import {
   noticeSummary,
   splitTurns,
@@ -66,6 +67,7 @@ function DeniedLine({ tool, command, project }: { tool: string; command: string;
     }
   };
   return (
+    <TimelineItem dot={<Dot status="warn" />}>
     <div className="cv-denied" role="status">
       <Icon name="shield" size={14} />
       <span className="cv-denied-text">
@@ -91,6 +93,7 @@ function DeniedLine({ tool, command, project }: { tool: string; command: string;
         </button>
       )}
     </div>
+    </TimelineItem>
   );
 }
 
@@ -106,20 +109,18 @@ export function SubagentCard({ node, taskActive, now, onOpen }: SubagentCardProp
   const status = subagentStatus(node, taskActive);
   const duration = subagentDuration(node, status, now);
   return (
-    <button className="ses-sub-card" title="Abrir o chat do subagente (somente leitura)" onClick={() => onOpen(node.id)}>
-      <Icon name="bot" size={15} className="ses-sub-arrow" />
-      <span className="ses-sub-card-main">
-        <span className="ellipsis">
-          Subagente <b>{node.description || node.subagent_type || node.id}</b>
-        </span>
-        <span className="small ellipsis ses-sub-meta">
-          {node.subagent_type && node.description ? `${node.subagent_type} · ` : ""}
+    <TimelineItem dot={<Dot status={status === "interrupted" ? "none" : status} title={subagentStatusLabel(status)} />}>
+      <button type="button" className="tl-row ses-sub-card" title="Abrir o chat do subagente (somente leitura)" onClick={() => onOpen(node.id)}>
+        <Icon name="bot" size={13} className="tl-row-ic" />
+        <b>{node.subagent_type || "Agent"}</b>
+        <span className="tl-row-sum ses-sub-desc">{node.description || node.id}</span>
+        <span className="ses-sub-meta">
           <span className={`ses-st ${status}`}>{subagentStatusLabel(status)}</span>
           {duration && ` · ${duration}`}
         </span>
-      </span>
-      <Icon name="chevronRight" size={14} />
-    </button>
+        <Icon name="chevronRight" size={12} className="tl-chev" />
+      </button>
+    </TimelineItem>
   );
 }
 
@@ -165,29 +166,46 @@ export function Transcript(props: TranscriptProps) {
     if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
   };
 
-  const item = (entry: ChatEntry, key: string): ReactNode => {
+  /** `live` = o turno do item ainda roda; `last` = é o último item do turno. */
+  const item = (entry: ChatEntry, key: string, live: boolean, last: boolean): ReactNode => {
     switch (entry.type) {
       case "user":
         return <MessageView key={key} event={{ User: entry.text }} />;
       case "text":
-        return <MessageView key={key} event={{ Text: entry.text }} />;
+        return (
+          <TimelineItem key={key} dot={<Dot status="text" />} className="tl-text">
+            <MessageView event={{ Text: entry.text }} />
+          </TimelineItem>
+        );
+      case "thinking":
+        return <ThinkingRow key={key} text={entry.text} live={live && last} />;
       case "tool":
-        return <MessageView key={key} event={{ ToolUse: { name: entry.name, input: entry.input } }} />;
+        return <ToolRow key={key} name={entry.name} input={entry.input} result={entry.result} live={live} base={props.project ?? null} />;
       case "result":
         // Sucesso não precisa de linha própria: a resposta já está acima.
         return entry.ok ? null : (
-          <div key={key} className="cv-fail" role="alert">
-            <Icon name="alert" size={14} />
-            <span>
-              <b>Erro: o turno falhou.</b>
-              {entry.summary && <span className="cv-fail-text"> {entry.summary}</span>}
-            </span>
-          </div>
+          <TimelineItem key={key} dot={<Dot status="error" />}>
+            <div className="cv-fail" role="alert">
+              <Icon name="alert" size={14} />
+              <span>
+                <b>Erro: o turno falhou.</b>
+                {entry.summary && <span className="cv-fail-text"> {entry.summary}</span>}
+              </span>
+            </div>
+          </TimelineItem>
         );
       case "usage":
-        return <UsageLine key={key} usage={entry.usage} pricing={pricing} />;
+        return (
+          <TimelineItem key={key} dot={null} className="tl-plain">
+            <UsageLine usage={entry.usage} pricing={pricing} />
+          </TimelineItem>
+        );
       case "notices":
-        return <Notices key={key} lines={entry.lines} />;
+        return (
+          <TimelineItem key={key} dot={null} className="tl-plain">
+            <Notices lines={entry.lines} />
+          </TimelineItem>
+        );
       case "subagent": {
         const node = subagents.get(entry.id);
         return node ? <SubagentCard key={key} node={node} taskActive={taskActive} now={now} onOpen={onOpenSubagent} /> : null;
@@ -219,22 +237,29 @@ export function Transcript(props: TranscriptProps) {
         {before}
         {turns.map((turn, t) => {
           const finished = t < turns.length - 1 || !taskActive;
+          const live = !finished;
           const cut = group && finished ? stepsCut(turn.items) : -1;
           const steps = cut > 0 ? turn.items.slice(0, cut) : [];
           const rest = cut > 0 ? turn.items.slice(cut) : turn.items;
           return (
             <div key={t} className="cv-turn">
               {turn.user != null && <MessageView event={{ User: turn.user }} />}
-              {steps.length > 0 && (
-                <details className="cv-steps">
-                  <summary title="Mostrar o que o agente fez antes de responder">
-                    <Icon name="chevronRight" size={12} className="cv-steps-chev" />
-                    {stepsLabel(steps)}
-                  </summary>
-                  <div className="cv-steps-body">{steps.map((e, i) => item(e, `s${i}`))}</div>
-                </details>
+              {(steps.length > 0 || rest.length > 0) && (
+                <div className="tl">
+                  {steps.length > 0 && (
+                    <TimelineItem dot={<Dot status="text" />} className="tl-steps">
+                      <details className="cv-steps">
+                        <summary title="Mostrar o que o agente fez antes de responder">
+                          {stepsLabel(steps)}
+                          <Icon name="chevronRight" size={12} className="cv-steps-chev" />
+                        </summary>
+                        <div className="cv-steps-body tl">{steps.map((e, i) => item(e, `s${i}`, false, false))}</div>
+                      </details>
+                    </TimelineItem>
+                  )}
+                  {rest.map((e, i) => item(e, `r${i}`, live, i === rest.length - 1))}
+                </div>
               )}
-              {rest.map((e, i) => item(e, `r${i}`))}
             </div>
           );
         })}

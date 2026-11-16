@@ -209,6 +209,10 @@ export type AgentEvent =
   | { User: string }
   | { Text: string }
   | { ToolUse: { name: string; input: unknown } }
+  /** Saída de uma ferramenta comum, na mesma ordem dos `ToolUse` do mesmo dono (cortada em 4000 caracteres). */
+  | { ToolResult: { ok: boolean; output: string } }
+  /** Raciocínio do modelo (bloco `thinking`). */
+  | { Thinking: string }
   | { Result: { ok: boolean; summary: string; cost: number | null } }
   | { Usage: TokenUsage }
   | { Raw: string }

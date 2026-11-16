@@ -387,6 +387,14 @@ fn is_subagent_tool(name: &str) -> bool {
 
 /// Junta os blocos de texto de um `content` (string ou lista de blocos),
 /// sem o rodapé técnico "agentId: ..." que a CLI anexa para o modelo.
+/// Os primeiros `max` caracteres de `t`, com "…" quando cortado.
+fn truncate_chars(t: &str, max: usize) -> String {
+    match t.char_indices().nth(max) {
+        Some((i, _)) => format!("{}…", &t[..i]),
+        None => t.to_string(),
+    }
+}
+
 fn content_text(c: Option<&Value>) -> String {
     match c {
         Some(Value::String(t)) => t.clone(),
@@ -446,6 +454,8 @@ pub struct StreamParser {
     /// Subagentes abertos: id -> lançado em segundo plano (termina por
     /// `task_notification`, não pelo `tool_result`).
     open: HashMap<String, bool>,
+    /// Ids de todo tool_use que criou subagente: o `tool_result` deles não vira `ToolResult`.
+    spawned: std::collections::HashSet<String>,
     /// Último total acumulado informado por sessão, no processo em andamento
     /// (zerado por `begin_turn` quando um processo novo começa).
     totals: HashMap<String, SessionTotals>,
@@ -572,12 +582,19 @@ impl StreamParser {
                                 evs.push(AgentEvent::Text(t.to_string()).scoped(parent));
                             }
                         }
+                        Some("thinking") => {
+                            let t = s(block, "thinking").trim();
+                            if !t.is_empty() {
+                                evs.push(AgentEvent::Thinking(t.to_string()).scoped(parent));
+                            }
+                        }
                         Some("tool_use") => {
                             let name = block.get("name").and_then(Value::as_str).unwrap_or("?");
                             let input = block.get("input").cloned().unwrap_or(Value::Null);
                             let start = match block.get("id").and_then(Value::as_str) {
                                 Some(id) if is_subagent_tool(name) => {
                                     self.open.insert(id.to_string(), false);
+                                    self.spawned.insert(id.to_string());
                                     Some(AgentEvent::SubagentStart {
                                         id: id.to_string(),
                                         parent: parent.map(str::to_string),
@@ -608,6 +625,11 @@ impl StreamParser {
                     }
                     let id = s(block, "tool_use_id");
                     if !self.open.contains_key(id) {
+                        if !self.spawned.contains(id) {
+                            let ok = !block.get("is_error").and_then(Value::as_bool).unwrap_or(false);
+                            let output = truncate_chars(&content_text(block.get("content")), TOOL_OUTPUT_MAX);
+                            evs.push(AgentEvent::ToolResult { ok, output }.scoped(parent));
+                        }
                         continue;
                     }
                     let status = tur.map(|t| s(t, "status")).unwrap_or_default();
@@ -765,8 +787,9 @@ mod tests {
         let p = ClaudeProvider::new();
         assert_eq!(p.parse_line(INIT), vec![AgentEvent::Session("0730ecc5-b2da".into())]);
         assert!(p.parse_line(HOOK).is_empty());
-        let evs = p.parse_line(MIXED);
-        assert_eq!(evs.len(), 3);
+        let mut evs = p.parse_line(MIXED);
+        assert_eq!(evs.len(), 4);
+        assert_eq!(evs.remove(0), AgentEvent::Thinking("...".into()));
         assert!(matches!(&evs[2], AgentEvent::Context(c) if c.input_tokens == 9 && c.model.as_deref() == Some("m")));
         assert_eq!(evs[0], AgentEvent::Text("Vou listar".into()));
         match &evs[1] {
@@ -776,7 +799,10 @@ mod tests {
             }
             o => panic!("{o:?}"),
         }
-        assert!(p.parse_line(r#"{"type":"user","message":{"content":[{"type":"tool_result"}]}}"#).is_empty());
+        assert_eq!(
+            p.parse_line(r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"falhou"}]}}"#),
+            vec![AgentEvent::ToolResult { ok: false, output: "falhou".into() }]
+        );
         assert!(p.parse_line(r#"{"type":"rate_limit_event"}"#).is_empty());
         assert_eq!(p.parse_line("texto solto"), vec![AgentEvent::Raw("texto solto".into())]);
         assert!(p.parse_line("  ").is_empty());
@@ -994,7 +1020,10 @@ mod tests {
     #[test]
     fn real_subagent_stream() {
         let p = ClaudeProvider::new();
-        let evs: Vec<AgentEvent> = FIXTURE.lines().flat_map(|l| p.parse_line(l)).filter(|e| !matches!(e, AgentEvent::Context(_))).collect();
+        let all: Vec<AgentEvent> = FIXTURE.lines().flat_map(|l| p.parse_line(l)).filter(|e| !matches!(e, AgentEvent::Context(_))).collect();
+        // A saída do Glob de dentro do subagente vem marcada com o id dele.
+        assert!(all.iter().any(|e| matches!(e, AgentEvent::Scoped { subagent, event } if subagent == SUB && matches!(&**event, AgentEvent::ToolResult { ok: true, .. }))));
+        let evs: Vec<AgentEvent> = all.into_iter().filter(|e| e.kind() != "ToolResult").collect();
         let kinds: Vec<&str> = evs.iter().map(|e| e.kind()).collect();
         assert_eq!(
             kinds,

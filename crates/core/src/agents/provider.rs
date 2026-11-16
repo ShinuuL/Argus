@@ -74,7 +74,12 @@ pub enum AgentEvent {
     /// Mensagem enviada pelo usuário (turnos de resposta).
     User(String),
     Text(String),
+    /// Raciocínio do modelo (bloco `thinking`), mostrado recolhido no chat.
+    Thinking(String),
     ToolUse { name: String, input: serde_json::Value },
+    /// Saída de uma ferramenta comum (não de subagente). Vem na mesma ordem dos
+    /// `ToolUse` do mesmo dono; `output` é cortado em [`TOOL_OUTPUT_MAX`] caracteres.
+    ToolResult { ok: bool, output: String },
     Result { ok: bool, summary: String, cost: Option<f64> },
     Usage(TokenUsage),
     Raw(String),
@@ -107,6 +112,9 @@ pub enum AgentEvent {
     /// principal ao modelo. Não vai para o histórico: o último valor fica na tarefa.
     Context(crate::agents::context::ContextUsage),
 }
+
+/// Máximo de caracteres guardados da saída de uma ferramenta (`ToolResult`).
+pub const TOOL_OUTPUT_MAX: usize = 4000;
 
 /// Opções de um turno, escolhidas por tarefa.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -287,6 +295,8 @@ impl AgentEvent {
             AgentEvent::User(_) => "User",
             AgentEvent::Text(_) => "Text",
             AgentEvent::ToolUse { .. } => "ToolUse",
+            AgentEvent::Thinking(_) => "Thinking",
+            AgentEvent::ToolResult { .. } => "ToolResult",
             AgentEvent::Result { .. } => "Result",
             AgentEvent::Usage(_) => "Usage",
             AgentEvent::Raw(_) => "Raw",

@@ -7,6 +7,8 @@ import type { LucideIcon } from "lucide-react";
 import {
   ArrowUp,
   Bot,
+  Brain,
+  Circle,
   ChartColumn,
   Check,
   ChevronDown,
@@ -20,12 +22,15 @@ import {
   Columns2,
   Eye,
   File,
+  FileText,
   Folder,
   FolderOpen,
+  FolderSearch,
   GitCompare,
   Globe,
   Hammer,
   LayoutGrid,
+  ListChecks,
   ListFilter,
   ListTree,
   LoaderCircle,
@@ -99,6 +104,12 @@ const ICONS = {
   play: Play,
   hammer: Hammer,
   palette: Palette,
+  // Conversa (linhas de ferramenta, raciocínio e tarefas)
+  fileText: FileText,
+  folderSearch: FolderSearch,
+  listChecks: ListChecks,
+  brain: Brain,
+  circle: Circle,
   // Estados do agente (AgentState)
   spinner: LoaderCircle,
   circleCheck: CircleCheck,
@@ -136,10 +147,12 @@ export function Icon({ name, size = 16, filled = false, className }: IconProps) 
 export function toolIcon(tool: string): IconName {
   const t = tool.toLowerCase();
   if (/bash|shell|exec|command|terminal/.test(t)) return "terminal";
-  if (/edit|write|patch|apply|notebook/.test(t)) return "pencil";
-  if (/read|view|cat|open/.test(t)) return "eye";
-  if (/grep|glob|search|find|ls|list/.test(t)) return "search";
   if (/web|fetch|url|http/.test(t)) return "globe";
+  if (/todo/.test(t)) return "listChecks";
+  if (/edit|write|patch|apply|notebook/.test(t)) return "pencil";
+  if (/read|view|cat|open/.test(t)) return "fileText";
+  if (/glob|^ls$|list/.test(t)) return "folderSearch";
+  if (/grep|search|find/.test(t)) return "search";
   if (/agent|task/.test(t)) return "bot";
   return "wrench";
 }

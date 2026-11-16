@@ -1286,7 +1286,7 @@ mod tests {
         let kinds: Vec<&str> = o.history(id).iter().map(|e| e.kind()).collect();
         assert_eq!(
             kinds,
-            ["User", "Session", "ToolUse", "SubagentStart", "ToolUse", "SubagentStats", "SubagentEnd", "Text", "Usage", "Result"]
+            ["User", "Session", "ToolUse", "SubagentStart", "ToolUse", "ToolResult", "SubagentStats", "SubagentEnd", "Text", "Usage", "Result"]
         );
         let subs = o.subagents(id);
         assert_eq!(subs.len(), 1);
@@ -1294,15 +1294,16 @@ mod tests {
         assert_eq!(subs[0].description, "Listar arquivos da pasta");
         assert_eq!(subs[0].result.as_deref(), Some("- alfa.txt\n- beta.md"));
         let h = o.subagent_history(id, SUB);
-        assert_eq!(h.len(), 4, "{h:?}");
+        assert_eq!(h.len(), 5, "{h:?}");
         assert!(matches!(&h[0], AgentEvent::SubagentStart { .. }));
         assert!(matches!(&h[1], AgentEvent::ToolUse { name, .. } if name == "Glob"));
-        assert!(matches!(&h[2], AgentEvent::SubagentStats { tokens: Some(29039), .. }));
-        assert!(matches!(&h[3], AgentEvent::SubagentEnd { ok: true, .. }));
+        assert!(matches!(&h[2], AgentEvent::ToolResult { ok: true, .. }));
+        assert!(matches!(&h[3], AgentEvent::SubagentStats { tokens: Some(29039), .. }));
+        assert!(matches!(&h[4], AgentEvent::SubagentEnd { ok: true, .. }));
         assert!(o.subagent_history(id, "nao-existe").is_empty());
         // A coluna do banco separa principal e subagente.
         let recs = o.db().unwrap().list_events(id as i64).unwrap();
-        assert_eq!(recs.iter().filter(|r| r.subagent.as_deref() == Some(SUB)).count(), 4);
+        assert_eq!(recs.iter().filter(|r| r.subagent.as_deref() == Some(SUB)).count(), 5);
         assert_eq!(recs.iter().filter(|r| r.subagent.is_none()).count(), 6);
     }
 
