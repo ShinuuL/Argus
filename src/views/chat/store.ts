@@ -12,9 +12,19 @@ import { create } from "zustand";
 import { api, errorMessage, isTaskActive, isTauri, onTaskState, variantOf, type TaskId, type TaskState } from "@/api";
 import { buildPrompt, type ChatAttachment } from "./attachments";
 
-/** Chave de conversa: o id da tarefa, ou "new" para a conversa ainda não criada. */
+/**
+ * Chave de conversa: o id da tarefa ou, na conversa ainda não criada, `new:<rascunho>`
+ * (cada aba tem o seu). `"new"` sozinho é só a passagem de texto do `/nova` para
+ * a aba nova, que o adota ao abrir.
+ */
 export type ChatKey = string;
-export const chatKey = (taskId: TaskId | null | undefined): ChatKey => (taskId == null ? "new" : String(taskId));
+export const chatKey = (taskId: TaskId | null | undefined, draft?: string | null): ChatKey =>
+  taskId != null ? String(taskId) : draft ? `new:${draft}` : "new";
+
+/** Prefixo aleatório desta execução: rascunhos de execuções anteriores nunca coincidem. */
+const RUN = Math.random().toString(36).slice(2, 10);
+/** Id de rascunho da aba de conversa nova (vira a pasta `anexos/novo/<id>`). Estável na aba. */
+export const draftIdFor = (tabId: number): string => `${RUN}-${tabId}`;
 
 export interface QueueItem {
   id: string;

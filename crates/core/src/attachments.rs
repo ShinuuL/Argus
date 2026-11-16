@@ -1,7 +1,8 @@
 //! Pasta de anexos do chat e a liberação de leitura dela para o agente.
 //!
 //! Os anexos (imagens e arquivos soltos, colados ou escolhidos no clipe) ficam em
-//! `%APPDATA%/argus/anexos/<tarefa>/` (ou `novo/`, antes de a tarefa existir), fora
+//! `%APPDATA%/argus/anexos/<tarefa>/` (ou `novo/<rascunho>/`, antes de a tarefa
+//! existir: cada aba de conversa nova tem o seu id de rascunho), fora
 //! da pasta de trabalho do agente. O `claude -p` só lê fora da pasta de trabalho o
 //! que vier em `--add-dir`; sem isso, a leitura do anexo é negada.
 
@@ -28,8 +29,27 @@ fn norm(p: &Path) -> String {
     }
 }
 
-/// A subpasta direta de `root` que contém `path` (`root/<pasta>/arquivo`), se houver.
-/// Caminho fora da raiz, com `..` ou direto na raiz não devolve nada.
+/// Nome da pasta das conversas ainda sem tarefa (`root/novo/<rascunho>`).
+pub const DRAFTS: &str = "novo";
+
+/// Id de rascunho aceito como nome de pasta: 1 a 64 letras, dígitos, `-` ou `_`.
+pub fn valid_draft(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// Pasta de anexos de uma tarefa, ou do rascunho de uma conversa nova.
+/// `None` se não houver tarefa nem rascunho válido.
+pub fn dir_for(root: &Path, task: Option<u64>, draft: Option<&str>) -> Option<PathBuf> {
+    match (task, draft) {
+        (Some(t), _) => Some(root.join(t.to_string())),
+        (None, Some(d)) if valid_draft(d) => Some(root.join(DRAFTS).join(d)),
+        _ => None,
+    }
+}
+
+/// A pasta de anexos que contém `path`: `root/<tarefa>` ou `root/novo/<rascunho>`.
+/// Caminho fora da raiz, com `..`, direto na raiz ou direto em `novo` não devolve nada
+/// (a pasta `novo` inteira nunca é liberada: juntaria anexos de várias conversas).
 fn subdir_of(root: &Path, path: &Path) -> Option<PathBuf> {
     if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
         return None;
@@ -39,6 +59,13 @@ fn subdir_of(root: &Path, path: &Path) -> Option<PathBuf> {
     let (first, tail) = rest.split_once('/')?;
     if first.is_empty() || tail.is_empty() {
         return None;
+    }
+    if first.eq_ignore_ascii_case(DRAFTS) {
+        let (draft, file) = tail.split_once('/')?;
+        if !valid_draft(draft) || file.is_empty() {
+            return None;
+        }
+        return Some(root.join(DRAFTS).join(draft));
     }
     Some(root.join(first))
 }
@@ -58,8 +85,8 @@ fn cited_paths(prompt: &str) -> impl Iterator<Item = PathBuf> + '_ {
 
 /// Pastas de anexos que o agente precisa ler neste turno: a da tarefa
 /// (`root/<id>`) e as dos anexos citados nos pedidos dados (o primeiro pedido
-/// de uma conversa grava em `root/novo`). Só entram subpastas diretas de `root`
-/// que existem; nada fora da pasta de anexos.
+/// de uma conversa grava em `root/novo/<rascunho>`). Só entram pastas que
+/// existem; nada fora da pasta de anexos e nunca a `novo` inteira.
 pub fn dirs_for(root: &Path, task: u64, prompts: &[&str]) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = Vec::new();
     let mut push = |d: PathBuf| {
@@ -98,19 +125,24 @@ mod tests {
     fn finds_the_attachment_folders_of_a_turn() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("anexos");
-        for d in ["7", "novo", "9"] {
+        for d in ["7", "novo/abc", "novo/outra", "9"] {
             std::fs::create_dir_all(root.join(d)).unwrap();
         }
-        let img = root.join("novo").join("print-1.png");
+        let draft = root.join("novo").join("abc");
+        let img = draft.join("print-1.png");
         let first = format!(
             "descreva a imagem\n\nArquivos anexados pelo caminho (abra com as ferramentas se precisar):\n- {} (imagem)\n- {} (texto)",
             img.display(),
-            root.join("novo").join("nota (1).txt").display()
+            draft.join("nota (1).txt").display()
         );
         // A pasta da tarefa e a do primeiro pedido, sem repetir; a de outra tarefa fica de fora.
-        assert_eq!(dirs_for(&root, 7, &[&first, "e agora?"]), vec![root.join("7"), root.join("novo")]);
+        assert_eq!(dirs_for(&root, 7, &[&first, "e agora?"]), vec![root.join("7"), draft.clone()]);
         // Tarefa sem pasta própria: só o que o pedido cita.
-        assert_eq!(dirs_for(&root, 8, &[&first]), vec![root.join("novo")]);
+        assert_eq!(dirs_for(&root, 8, &[&first]), vec![draft.clone()]);
+        // Arquivo solto direto em `novo` (formato antigo) não libera a pasta compartilhada.
+        assert!(dirs_for(&root, 8, &[&format!("- {} (imagem)", root.join("novo").join("a.png").display())]).is_empty());
+        // Rascunho com nome inválido não entra.
+        assert!(dirs_for(&root, 8, &[&format!("- {} (imagem)", root.join("novo").join("a b").join("a.png").display())]).is_empty());
         assert!(dirs_for(&root, 8, &["sem anexos\n- item de lista\n- outro (x)"]).is_empty());
         // Nada fora da pasta de anexos, nem subindo com `..`, nem a própria raiz.
         let outside = tmp.path().join("fora").join("a.png");
@@ -131,11 +163,24 @@ mod tests {
     fn folder_match_ignores_case_and_slashes() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("anexos");
-        std::fs::create_dir_all(root.join("novo")).unwrap();
-        let cited = root.join("novo").join("a.png").to_string_lossy().replace('\\', "/").to_uppercase();
+        std::fs::create_dir_all(root.join("novo").join("r1")).unwrap();
+        let cited = root.join("novo").join("r1").join("a.png").to_string_lossy().replace('\\', "/").to_uppercase();
         let dirs = dirs_for(&root, 1, &[&format!("- {cited} (imagem)")]);
         assert_eq!(dirs.len(), 1);
         assert!(dirs[0].is_dir());
+        assert!(norm(&dirs[0]).ends_with("novo/r1"));
+    }
+
+    #[test]
+    fn folder_of_task_or_draft() {
+        let root = Path::new("/x/anexos");
+        assert_eq!(dir_for(root, Some(7), Some("abc")), Some(root.join("7")));
+        assert_eq!(dir_for(root, None, Some("abc-1_Z")), Some(root.join("novo").join("abc-1_Z")));
+        assert_eq!(dir_for(root, None, None), None);
+        let long = "x".repeat(65);
+        for bad in ["", "..", "a/b", "a\\b", "a b", long.as_str()] {
+            assert_eq!(dir_for(root, None, Some(bad)), None, "{bad}");
+        }
     }
 
     #[test]

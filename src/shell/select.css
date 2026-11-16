@@ -51,6 +51,7 @@
 .sel-opt-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .sel-opt-hint { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); font-size: 12px; font-weight: 400; }
 .sel-note { flex: none; padding: 6px 12px; border-top: 1px solid var(--border); color: var(--text-2); font-size: 12px; }
+.sel-warn { color: var(--warn); background: var(--warn-bg); }
 .sel-check { flex: none; }
 .sel-empty { padding: 8px; color: var(--text-2); }
 

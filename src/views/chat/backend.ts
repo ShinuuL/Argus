@@ -82,8 +82,13 @@ export function chatAgents(project: Path | null): Promise<ChatAgent[]> {
 }
 
 /** Grava um anexo na pasta de anexos do Argus. Rejeita com a mensagem do motivo. */
-export async function chatAttachmentSave(task: TaskId | null, name: string, base64: string): Promise<SavedAttachment> {
-  const saved = await call<SavedAttachment>("chat_attachment_save", { task, name, data: base64 });
+export async function chatAttachmentSave(
+  task: TaskId | null,
+  draft: string | null,
+  name: string,
+  base64: string,
+): Promise<SavedAttachment> {
+  const saved = await call<SavedAttachment>("chat_attachment_save", { task, draft, name, data: base64 });
   if (!saved) throw new Error("A gravação de anexos ainda não está disponível nesta versão.");
   return saved;
 }

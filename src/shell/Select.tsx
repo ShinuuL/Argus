@@ -28,6 +28,8 @@ export interface SelectProps {
   onOpen?(): void;
   /** Linha de aviso no fim da lista (ex.: "consultando…"). */
   note?: string | null;
+  /** Aviso de custo ou risco no fim da lista, em destaque (cor de alerta). */
+  warning?: string | null;
   /** Largura mínima da lista aberta, em px (padrão 200). */
   popWidth?: number;
 }
@@ -54,6 +56,7 @@ export function Select({
   title,
   onOpen,
   note,
+  warning,
   popWidth = 200,
 }: SelectProps) {
   const [open, setOpen] = useState(false);
@@ -219,6 +222,11 @@ export function Select({
               ))}
               {!shown.length && <div className="sel-empty">Nada encontrado.</div>}
             </div>
+            {warning && (
+              <div className="sel-note sel-warn" role="note">
+                {warning}
+              </div>
+            )}
             {note && <div className="sel-note">{note}</div>}
           </div>,
           document.body,

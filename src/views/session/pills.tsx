@@ -54,10 +54,12 @@ export interface ModelPillProps {
   onChange(model: string): void;
   disabled?: boolean;
   title?: string;
+  /** Aviso no fim da lista (ex.: custo de trocar o modelo de uma conversa com histórico). */
+  warning?: string | null;
 }
 
 /** Pílula de modelo: "Padrão da CLI" mais os modelos que a CLI do provedor informa. */
-export function ModelPill({ provider, value, onChange, disabled, title }: ModelPillProps) {
+export function ModelPill({ provider, value, onChange, disabled, title, warning }: ModelPillProps) {
   const { models, loading, error, load } = useModels(provider);
   const options: SelectOption[] = [{ value: "", label: "Padrão da CLI", hint: "o modelo que a CLI escolher" }];
   for (const m of models) options.push({ value: m.value, label: m.label, hint: m.hint || undefined });
@@ -74,6 +76,7 @@ export function ModelPill({ provider, value, onChange, disabled, title }: ModelP
       disabled={disabled}
       popWidth={340}
       onOpen={() => void load()}
+      warning={warning}
       note={loading ? "Consultando os modelos na CLI…" : error ? `Não foi possível listar os modelos: ${error}` : null}
       onChange={onChange}
     />

@@ -22,7 +22,7 @@ export type { AttachmentKind, ChatAttachment, SentAttachment } from "./attachmen
 export { LOCAL_COMMANDS } from "./slash";
 export type { LocalCommandName } from "./slash";
 export { RepeatDetector, repeatMessage, RUN_FOR_REAL_PROMPT, toolCallAsText } from "./toolcall";
-export { chatKey, useChat } from "./store";
+export { chatKey, draftIdFor, useChat } from "./store";
 
 // A fila de mensagens sai sozinha mesmo sem nenhuma caixa montada.
 startQueueDrain();

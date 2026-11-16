@@ -291,11 +291,18 @@ fn free_path(dir: &Path, name: &str) -> PathBuf {
     (2..10_000).map(|n| dir.join(format!("{stem}-{n}{ext}"))).find(|p| !p.exists()).unwrap_or(first)
 }
 
-fn save_attachment_in(root: &Path, task: Option<u64>, name: &str, bytes: &[u8]) -> Result<SavedAttachment, String> {
+fn save_attachment_in(
+    root: &Path,
+    task: Option<u64>,
+    draft: Option<&str>,
+    name: &str,
+    bytes: &[u8],
+) -> Result<SavedAttachment, String> {
     if bytes.len() > MAX_ATTACHMENT {
         return Err(format!("{name}: anexo acima de {} MB.", MAX_ATTACHMENT / 1024 / 1024));
     }
-    let dir = root.join(task.map(|t| t.to_string()).unwrap_or_else(|| "novo".into()));
+    let dir = argus_core::attachments::dir_for(root, task, draft)
+        .ok_or_else(|| format!("{name}: conversa sem identificação para guardar o anexo."))?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("Não foi possível criar a pasta de anexos: {e}"))?;
     let path = free_path(&dir, &sanitize_name(name));
     std::fs::write(&path, bytes).map_err(|e| format!("Não foi possível gravar o anexo: {e}"))?;
@@ -303,9 +310,15 @@ fn save_attachment_in(root: &Path, task: Option<u64>, name: &str, bytes: &[u8]) 
 }
 
 /// Grava um anexo (conteúdo em base64) na pasta de anexos da tarefa e devolve o caminho.
-/// `task` vazio = conversa ainda não criada.
+/// `task` vazio = conversa ainda não criada: vai para `novo/<draft>`, a pasta só
+/// daquela aba (o agente de uma conversa não enxerga anexos de outra).
 #[tauri::command]
-pub async fn chat_attachment_save(task: Option<u64>, name: String, data: String) -> Result<SavedAttachment, String> {
+pub async fn chat_attachment_save(
+    task: Option<u64>,
+    draft: Option<String>,
+    name: String,
+    data: String,
+) -> Result<SavedAttachment, String> {
     blocking(move || {
         // 4 caracteres de base64 = 3 bytes: recusa antes de decodificar.
         if data.len() / 4 * 3 > MAX_ATTACHMENT + 3 {
@@ -314,7 +327,7 @@ pub async fn chat_attachment_save(task: Option<u64>, name: String, data: String)
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(data.trim())
             .map_err(|_| format!("{name}: conteúdo inválido."))?;
-        save_attachment_in(&attachments_root(), task, &name, &bytes)
+        save_attachment_in(&attachments_root(), task, draft.as_deref(), &name, &bytes)
     })
     .await
 }
@@ -354,29 +367,44 @@ pub async fn chat_attachment_read(path: PathBuf) -> Result<AttachmentData, Strin
 }
 
 fn cleanup_in(root: &Path, max_age: Duration) -> u32 {
-    let mut removed = 0;
-    let Ok(dirs) = std::fs::read_dir(root) else { return 0 };
     let now = SystemTime::now();
-    for dir in dirs.flatten() {
-        let dir = dir.path();
-        if !dir.is_dir() {
+    let mut removed = 0;
+    let Ok(entries) = std::fs::read_dir(root) else { return 0 };
+    for entry in entries.flatten() {
+        // não segue atalhos: só pastas de verdade (`<tarefa>`, `novo` e `novo/<rascunho>`)
+        if entry.file_type().is_ok_and(|t| t.is_dir()) {
+            removed += cleanup_dir(&entry.path(), max_age, now, 2);
+        }
+    }
+    removed
+}
+
+/// Apaga os arquivos velhos de `dir` e, até `depth` níveis abaixo, os das
+/// subpastas; pastas que ficam vazias saem.
+fn cleanup_dir(dir: &Path, max_age: Duration, now: SystemTime, depth: u32) -> u32 {
+    let mut removed = 0;
+    let Ok(entries) = std::fs::read_dir(dir) else { return 0 };
+    for entry in entries.flatten() {
+        let Ok(kind) = entry.file_type() else { continue };
+        let path = entry.path();
+        if kind.is_dir() {
+            if depth > 1 {
+                removed += cleanup_dir(&path, max_age, now, depth - 1);
+            }
             continue;
         }
-        let Ok(files) = std::fs::read_dir(&dir) else { continue };
-        for file in files.flatten() {
-            let old = file
-                .metadata()
-                .and_then(|m| m.modified())
-                .ok()
-                .and_then(|t| now.duration_since(t).ok())
-                .is_some_and(|age| age > max_age);
-            if old && file.path().is_file() && std::fs::remove_file(file.path()).is_ok() {
-                removed += 1;
-            }
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| now.duration_since(t).ok())
+            .is_some_and(|age| age > max_age);
+        if old && kind.is_file() && std::fs::remove_file(&path).is_ok() {
+            removed += 1;
         }
-        // só sai se ficou vazia
-        let _ = std::fs::remove_dir(&dir);
     }
+    // só sai se ficou vazia
+    let _ = std::fs::remove_dir(dir);
     removed
 }
 
@@ -573,12 +601,12 @@ mod tests {
     fn attachments_save_read_and_cleanup() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("anexos");
-        let a = save_attachment_in(&root, Some(7), "print.png", b"abc").unwrap();
-        let b = save_attachment_in(&root, Some(7), "print.png", b"abcd").unwrap();
+        let a = save_attachment_in(&root, Some(7), None, "print.png", b"abc").unwrap();
+        let b = save_attachment_in(&root, Some(7), None, "print.png", b"abcd").unwrap();
         assert!(a.path.ends_with("7/print.png") || a.path.ends_with("7\\print.png"));
         assert_ne!(a.path, b.path, "não sobrescreve");
         assert_eq!(b.size, 4);
-        assert!(save_attachment_in(&root, None, "g.bin", &vec![0u8; MAX_ATTACHMENT + 1]).is_err());
+        assert!(save_attachment_in(&root, None, Some("r1"), "g.bin", &vec![0u8; MAX_ATTACHMENT + 1]).is_err());
 
         let read = read_attachment_in(&root, &a.path).unwrap();
         assert_eq!(read.mime, "image/png");
@@ -588,12 +616,22 @@ mod tests {
         std::fs::write(&outside, b"x").unwrap();
         assert!(read_attachment_in(&root, &outside).is_err());
         assert!(read_attachment_in(&root, &root.join("7").join("..").join("..").join("fora.png")).is_err());
-        let txt = save_attachment_in(&root, Some(7), "nota.txt", b"oi").unwrap();
+        let txt = save_attachment_in(&root, Some(7), None, "nota.txt", b"oi").unwrap();
         assert!(read_attachment_in(&root, &txt.path).is_err());
 
+        // conversa nova: cada aba na sua subpasta de rascunho
+        let d1 = save_attachment_in(&root, None, Some("aba1"), "p.png", b"x").unwrap();
+        let d2 = save_attachment_in(&root, None, Some("aba2"), "p.png", b"y").unwrap();
+        assert_eq!(d1.path, root.join("novo").join("aba1").join("p.png"));
+        assert_eq!(d2.path, root.join("novo").join("aba2").join("p.png"));
+        assert!(read_attachment_in(&root, &d1.path).is_ok());
+        assert!(save_attachment_in(&root, None, None, "p.png", b"x").is_err(), "sem tarefa nem rascunho");
+        assert!(save_attachment_in(&root, None, Some("../fora"), "p.png", b"x").is_err());
+
         assert_eq!(cleanup_in(&root, Duration::from_secs(3600)), 0, "arquivos novos ficam");
-        assert_eq!(cleanup_in(&root, Duration::ZERO), 3);
+        assert_eq!(cleanup_in(&root, Duration::ZERO), 5);
         assert!(!root.join("7").exists(), "pasta vazia é removida");
+        assert!(!root.join("novo").exists(), "rascunhos vazios e a pasta novo saem");
     }
 
     #[test]

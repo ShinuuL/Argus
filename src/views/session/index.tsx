@@ -42,6 +42,7 @@ import {
   toolCallAsText,
   useChat,
   chatKey,
+  draftIdFor,
   type ComposerHandle,
   type LocalCommandName,
 } from "@/views/chat";
@@ -327,6 +328,16 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   /** Quantidade de itens do chat quando o aviso de "chamada como texto" foi fechado. */
   const [dismissedAt, setDismissedAt] = useState(-1);
   const composer = useRef<ComposerHandle>(null);
+  /** Rascunho próprio desta aba enquanto a conversa não tem tarefa (caixa, fila e pasta de anexos). */
+  const draftId = draftIdFor(tabId);
+  const handoff = useChat((s) => (taskId == null && active ? (s.drafts.new ?? "") : ""));
+  // Texto deixado pelo `/nova` em outra aba: esta aba nova o adota.
+  useEffect(() => {
+    if (!handoff) return;
+    const s = useChat.getState();
+    s.setDraft(chatKey(null, draftId), handoff);
+    s.setDraft("new", "");
+  }, [handoff, draftId]);
 
   const providerId = provider || (providers.find((p) => p.id === "claude") ?? providers[0])?.id || "claude";
   /** Projeto da conversa: o da tarefa, ou o escolhido para a conversa nova. */
@@ -448,7 +459,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
       await send(prompt, opts);
     } catch (e) {
       // Não foi: o pedido volta para a caixa.
-      useChat.getState().setDraft(chatKey(taskId), prompt);
+      useChat.getState().setDraft(chatKey(taskId, draftId), prompt);
       setError(errorMessage(e));
     } finally {
       setHoldBusy(false);
@@ -458,7 +469,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   /** Desiste do envio: o pedido volta para a caixa de composição. */
   const cancelHold = () => {
     if (!hold) return;
-    const key = chatKey(taskId);
+    const key = chatKey(taskId, draftId);
     if (!(useChat.getState().drafts[key] ?? "")) useChat.getState().setDraft(key, hold.prompt);
     setHold(null);
     composer.current?.focus();
@@ -624,6 +635,11 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
               provider={task.provider}
               value={task.model ?? ""}
               disabled={closed}
+              warning={
+                task.provider === "claude" && (task.turns > 0 || task.session_id)
+                  ? "Trocar o modelo reprocessa a conversa inteira no próximo turno (fica mais caro)."
+                  : null
+              }
               title={
                 busy
                   ? "Modelo dos próximos turnos (o turno em andamento segue com o modelo com que começou)"
@@ -812,6 +828,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
               <Composer
                 ref={composer}
                 taskId={taskId}
+                draftId={draftId}
                 busy={busy}
                 disabled={closed || noSession || hold != null || (taskId == null && !newProject)}
                 workdir={task ? (task.workdir ?? task.project) : newProject}

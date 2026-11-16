@@ -64,6 +64,8 @@ export interface ComposerProps {
    * e fila são guardados por tarefa e sobrevivem à troca de aba.
    */
   taskId: TaskId | null;
+  /** Id de rascunho da aba, enquanto a conversa não tem tarefa (separa caixa, fila e anexos por aba). */
+  draftId?: string;
   /**
    * Envia uma mensagem agora. Recebe o texto pronto para o agente (`prompt`,
    * já com os anexos pelo caminho) e as partes separadas. Se rejeitar, a caixa
@@ -120,10 +122,10 @@ const MAX_HEIGHT = 200;
  * grande) e fila de mensagens enquanto o agente trabalha.
  */
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { taskId, onSend, busy = false, workdir, provider, onStop, onCommand, disabled = false, placeholder, autoFocus, toolbar, recall },
+  { taskId, draftId, onSend, busy = false, workdir, provider, onStop, onCommand, disabled = false, placeholder, autoFocus, toolbar, recall },
   ref,
 ) {
-  const key = chatKey(taskId);
+  const key = chatKey(taskId, draftId);
   const text = useChat((s) => s.drafts[key] ?? "");
   const attachments = useChat(selectAttachments(key));
   const queue = useChat(selectQueue(key));
@@ -186,12 +188,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     (files: File[]) => {
       if (disabled) return;
       for (const file of files) {
-        fromFile(file, taskId)
+        fromFile(file, taskId, draftId ?? null)
           .then(addPrepared)
           .catch((e) => setNotice({ tone: "err", text: errorMessage(e) }));
       }
     },
-    [addPrepared, disabled, taskId],
+    [addPrepared, disabled, taskId, draftId],
   );
 
   const removeAttachment = (att: ChatAttachment) => {
@@ -481,7 +483,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const pasted = e.clipboardData.getData("text/plain");
     if (pasted && isBigPaste(pasted)) {
       e.preventDefault();
-      addPrepared(fromPaste(pasted, taskId));
+      addPrepared(fromPaste(pasted, taskId, draftId ?? null));
     }
   };
 

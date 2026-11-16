@@ -127,12 +127,17 @@ export interface Prepared {
   save: () => Promise<ChatAttachment>;
 }
 
-function prepared(att: ChatAttachment, task: TaskId | null, bytes: () => Promise<Uint8Array>): Prepared {
+function prepared(
+  att: ChatAttachment,
+  task: TaskId | null,
+  draft: string | null,
+  bytes: () => Promise<Uint8Array>,
+): Prepared {
   return {
     attachment: att,
     save: async () => {
       try {
-        const saved = await chatAttachmentSave(task, att.name, toBase64(await bytes()));
+        const saved = await chatAttachmentSave(task, draft, att.name, toBase64(await bytes()));
         if (att.previewUrl) previews.set(saved.path, att.previewUrl);
         return { ...att, path: saved.path, size: saved.size, status: "ready" };
       } catch (e) {
@@ -148,7 +153,7 @@ function prepared(att: ChatAttachment, task: TaskId | null, bytes: () => Promise
  * Um arquivo (do clipe, solto ou colado) vira anexo. Rejeita com o motivo
  * quando o tamanho passa do limite.
  */
-export async function fromFile(file: File, task: TaskId | null): Promise<Prepared> {
+export async function fromFile(file: File, task: TaskId | null, draft: string | null = null): Promise<Prepared> {
   const type = file.type.toLowerCase();
   let name = file.name || "arquivo";
   let blob: Blob = file;
@@ -163,11 +168,11 @@ export async function fromFile(file: File, task: TaskId | null): Promise<Prepare
   const att: ChatAttachment = { id: newId(), kind, name, size: blob.size, path: null, status: "saving" };
   if (kind === "image") att.previewUrl = URL.createObjectURL(blob);
   if (kind === "text" && blob.size <= 256 * 1024) att.text = await blob.text();
-  return prepared(att, task, async () => new Uint8Array(await blob.arrayBuffer()));
+  return prepared(att, task, draft, async () => new Uint8Array(await blob.arrayBuffer()));
 }
 
 /** Texto colado grande vira `colado-N.txt`. */
-export function fromPaste(text: string, task: TaskId | null): Prepared {
+export function fromPaste(text: string, task: TaskId | null, draft: string | null = null): Prepared {
   const bytes = new TextEncoder().encode(text);
   const att: ChatAttachment = {
     id: newId(),
@@ -179,7 +184,7 @@ export function fromPaste(text: string, task: TaskId | null): Prepared {
     text,
     pasted: true,
   };
-  return prepared(att, task, async () => bytes);
+  return prepared(att, task, draft, async () => bytes);
 }
 
 /** Libera a miniatura de um anexo tirado da caixa sem ter sido enviado. */
