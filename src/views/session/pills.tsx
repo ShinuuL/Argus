@@ -87,6 +87,18 @@ export function isValidModelName(m: string): boolean {
   return m.length > 0 && m.length <= 200 && !m.startsWith("-") && /^[A-Za-z0-9._\-/:[\]#@+]+$/.test(m);
 }
 
+/**
+ * Modelo que o item padrão resolve ("Opus 5 · 1M"), tirado da dica do item
+ * marcado como `default`. Vazio enquanto a lista não carregou ou quando o
+ * provedor não informa.
+ */
+export function defaultResolves(models: ModelInfo[]): string {
+  const hint = models.find((m) => m.default)?.hint ?? "";
+  const i = hint.indexOf(" — ");
+  const which = i > 0 ? hint.slice(0, i).trim() : "";
+  return which && which !== "o padrão da CLI" ? which : "";
+}
+
 export interface ProviderChoice {
   id: string;
   name: string;
@@ -130,6 +142,8 @@ export function AgentModelPill(props: AgentModelPillProps) {
   const providerName = providers.find((p) => p.id === provider)?.name ?? provider;
   const info = models.find((m) => !m.default && m.value === model);
   const modelLabel = model ? (info ? info.label + (info.badge ? ` · ${info.badge}` : "") : model) : "padrão";
+  // Sem modelo escolhido: qual modelo o padrão resolve, se a lista já disse.
+  const resolved = model ? "" : defaultResolves(models);
   const pickModel = (m: string) => {
     if (m !== model) onModel(m);
     close(true);
@@ -155,7 +169,10 @@ export function AgentModelPill(props: AgentModelPillProps) {
         <Icon name="bot" size={12} />
         <span className="sel-label">
           <span className="am-prov">{providerName} · </span>
-          <span className="am-model">{modelLabel}</span>
+          <span className="am-model">
+            {modelLabel}
+            {resolved && <span className="am-model-resolved"> ({resolved})</span>}
+          </span>
         </span>
         <svg className="sel-chev" width="10" height="10" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />

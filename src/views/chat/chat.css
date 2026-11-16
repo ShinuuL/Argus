@@ -284,3 +284,5 @@ button.chat-pill:hover:not(:disabled), .chat-pill-select:hover { background: var
   .chat-pills > .sel-pill, .chat-pills > .sel-pill.am-pill { max-width: 110px; }
   .chat-pills > .sel-pill .sel-chev { display: none; }
 }
+.am-model-resolved { color: var(--text-dim, inherit); }
+@media (max-width: 900px) { .am-model-resolved { display: none; } }
