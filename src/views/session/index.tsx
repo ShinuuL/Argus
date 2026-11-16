@@ -64,6 +64,7 @@ import { AgentModelPill, ComposerOptions, DirectHold, hasGaps, IsolationHold, us
 import { ContextMeter } from "./ContextMeter";
 import { Transcript } from "./Transcript";
 import { useTaskEvents } from "./useTaskEvents";
+import { AgentState, lastTurnDenied } from "./AgentState";
 import "./session.css";
 
 export interface ChatTabProps {
@@ -105,19 +106,12 @@ function useTick(on: boolean): number {
   return now;
 }
 
-/** Ponto de status de uma sessão (rodando pulsa). */
+/** Indicador de estado de uma sessão (lista de conversas e barra lateral). */
 export function StateDot({ task }: { task: Task }) {
-  const { kind } = variantOf(task.state);
-  const cls =
-    kind === "Running" || kind === "Queued"
-      ? "running"
-      : kind === "Completed" || kind === "Applied"
-        ? "ok"
-        : kind === "Failed"
-          ? "error"
-          : "interrupted";
-  return <span className={`ses-dot ${cls}`} title={taskStateLabel(task.state).label} aria-hidden="true" />;
+  return <AgentState task={task} size={13} />;
 }
+
+export { AgentState } from "./AgentState";
 
 // ------------------------------------------------------------ seletor de sessão
 
@@ -397,6 +391,12 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   const anyRunning = busy && nodes.some((n) => !n.done);
   const now = useTick(anyRunning);
 
+  // Comando negado no último turno: a sessão "precisa de atenção" (barra lateral e abas).
+  useEffect(() => {
+    if (taskId == null || !loaded) return;
+    useApp.getState().setAttention(taskId, lastTurnDenied(events));
+  }, [taskId, loaded, events]);
+
   // A conversa à vista deixa de estar "não lida".
   useEffect(() => {
     if (active && taskId != null && unread) useApp.getState().markSeen(taskId);
@@ -578,7 +578,6 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
     }
   };
 
-  const state = task ? taskStateLabel(task.state) : null;
   const tokens = totalTokens(totals);
   const closed = task != null && (task.state === "Applied" || task.state === "Discarded");
   /** Sem sessão da CLI não há como continuar (com o turno rodando, a mensagem entra na fila). */
@@ -686,11 +685,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
             <Icon name="plus" size={15} />
           </button>
           <span className="cv-head-space" />
-          {task && state && (
-            <span className={`cv-state ${state.tone}`} title={state.label}>
-              {state.label.split(":")[0]}
-            </span>
-          )}
+          {task && <AgentState task={task} label />}
           {task && (
             <span
               className="cv-agent"

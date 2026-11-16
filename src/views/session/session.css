@@ -170,3 +170,20 @@
 
 /* Botão "Abrir mapa" da aba Subagentes */
 .rp-map-btn { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; margin-top: 8px; }
+
+/* Indicador de estado do agente (AgentState): barra lateral, abas e cabeçalho */
+.agent-state { display: inline-flex; align-items: center; gap: var(--space-1, 4px); flex: none; color: var(--text-2); line-height: 1; }
+.agent-state .ic { flex: none; }
+.agent-state.working { color: var(--run); }
+.agent-state.working .ic { animation: agent-spin 1s linear infinite; }
+.agent-state.queued, .agent-state.idle, .agent-state.interrupted { color: var(--text-faint, var(--text-2)); }
+.agent-state.attention { color: var(--warn); }
+.agent-state.failed { color: var(--err); }
+.agent-state.done, .agent-state.applied { color: var(--ok); }
+.agent-state.with-label { padding: 2px 8px 2px 6px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-size: 11px; white-space: nowrap; }
+.agent-state.with-label.attention { background: var(--warn-bg); }
+.agent-state.with-label.failed { background: var(--err-bg); }
+.agent-state-label { color: var(--text); }
+@container (max-width: 520px) { .agent-state-label { display: none; } .agent-state.with-label { padding: 2px 4px; } }
+@keyframes agent-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .agent-state.working .ic { animation: none; } }

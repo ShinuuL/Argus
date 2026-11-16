@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
-import { isTaskActive, languageFor, onProjectChanged, samePath, type Path, type Task } from "@/api";
+import { languageFor, onProjectChanged, samePath, type Path, type Task } from "@/api";
 import { Icon, type IconName } from "@/shell/icons";
 import {
   activeTab,
@@ -21,6 +21,7 @@ import RemoteView from "@/views/remote";
 import ChatTab from "@/views/session";
 import AgentMap from "@/views/agentmap";
 import { sessionTitle } from "@/views/session/events";
+import { AgentState } from "@/views/session/AgentState";
 import SettingsView from "@/views/settings";
 import { Terminal } from "@/views/terminal";
 import { Dashboard } from "./Dashboard";
@@ -70,11 +71,7 @@ function TabIcon({ kind, task }: { kind: TabKind; task: Task | undefined }) {
         </span>
       );
     case "chat":
-      return task && isTaskActive(task.state) ? (
-        <span className="ses-dot running" aria-hidden="true" />
-      ) : (
-        <Icon name="chat" size={14} className="wb-ic-svg" />
-      );
+      return task ? <AgentState task={task} size={13} /> : <Icon name="chat" size={14} className="wb-ic-svg" />;
     case "terminal":
       return <Icon name="terminal" size={14} className="wb-ic-svg" />;
     case "dashboard":

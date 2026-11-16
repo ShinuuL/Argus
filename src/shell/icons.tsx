@@ -11,6 +11,11 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  CircleAlert,
+  CircleCheck,
+  CircleDashed,
+  CircleDot,
+  CircleSlash,
   FoldVertical,
   Columns2,
   Eye,
@@ -23,6 +28,7 @@ import {
   LayoutGrid,
   ListFilter,
   ListTree,
+  LoaderCircle,
   MessageSquare,
   Package,
   PanelLeft,
@@ -39,6 +45,7 @@ import {
   Server,
   Settings,
   Shield,
+  ShieldAlert,
   SlidersHorizontal,
   Smartphone,
   Square,
@@ -92,6 +99,14 @@ const ICONS = {
   play: Play,
   hammer: Hammer,
   palette: Palette,
+  // Estados do agente (AgentState)
+  spinner: LoaderCircle,
+  circleCheck: CircleCheck,
+  circleAlert: CircleAlert,
+  circleDashed: CircleDashed,
+  circleSlash: CircleSlash,
+  circleDot: CircleDot,
+  shieldAlert: ShieldAlert,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

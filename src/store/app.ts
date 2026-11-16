@@ -55,11 +55,15 @@ export interface AppState {
   pendingInstall: PendingInstall | null;
   /** Sessões com atividade nova que o usuário ainda não abriu. */
   unread: Record<TaskId, true>;
+  /** Sessões cujo último turno teve um comando negado (texto do comando); some no turno seguinte. */
+  attention: Record<TaskId, string>;
   /** Subagente aberto (somente leitura) em cada sessão; ausente = chat principal. */
   subagentOf: Record<TaskId, string>;
 
   markUnread(task: TaskId): void;
   markSeen(task: TaskId): void;
+  /** Marca (texto) ou limpa (null) o "precisa de atenção" de uma sessão. */
+  setAttention(task: TaskId, what: string | null): void;
   selectSubagent(task: TaskId, subagent: string | null): void;
   setError(error: string | null): void;
   /** Abre o seletor de pasta e, se o usuário escolher, abre como raiz. */
@@ -98,6 +102,7 @@ export const useApp = create<AppState>()((set, get) => ({
   lastErrAt: null,
   pendingInstall: null,
   unread: {},
+  attention: {},
   subagentOf: {},
 
   markUnread: (task) => set((s) => (s.unread[task] ? s : { unread: { ...s.unread, [task]: true } })),
@@ -107,6 +112,14 @@ export const useApp = create<AppState>()((set, get) => ({
       const unread = { ...s.unread };
       delete unread[task];
       return { unread };
+    }),
+  setAttention: (task, what) =>
+    set((s) => {
+      if ((s.attention[task] ?? null) === what) return s;
+      const attention = { ...s.attention };
+      if (what == null) delete attention[task];
+      else attention[task] = what;
+      return { attention };
     }),
   selectSubagent: (task, subagent) =>
     set((s) => {
@@ -179,6 +192,7 @@ export const useApp = create<AppState>()((set, get) => ({
       return {
         tasks: s.tasks.filter((t) => t.id !== task),
         unread: drop(s.unread),
+        attention: drop(s.attention),
         autowork: drop(s.autowork),
         subagentOf: drop(s.subagentOf),
       };
