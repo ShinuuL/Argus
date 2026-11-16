@@ -14,7 +14,6 @@ import {
   type TabKind,
   type WbTab,
 } from "@/store";
-import ProvidersView from "@/views/agents";
 import DepsView from "@/views/deps";
 import MetricsView from "@/views/metrics";
 import RemoteView from "@/views/remote";
@@ -53,7 +52,6 @@ const FILE_ICONS: Record<string, string> = {
 };
 
 const PAGE_ICONS: Record<PageId, IconName> = {
-  providers: "user",
   deps: "box",
   metrics: "chart",
   remote: "phone",
@@ -79,7 +77,7 @@ function TabIcon({ kind, task }: { kind: TabKind; task: Task | undefined }) {
     case "dashboard":
       return <Icon name="grid" size={14} className="wb-ic-svg" />;
     case "page":
-      return <Icon name={PAGE_ICONS[kind.page]} size={14} className="wb-ic-svg" />;
+      return <Icon name={PAGE_ICONS[kind.page] ?? "gear"} size={14} className="wb-ic-svg" />;
   }
 }
 
@@ -224,7 +222,9 @@ function TabMenu({ gid, menu, onClose }: { gid: number; menu: MenuState; onClose
 // ------------------------------------------------------------ corpo das abas
 
 /** Tela de apoio aberta como aba: coluna de leitura com título. */
-function Page({ page }: { page: PageId }) {
+function Page({ page: raw }: { page: PageId }) {
+  // Abas "providers" de um layout antigo viram Configurações (seção Provedores).
+  const page: PageId = (raw as string) === "providers" ? "settings" : raw;
   const info = PAGES.find((p) => p.id === page);
   if (page === "metrics") return <MetricsView />;
   return (
@@ -234,7 +234,6 @@ function Page({ page }: { page: PageId }) {
           <Icon name={PAGE_ICONS[page]} size={18} />
           {info?.label}
         </h2>
-        {page === "providers" && <ProvidersView />}
         {page === "deps" && <DepsView />}
         {page === "remote" && <RemoteView />}
         {page === "settings" && <SettingsView />}

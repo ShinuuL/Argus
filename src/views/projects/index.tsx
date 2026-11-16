@@ -1,7 +1,7 @@
 /**
  * Barra esquerda: os projetos da pasta raiz, cada um expandido nas suas
  * sessões (conversas com agentes). No rodapé, os botões que abrem as telas de
- * apoio como abas (Provedores, Dependências, Métricas, Remoto, Configurações).
+ * apoio como abas (Dependências, Métricas, Remoto, Configurações).
  */
 import { useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
 import {
@@ -26,7 +26,6 @@ import { StateDot } from "@/views/session";
 import "./projects.css";
 
 const PAGE_ICONS: Record<PageId, IconName> = {
-  providers: "user",
   deps: "box",
   metrics: "chart",
   remote: "phone",

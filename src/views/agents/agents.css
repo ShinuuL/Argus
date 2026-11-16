@@ -1,4 +1,4 @@
-/* Provedores (aba). */
+/* Provedores (seção de Configurações). */
 .ag-view { display: flex; flex-direction: column; gap: 14px; }
 .ag-list { display: flex; flex-direction: column; gap: 8px; }
 .ag-card { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); min-width: 0; flex-wrap: wrap; }

@@ -20,14 +20,35 @@ export type TabKind =
   /** Telas que abrem como aba pelo rodapé da barra esquerda. */
   | { type: "page"; page: PageId };
 
-export type PageId = "providers" | "deps" | "metrics" | "remote" | "settings";
+export type PageId = "deps" | "metrics" | "remote" | "settings";
+
+/**
+ * "providers" era uma aba própria; hoje é a seção Provedores de Configurações.
+ * Aceito em `openPage` e nas abas restauradas por compatibilidade.
+ */
+export type LegacyPageId = "providers";
+
+/** Seções da tela de Configurações. */
+export type SettingsSection = "theme" | "agents" | "providers" | "project";
+
+export const SETTINGS_SECTIONS: { id: SettingsSection; label: string }[] = [
+  { id: "theme", label: "Tema" },
+  { id: "agents", label: "Agentes" },
+  { id: "providers", label: "Provedores" },
+  { id: "project", label: "Por projeto" },
+];
+
+/** Troca uma aba de página antiga ("providers") pela equivalente atual (Configurações). */
+export function normalizeKind(kind: TabKind): TabKind {
+  if (kind.type === "page" && (kind.page as string) === "providers") return { type: "page", page: "settings" };
+  return kind;
+}
 
 export const PAGES: { id: PageId; label: string; short: string; title: string }[] = [
-  { id: "providers", label: "Provedores", short: "Provedores", title: "Provedores: login e status das CLIs dos agentes" },
   { id: "deps", label: "Dependências", short: "Deps.", title: "Dependências dos projetos" },
   { id: "metrics", label: "Métricas", short: "Métricas", title: "Métricas de tokens e custo equivalente em API" },
   { id: "remote", label: "Remoto", short: "Remoto", title: "Acesso remoto pelo celular" },
-  { id: "settings", label: "Configurações", short: "Config.", title: "Configurações: tema, auto-work e comandos permitidos" },
+  { id: "settings", label: "Configurações", short: "Config.", title: "Configurações: tema, agentes, provedores e projetos" },
 ];
 
 export interface WbTab {
@@ -66,7 +87,7 @@ export function tabTitle(kind: TabKind): string {
     case "dashboard":
       return "Painel";
     case "page":
-      return PAGES.find((p) => p.id === kind.page)?.label ?? kind.page;
+      return PAGES.find((p) => p.id === (normalizeKind(kind) as typeof kind).page)?.label ?? kind.page;
   }
 }
 
@@ -181,7 +202,13 @@ export interface WorkbenchState {
   bindChat(tab: number, task: TaskId): void;
   /** Troca o projeto de uma conversa ainda sem tarefa. */
   setChatProject(tab: number, project: Path | null): void;
-  openPage(page: PageId): void;
+  /** Abre uma tela; "providers" abre Configurações › Provedores. */
+  openPage(page: PageId | LegacyPageId): void;
+  /** Seção visível em Configurações. */
+  settingsSection: SettingsSection;
+  setSettingsSection(section: SettingsSection): void;
+  /** Abre (ou foca) Configurações já na seção pedida. */
+  openSettings(section?: SettingsSection): void;
   openTerminal(opts: { title?: string; cwd?: Path | null; command?: CmdSpec | CommandSpec | null }): void;
   openDashboard(): void;
   openMetrics(): void;
@@ -222,9 +249,13 @@ export const useWorkbench = create<WorkbenchState>()((set, get) => {
     dirty: [],
     drag: null,
     nextId: 1,
+    settingsSection: "theme",
 
-    open: (kind, preview = false) =>
-      set((s) => ({ groups: openIn(s.groups, activeIndex(), kind, preview, s.nextId), nextId: s.nextId + 1 })),
+    open: (kind, preview = false) => {
+      if (kind.type === "page" && (kind.page as string) === "providers") set({ settingsSection: "providers" });
+      kind = normalizeKind(kind);
+      set((s) => ({ groups: openIn(s.groups, activeIndex(), kind, preview, s.nextId), nextId: s.nextId + 1 }));
+    },
     openFile: (path, preview = false) => get().open({ type: "file", path }, preview),
     openSession: (task) => {
       const s = get();
@@ -261,7 +292,12 @@ export const useWorkbench = create<WorkbenchState>()((set, get) => {
           ),
         })),
       })),
-    openPage: (page) => get().open({ type: "page", page }),
+    openPage: (page) => (page === "providers" ? get().openSettings("providers") : get().open({ type: "page", page })),
+    setSettingsSection: (settingsSection) => set({ settingsSection }),
+    openSettings: (section) => {
+      if (section) set({ settingsSection: section });
+      get().open({ type: "page", page: "settings" });
+    },
     openTerminal: ({ title, cwd = null, command = null }) =>
       get().open({ type: "terminal", title: title ?? (cwd ? baseName(cwd) : "terminal"), cwd, command }),
     openDashboard: () => get().open({ type: "dashboard" }),

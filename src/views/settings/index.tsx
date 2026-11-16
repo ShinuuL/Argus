@@ -1,11 +1,12 @@
 /**
- * Configurações (aba): tema de cores, auto-work por projeto (liga/desliga e
- * limites) e os comandos que o agente pode executar em cada projeto.
+ * Configurações (aba), com navegação por seções: tema de cores, agentes,
+ * provedores (login das CLIs) e, por projeto, auto-work e comandos permitidos.
  */
 import { Select } from "@/shell/Select";
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage, samePath, type Path, type PermissionsInfo, type WorkMode, type WorkModeInfo } from "@/api";
-import { THEMES, useApp, useTheme } from "@/store";
+import { SETTINGS_SECTIONS, THEMES, useApp, useTheme, useWorkbench } from "@/store";
+import ProvidersView from "@/views/agents";
 import AutoWorkPanel from "@/views/autowork";
 import { AllowedCommands } from "@/views/servers";
 import "./settings.css";
@@ -100,7 +101,7 @@ function AgentDefaults() {
       <h3>Agentes</h3>
       <p className="page-lead">
         Como as conversas novas começam e o que o agente pode executar sem pedir. Vale para todos os projetos; cada projeto pode
-        ter a sua escolha, mais abaixo.
+        ter a sua escolha, em "Por projeto".
       </p>
       {error && (
         <div className="err small" role="alert">
@@ -222,41 +223,69 @@ export default function SettingsView() {
   const [chosen, setChosen] = useState<Path | null>(null);
   const project = projects.find((p) => samePath(p.path, chosen ?? selected)) ?? projects[0] ?? null;
 
+  const section = useWorkbench((s) => s.settingsSection);
+  const setSection = useWorkbench((s) => s.setSettingsSection);
+
   return (
-    <div className="set-view">
-      <section className="set-section">
-        <h3>Tema</h3>
-        <p className="page-lead">Vale para toda a interface, o editor e os terminais. A escolha fica lembrada.</p>
-        <ThemePicker />
-      </section>
-
-      <AgentDefaults />
-
-      <section className="set-section">
-        <h3>Por projeto</h3>
-        {project ? (
-          <>
-            <label className="set-field">
-              <span className="small">Projeto</span>
-              <Select
-                ariaLabel="Projeto"
-                value={project.path}
-                options={projects.map((p) => ({ value: p.path, label: p.name }))}
-                onChange={setChosen}
-              />
-            </label>
-            <ProjectAgentSettings key={project.path} project={project.path} />
-            <div className="set-card">
-              <AutoWorkPanel key={project.path} project={project.path} />
-            </div>
-            <div className="set-card">
-              <AllowedCommands key={project.path} project={project.path} />
-            </div>
-          </>
-        ) : (
-          <p className="muted small">Abra uma pasta raiz para configurar os projetos.</p>
+    <div className="set-layout">
+      <nav className="set-nav" aria-label="Seções de Configurações">
+        {SETTINGS_SECTIONS.map((sec) => (
+          <button
+            key={sec.id}
+            className={section === sec.id ? "set-nav-item on" : "set-nav-item"}
+            aria-current={section === sec.id ? "page" : undefined}
+            onClick={() => setSection(sec.id)}
+          >
+            {sec.label}
+          </button>
+        ))}
+      </nav>
+      <div className="set-view">
+        {section === "theme" && (
+          <section className="set-section">
+            <h3>Tema</h3>
+            <p className="page-lead">Vale para toda a interface, o editor e os terminais. A escolha fica lembrada.</p>
+            <ThemePicker />
+          </section>
         )}
-      </section>
+
+        {section === "agents" && <AgentDefaults />}
+
+        {section === "providers" && (
+          <section className="set-section">
+            <h3>Provedores</h3>
+            <ProvidersView />
+          </section>
+        )}
+
+        {section === "project" && (
+          <section className="set-section">
+            <h3>Por projeto</h3>
+            {project ? (
+              <>
+                <label className="set-field">
+                  <span className="small">Projeto</span>
+                  <Select
+                    ariaLabel="Projeto"
+                    value={project.path}
+                    options={projects.map((p) => ({ value: p.path, label: p.name }))}
+                    onChange={setChosen}
+                  />
+                </label>
+                <ProjectAgentSettings key={project.path} project={project.path} />
+                <div className="set-card">
+                  <AutoWorkPanel key={project.path} project={project.path} />
+                </div>
+                <div className="set-card">
+                  <AllowedCommands key={project.path} project={project.path} />
+                </div>
+              </>
+            ) : (
+              <p className="muted small">Abra uma pasta raiz para configurar os projetos.</p>
+            )}
+          </section>
+        )}
+      </div>
     </div>
   );
 }

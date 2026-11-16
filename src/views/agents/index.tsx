@@ -1,5 +1,5 @@
 /**
- * Provedores (aba): login e status das CLIs dos agentes.
+ * Provedores (seção de Configurações): login e status das CLIs dos agentes.
  *
  * A IDE só executa as CLIs oficiais; o login é feito pela própria CLI, num
  * terminal embutido. Nenhum token é lido ou guardado aqui.
