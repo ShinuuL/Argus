@@ -1,6 +1,6 @@
 # Argus — Estado atual e próximos passos
 
-_Atualizado em 2026-11-14, depois da migração da interface de Dioxus para Tauri 2, do redesenho do layout (chat no centro, temas) e de uma rodada de validação na janela com tarefas reais._
+_Atualizado em 2026-11-16. Base: 2026-11-14, depois da migração da interface de Dioxus para Tauri 2, do redesenho do layout (chat no centro, temas) e de uma rodada de validação na janela com tarefas reais._
 
 O Argus é uma IDE desktop que gerencia vários projetos de uma pasta raiz e orquestra agentes de IA (Claude Code e OpenCode). A lógica fica em Rust (`argus-core`); a interface é React + TypeScript dentro de uma janela Tauri 2. Os agentes usam o login das próprias CLIs oficiais; a IDE nunca lê nem guarda tokens.
 
@@ -26,7 +26,7 @@ Testes e verificações:
 
 ```powershell
 npx tsc --noEmit            # tipos da interface
-cargo test --workspace      # 98 testes do core + 16 do desktop
+cargo test --workspace      # 110 testes do core + 16 do desktop
 node --check crates/core/assets/remote/app.js   # sintaxe da web app do celular
 ```
 
@@ -73,7 +73,6 @@ crates/core   (argus-core): workspace, monitor, pty, procs, deps, metrics, db, r
               agents/{provider, claude, opencode, orchestrator, handoff (resumo na troca de agente)}
               assets/remote (web app do celular: index.html, app.js, style.css, unauthorized.html,
               manifest.webmanifest, icon.svg; embutidos no executável por include_str)
-crates/app    (argus-app): interface ANTIGA em Dioxus 0.7. Fora do workspace, não compila mais.
 ```
 
 Monaco e xterm entram por npm e são empacotados pelo vite; nada vem de CDN.
@@ -146,10 +145,6 @@ Limites conhecidos:
 - **Negrito de novidade:** vale para o que chega com a web app aberta (fica guardado no aparelho); o servidor não guarda o que cada aparelho já viu.
 - **"Abrir" de um servidor** usa o IP do computador; servidor que só escuta em `localhost` não abre pelo celular.
 - **Iniciar o auto-work numa sessão** não tem botão na web app (a rota `start` existe); ele começa pelas regras do desktop.
-
-### Sobre `crates/app` (Dioxus)
-
-A pasta ficou **fora do workspace Cargo** (`exclude = ["crates/app"]`) e serve só de referência de comportamento. Ela não compila mais sozinha. **Pode ser apagada depois que você conferir a interface nova na janela** e confirmar que nada da antiga faz falta.
 
 ## Modelo, agente, modo de trabalho e permissões (2026-11-14)
 
@@ -281,19 +276,19 @@ Corrigidos (`[x]` = visto funcionando; `[ ]` = corrigido no código, falta ver):
 
 Em aberto:
 
-- [ ] Trocar o modelo de uma sessão do claude regrava o cache da conversa inteira no modelo novo: o primeiro turno depois da troca sai caro (visto: US$ 0,64 equivalentes em API). Vale avisar na pílula.
+- [ ] Trocar o modelo de uma sessão do claude regrava o cache da conversa inteira no modelo novo: o primeiro turno depois da troca sai caro (visto: US$ 0,64 equivalentes em API). **2026-11-16:** a lista de modelos de uma sessão do claude com histórico mostra o aviso; falta ver na janela.
 - [ ] `cd <pasta>; git status` escrito pelo agente no PowerShell foi negado numa tarefa real (o `cd` não estava liberado). `cd` e `Set-Location` entraram no padrão, mas a correção não foi vista funcionando: no teste seguinte o agente se recusou sozinho a encadear o `cd`.
 - [ ] OpenCode: permissões de comando seguem a configuração de agentes do usuário (com regras "ask" e "deny" próprias); o Argus não as altera. Num `opencode run` sem interação, o que cai em "ask" não tem quem aprove. Não conferido com um comando git real (o turno de teste terminou sem chamar ferramenta).
 - [ ] O aviso de ambiente do modo Isolado não impede o agente de procurar: no teste ele ainda fez 2 buscas antes de responder.
 - [ ] Web app do celular: a divisória de troca de agente, a linha "Comando negado" e o provedor/modelo no subtítulo foram escritos e passam no `node --check`, mas não foram vistos numa tela.
-- [ ] Turno cancelado não registra uso: o processo morre antes do `result`, e os tokens gastos até ali não entram nas métricas nem no custo da sessão.
-- [ ] OpenCode 2.0.22 não imprime o `step_finish` do último passo no `run --format json`: o uso desse passo e o evento de resultado não chegam (numa tarefa real: 10 959 de 11 547 tokens de entrada registrados).
+- [ ] Turno cancelado não registra uso. **2026-11-16:** corrigido no código: soma o `usage` das mensagens `assistant` vistas depois do último `result` e grava uma linha parcial (custo estimado pela tabela). Teste automático; falta ver com um turno real cancelado.
+- [ ] OpenCode 2.0.22 não imprime o `step_finish` do último passo no `run --format json` (numa tarefa real: 10 959 de 11 547 tokens de entrada registrados). **2026-11-16:** o resultado agora é sintetizado no fim do processo; o uso do último passo só entra se outra linha trouxer os tokens (nenhum número inventado), então a diferença pode continuar. Falta ver com o opencode real.
 - [ ] `which_bin` agora segue a ordem do PATH e, em cada pasta, a da PATHEXT (antes: `.exe` sempre antes de `.cmd`). Coberto por testes com pastas falsas; não conferido com os dois opencode reais instalados.
 - [ ] Worktree preso por processo da sessão: Aplicar e Descartar agora encerram os processos ligados ao worktree (árvore da sessão, cwd ou linha de comando dentro da pasta), tentam a remoção 4 vezes com espera curta e, por fim, `--force --force` + `prune`; se a pasta continuar, dão erro e mantêm a branch e o estado (dá para repetir). Seleção dos processos coberta por teste; não conferido com o serviço real do opencode.
 - [ ] O servidor aberto pelo claude numa sessão morre quando o turno termina (a CLI encerra os processos em segundo plano). Para um servidor que sobreviva ao turno, o agente precisa iniciá-lo desvinculado, o que pede outro comando permitido.
 - [ ] `anexos\novo\` é compartilhada por todas as conversas novas: o `--add-dir` dessa pasta deixa o agente de uma conversa ler os anexos recentes das outras (até a limpeza de 1 dia).
 - [ ] Edição de arquivos pelo OpenCode v2 não conferida: sem `--auto`, o `run` pode negar a permissão de escrita.
-- [ ] Um turno retomado gravou um evento de resultado vazio (ok, custo 0) logo no começo, antes das ferramentas. Não aparece na conversa; causa não investigada.
+- [ ] Um turno retomado gravou um evento de resultado vazio (ok, custo 0) logo no começo. **2026-11-16:** `result` de sucesso sem texto, sem uso novo e custo 0 não vira mais evento. Causa deduzida (não reproduzida): `result` de zero turnos do processo retomado ou repetido com o mesmo acumulado.
 - [ ] Pareamento pelo celular dava "Não autorizado" ao abrir o link do QR (visto pelo Tailscale). Causa provável: cookie `SameSite=Strict`, que o navegador do celular não envia quando o link vem da câmera ou de outro app. Corrigido no código (cookie `Lax` e página de pareamento que segue sozinha para a tela inicial); **falta confirmar num aparelho**.
 
 ## Próximos passos (em ordem)
@@ -321,7 +316,7 @@ Em aberto:
    - `OrchestratorEvent` não deriva `Serialize`; por isso existe o espelho `OrchMsg` em `src-tauri/src/events.rs`. Derivar no core elimina o espelho.
    - TypeScript/JavaScript no Monaco só valida sintaxe (a validação semântica foi desligada).
 6. **Empacotamento:** `npm run tauri build` gera o instalador. O Tauri avisa que o identificador `dev.argus.app` termina em `.app`, o que conflita com bundles do macOS; no Windows não afeta.
-7. **Apagar `crates/app`** depois de conferir a interface nova.
+7. ~~Apagar `crates/app`~~: feito (commit `14d5fa6`).
 8. **Uso de CPU e GPU por sessão.**
    - Mostrar, em cada sessão, o consumo de CPU, memória e GPU dos processos dela (agente, subprocessos e servidores vinculados).
    - A árvore de processos por sessão já existe em `crates/core/src/procs.rs`; a CPU e a memória vêm do `sysinfo`.
@@ -358,9 +353,9 @@ Em aberto:
 ## Notas
 
 - Os worktrees dos agentes ficam em `<projeto>/../.argus-worktrees/`. Worktrees antigos em `.harness-worktrees` podem ser apagados com `git worktree prune` no projeto de origem.
-- A pasta do projeto ainda se chama `Harness`. Nenhum caminho absoluto está no código; ao renomear, `target/` recompila do zero.
+- A pasta do projeto foi renomeada de `Harness` para `Argus`. As sessões antigas do Claude Code ficaram registradas sob o nome antigo.
 - O `index.html` não pode ter `<style>` inline: o `vite build` falha quando o diretório atual vem com a letra do drive minúscula (`d:\`).
-- As correções da rodada de validação de 2026-11-14 (métricas, anexos, OpenCode, terminal, painel de alterações) ainda não foram commitadas.
+- App instalado x desenvolvimento: o instalado (`npm run app:instalador`, NSIS em `target\release\bundle\nsis\`) usa `%APPDATA%\argus\`; `npm run app:dev` abre o "Argus Dev" com `%APPDATA%\argus-dev\`. O app instalado foi instalado e conferido pelo usuário em 2026-11-16.
 
 ## Decisões fixas
 
