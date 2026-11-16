@@ -70,7 +70,9 @@ O Screen-Mirror funciona e tem MCP pronto. Reescrever o protocolo do scrcpy de c
 - [ ] A2. Aba **Dispositivos**: lista de aparelhos (`/api/devices`), info, apps, logcat e arquivos usando a API HTTP.
 - [ ] A3. Espelhamento dentro do Argus: portar `web/mirror.js` (WebCodecs + canvas + mapeamento de mouse e teclado) para um componente React que fala o protocolo WebSocket do `MirrorHub`. O WebView2 suporta WebCodecs.
 - [x] A4. Registrar o MCP do Screen-Mirror automaticamente nas conversas de agente, com a política aplicada. Feito para **claude** (`--mcp-config` + `--allowedTools mcp__screen-mirror`) e **codex** (`-c mcp_servers.screen-mirror.*`), com liga/desliga na aba Dispositivos. Nada é injetado se a CLI já tiver o Screen-Mirror configurado. **opencode** e **gemini** ficam de fora: o gemini não tem opção de linha de comando para MCP, e o opencode 2.3.0 não somou servidores por `OPENCODE_CONFIG_CONTENT` nem `OPENCODE_CONFIG` nos testes. Pendente: conferir um turno do codex de verdade (não instalado na máquina dos testes).
-- [ ] A5. Instalar APK do projeto ativo: detectar o APK gerado (Gradle/Flutter) e oferecer "instalar no aparelho", mantendo a confirmação de usuário que já existe.
+- [x] Som do celular no PC: feito no Screen-Mirror (branch `audio-no-pc`). O scrcpy manda PCM cru (48 kHz, estéreo) por um terceiro socket e o painel toca pela Web Audio API. Tem botão de liga/desliga, e o celular fica mudo enquanto o som vai para o PC. Precisa de Android 11 ou mais novo. Testado com um tom de 440 Hz no SM-M556B.
+- [x] A5. Instalar APK do projeto ativo (faixa na aba Dispositivos; `adb install -r` com confirmação; só APKs das pastas de build do Gradle e do Flutter). Testado até o adb; ainda não instalei nada de verdade no celular.
+- [ ] ~~A5 original:~~ Instalar APK do projeto ativo: detectar o APK gerado (Gradle/Flutter) e oferecer "instalar no aparelho", mantendo a confirmação de usuário que já existe.
 
 **Cuidado:** a API HTTP do Screen-Mirror não tem autenticação. Manter em `127.0.0.1` e, se possível, passar um token aleatório gerado pelo Argus (exige um ajuste pequeno no `http.ts`).
 

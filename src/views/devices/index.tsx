@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage, type DeviceList, type MirrorStatus } from "@/api";
 import { Icon } from "@/shell/icons";
+import { ApkBar } from "./ApkBar";
 import "./devices.css";
 
 const STATE_LABEL: Record<string, string> = {
@@ -160,6 +161,7 @@ export default function DevicesView() {
         )}
       </div>
 
+      {url && <ApkBar devices={list?.devices ?? []} />}
       {error && <div className="dv-error">{error}</div>}
 
       {url ? (
@@ -168,7 +170,7 @@ export default function DevicesView() {
           className="dv-frame"
           src={url}
           title="Painel do Screen-Mirror"
-          allow="clipboard-read; clipboard-write; fullscreen"
+          allow="autoplay; clipboard-read; clipboard-write; fullscreen"
         />
       ) : (
         <div className="page-col">

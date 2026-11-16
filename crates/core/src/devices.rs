@@ -468,6 +468,135 @@ fn claude_has_it(workdir: &Path, home: Option<&Path>) -> bool {
 }
 
 
+// ------------------------------------------------------------------ APK do projeto
+//
+// A5: instala no celular o APK gerado pelo projeto ativo. O Argus chama o `adb install -r`
+// direto (sem passar pelo upload HTTP do Screen-Mirror), achando o adb na mesma ordem do
+// Screen-Mirror: `ADB_PATH`, `ANDROID_HOME`/`ANDROID_SDK_ROOT`, o SDK padrão do Android
+// Studio, o PATH e o `vendor/platform-tools` do Screen-Mirror.
+
+/** APK encontrado nas pastas de saída do build. */
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Apk {
+    pub path: PathBuf,
+    /// Caminho relativo ao projeto, para exibir.
+    pub label: String,
+    pub size: u64,
+    /// Segundos desde a época Unix.
+    pub modified: u64,
+}
+
+/// Pastas onde Gradle e Flutter deixam os APKs, relativas ao projeto.
+const APK_DIRS: &[&str] = &[
+    "build/app/outputs/flutter-apk",
+    "build/app/outputs/apk",
+    "app/build/outputs/apk",
+    "android/app/build/outputs/apk",
+    "build/outputs/apk",
+];
+
+/// APKs do projeto, o mais novo primeiro. Também olha `<módulo>/build/outputs/apk`
+/// de cada subpasta de primeiro nível (projetos Gradle com vários módulos).
+pub fn find_apks(project: &Path) -> Vec<Apk> {
+    let mut dirs: Vec<PathBuf> = APK_DIRS.iter().map(|d| project.join(d)).collect();
+    if let Ok(rd) = std::fs::read_dir(project) {
+        for e in rd.flatten() {
+            let d = e.path().join("build").join("outputs").join("apk");
+            if !dirs.contains(&d) {
+                dirs.push(d);
+            }
+        }
+    }
+    let mut out: Vec<Apk> = Vec::new();
+    for d in dirs.into_iter().filter(|d| d.is_dir()) {
+        collect_apks(project, &d, 0, &mut out);
+    }
+    out.sort_by(|a, b| b.modified.cmp(&a.modified).then_with(|| a.label.cmp(&b.label)));
+    out.dedup_by(|a, b| a.path == b.path);
+    out
+}
+
+fn collect_apks(project: &Path, dir: &Path, depth: usize, out: &mut Vec<Apk>) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    for e in rd.flatten() {
+        let p = e.path();
+        let Ok(meta) = e.metadata() else { continue };
+        if meta.is_dir() {
+            // APKs de teste instrumentado não são o app.
+            if depth < 4 && !e.file_name().to_string_lossy().eq_ignore_ascii_case("androidTest") {
+                collect_apks(project, &p, depth + 1, out);
+            }
+            continue;
+        }
+        let is_apk = p.extension().is_some_and(|x| x.eq_ignore_ascii_case("apk"));
+        let name = e.file_name().to_string_lossy().to_ascii_lowercase();
+        if !is_apk || name.contains("androidtest") || name.contains("-unaligned") {
+            continue;
+        }
+        let modified = meta
+            .modified()
+            .ok()
+            .and_then(|m| m.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_secs());
+        let label = p.strip_prefix(project).unwrap_or(&p).to_string_lossy().replace('\\', "/");
+        out.push(Apk { path: p, label, size: meta.len(), modified });
+    }
+}
+
+/// Caminho do adb, na mesma ordem do Screen-Mirror.
+pub fn adb_path(mirror_dir: Option<&Path>) -> Option<PathBuf> {
+    let exe = if cfg!(windows) { "adb.exe" } else { "adb" };
+    let env = |k: &str| std::env::var_os(k).map(PathBuf::from).filter(|p| !p.as_os_str().is_empty());
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    candidates.extend(env("ADB_PATH"));
+    for k in ["ANDROID_HOME", "ANDROID_SDK_ROOT"] {
+        candidates.extend(env(k).map(|d| d.join("platform-tools").join(exe)));
+    }
+    candidates.extend(env("LOCALAPPDATA").map(|d| d.join("Android").join("Sdk").join("platform-tools").join(exe)));
+    candidates.extend(env("HOME").map(|d| d.join("Android").join("Sdk").join("platform-tools").join(exe)));
+    if let Some(found) = candidates.into_iter().find(|p| p.is_file()) {
+        return Some(found);
+    }
+    which::which("adb").ok().or_else(|| mirror_dir.map(|d| d.join("vendor").join("platform-tools").join(exe)).filter(|p| p.is_file()))
+}
+
+/// Serial aceito na linha de comando do adb (USB, `ip:porta` ou nome mDNS).
+pub fn valid_serial(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 128 && s.chars().all(|c| c.is_ascii_alphanumeric() || "._:-@".contains(c))
+}
+
+impl ScreenMirror {
+    /// `adb -s <serial> install -r <apk>`. O APK precisa estar dentro do projeto e ter
+    /// vindo de `find_apks` (a interface só oferece esses).
+    pub fn install_apk(&self, root: Option<&Path>, project: &Path, apk: &Path, serial: &str) -> anyhow::Result<String> {
+        if !valid_serial(serial) {
+            anyhow::bail!("Serial de aparelho inválido.");
+        }
+        let apk = apk.canonicalize().map_err(|e| anyhow::anyhow!("APK não encontrado: {e}"))?;
+        let inside = find_apks(project).iter().any(|a| a.path.canonicalize().is_ok_and(|p| p == apk));
+        if !inside {
+            anyhow::bail!("Esse APK não está nas pastas de build do projeto.");
+        }
+        let adb = adb_path(self.locate(root).as_deref())
+            .ok_or_else(|| anyhow::anyhow!("adb não encontrado. Instale o Android platform-tools ou defina ADB_PATH."))?;
+        let mut cmd = Command::new(adb);
+        cmd.arg("-s").arg(serial).arg("install").arg("-r").arg(&apk).stdin(Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        }
+        let out = cmd.output().map_err(|e| anyhow::anyhow!("falha ao rodar o adb: {e}"))?;
+        let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)).trim().to_string();
+        // O adb antigo devolve 0 mesmo com "Failure [...]".
+        if !out.status.success() || text.contains("Failure") {
+            anyhow::bail!("{}", last_lines(&text, 4));
+        }
+        Ok(last_lines(&text, 2))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -521,6 +650,46 @@ mod tests {
         assert_eq!(inject(CommandSpec::new("codex").arg("exec"), &mcp, &work, Some(&home)).args, ["exec"]);
     }
 
+
+    #[test]
+    fn finds_project_apks() {
+        let t = tempfile::tempdir().unwrap();
+        let p = t.path();
+        let put = |rel: &str| {
+            let f = p.join(rel);
+            std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+            std::fs::write(&f, b"apk").unwrap();
+        };
+        put("app/build/outputs/apk/debug/app-debug.apk");
+        put("app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk");
+        put("build/app/outputs/flutter-apk/app-release.apk");
+        put("wear/build/outputs/apk/debug/wear-debug.apk");
+        put("app/build/outputs/apk/debug/output-metadata.json");
+        put("src/main/res/raw/fake.apk"); // fora das pastas de build
+        let mut labels: Vec<String> = find_apks(p).into_iter().map(|a| a.label).collect();
+        labels.sort();
+        assert_eq!(labels, ["app/build/outputs/apk/debug/app-debug.apk", "build/app/outputs/flutter-apk/app-release.apk", "wear/build/outputs/apk/debug/wear-debug.apk"]);
+    }
+
+    #[test]
+    fn serials() {
+        assert!(valid_serial("R9QY3071WRL"));
+        assert!(valid_serial("192.168.0.5:5555"));
+        assert!(valid_serial("adb-R9QY-abc._adb-tls-connect._tcp"));
+        assert!(!valid_serial(""));
+        assert!(!valid_serial("x; rm -rf /"));
+    }
+
+    #[test]
+    fn install_rejects_apk_outside_build_dirs() {
+        let t = tempfile::tempdir().unwrap();
+        let stray = t.path().join("solto.apk");
+        std::fs::write(&stray, b"apk").unwrap();
+        let sm = ScreenMirror::new(None);
+        let err = sm.install_apk(None, t.path(), &stray, "R9QY3071WRL").unwrap_err().to_string();
+        assert!(err.contains("pastas de build"), "{err}");
+        assert!(sm.install_apk(None, t.path(), &stray, "a b").is_err());
+    }
 
     #[test]
     fn versions() {

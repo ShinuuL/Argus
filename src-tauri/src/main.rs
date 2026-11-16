@@ -137,6 +137,8 @@ fn main() {
             devices::devices_set_dir,
             devices::devices_set_agents,
             devices::devices_list,
+            devices::devices_apks,
+            devices::devices_install,
             // dependências
             deps::deps_analyze,
             deps::deps_detect_missing_command,
