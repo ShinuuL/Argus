@@ -4,7 +4,7 @@
  * segundo plano pedidos pelo agente. Sem React, para poder conferir com node.
  */
 import type { AgentEvent } from "@/api";
-import { subagentStatus, unwrap, type SubagentNode, type SubagentStatus } from "@/views/session/events";
+import { SPAWN_TOOLS, subagentStatus, unwrap, type SubagentNode, type SubagentStatus } from "@/views/session/events";
 
 /** Números que a CLI informou no fim de um subagente (`SubagentStats`). */
 export interface SubagentNumbers {
@@ -158,33 +158,99 @@ export interface BackgroundCommand {
   tool: string;
   command: string;
   description: string;
+  /** Resposta da ferramenta ao pedido (null = ainda sem resposta). */
+  result: { ok: boolean; output: string } | null;
 }
 
 const SHELL_TOOLS = new Set(["bash", "powershell"]);
 
-/** `ToolUse` de shell com `run_in_background: true`, na ordem em que foram pedidos. */
+/**
+ * `ToolUse` de shell com `run_in_background: true`, na ordem em que foram
+ * pedidos, com a resposta da ferramenta (o aviso de que o comando foi para o
+ * segundo plano, ou o erro). As saídas vêm na ordem dos `ToolUse` comuns do
+ * mesmo dono, como em `chatEntries`.
+ */
 export function backgroundCommands(events: AgentEvent[]): BackgroundCommand[] {
   const out: BackgroundCommand[] = [];
+  const pending = new Map<string, (BackgroundCommand | null)[]>();
+  const queue = (owner: string | null) => {
+    const k = owner ?? "";
+    let q = pending.get(k);
+    if (!q) pending.set(k, (q = []));
+    return q;
+  };
   for (const raw of events) {
     const { owner, event } = unwrap(raw);
+    if ("User" in event && owner == null) pending.clear();
+    if ("ToolResult" in event) {
+      const cmd = queue(owner).shift();
+      if (cmd) cmd.result = { ok: event.ToolResult.ok, output: event.ToolResult.output };
+      continue;
+    }
     if (!("ToolUse" in event)) continue;
     const { name, input } = event.ToolUse;
-    if (!SHELL_TOOLS.has(name.toLowerCase()) || input == null || typeof input !== "object") continue;
-    const inp = input as Record<string, unknown>;
-    if (inp.run_in_background !== true) continue;
-    out.push({
+    if (SPAWN_TOOLS.has(name.toLowerCase())) continue;
+    const inp = input != null && typeof input === "object" ? (input as Record<string, unknown>) : null;
+    if (!SHELL_TOOLS.has(name.toLowerCase()) || inp?.run_in_background !== true) {
+      queue(owner).push(null);
+      continue;
+    }
+    const cmd: BackgroundCommand = {
       index: out.length,
       owner,
       tool: name,
       command: typeof inp.command === "string" ? inp.command : "",
       description: typeof inp.description === "string" ? inp.description : "",
-    });
+      result: null,
+    };
+    queue(owner).push(cmd);
+    out.push(cmd);
   }
   return out;
+}
+
+/** Texto sem aspas e com espaços simples (para achar o comando na linha de um processo). */
+function squash(s: string): string {
+  return s.replace(/["'`]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** Processo vivo da sessão que roda `command` (pelo começo da linha de comando), se houver. */
+export function commandProcess<P extends { cmdline: string }>(command: string, procs: P[]): P | null {
+  const key = squash(command).slice(0, 60);
+  if (key.length < 3) return null;
+  return procs.find((p) => squash(p.cmdline).includes(key)) ?? null;
+}
+
+export type TaskGroup = "running" | "done" | "failed";
+
+/** Estado de um comando em segundo plano: falhou ao iniciar, ainda roda (processo vivo) ou acabou. */
+export function commandGroup(c: BackgroundCommand, alive: boolean, taskActive: boolean): TaskGroup {
+  if (c.result && !c.result.ok) return "failed";
+  if (alive || (c.result == null && taskActive)) return "running";
+  return "done";
+}
+
+/** Grupo de um subagente na lista de tarefas. */
+export function subagentGroup(status: SubagentStatus): TaskGroup {
+  return status === "running" ? "running" : status === "error" ? "failed" : "done";
+}
+
+/** "16 s", "1 min 02 s", "1 h 05 min" (estilo do painel de tarefas). */
+export function shortDuration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s} s`;
+  if (s < 3600) return `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, "0")} s`;
+  return `${Math.floor(s / 3600)} h ${String(Math.floor((s % 3600) / 60)).padStart(2, "0")} min`;
 }
 
 /** "N agentes" contando a sessão principal. */
 export function agentsLabel(subagents: number): string {
   const n = subagents + 1;
   return n === 1 ? "1 agente" : `${n} agentes`;
+}
+
+/** Linha de comando legível: o shell do claude embrulha o comando em `eval '...'`. */
+export function prettyCmd(cmdline: string): string {
+  const m = /eval '((?:[^']|'\'')*)'/.exec(cmdline);
+  return m ? m[1].replace(/'\''/g, "'") : cmdline;
 }

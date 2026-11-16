@@ -176,6 +176,7 @@ export default function AgentMap({ taskId, active }: AgentMapProps) {
               >
                 <span className="ses-dot running" aria-hidden="true" />
                 <span className="ellipsis am-row-name">{p.cmdline || p.name}</span>
+                {p.mcp && <span className="am-tag">MCP</span>}
                 <span className="am-row-meta">{formatDuration(Date.now() - p.started_at * 1000)}</span>
               </button>
             ))}

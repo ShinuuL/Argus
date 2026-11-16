@@ -699,9 +699,9 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
           {taskId != null && (
             <button
               className="cv-hbtn"
-              title="Mapa de agentes: subagentes e tarefas em segundo plano desta sessão"
+              title="Mapa de agentes: subagentes e tarefas em segundo plano desta sessão (painel direito)"
               aria-label="Abrir o mapa de agentes"
-              onClick={() => useWorkbench.getState().openAgentMap(taskId)}
+              onClick={() => useLayout.getState().openRight("agents")}
             >
               <Icon name="tree" size={15} />
             </button>

@@ -60,6 +60,8 @@ import {
   SquareTerminal,
   TriangleAlert,
   User,
+  Trash2,
+  Maximize2,
   Wrench,
   X,
 } from "lucide-react";
@@ -126,6 +128,9 @@ const ICONS = {
   circleSlash: CircleSlash,
   circleDot: CircleDot,
   shieldAlert: ShieldAlert,
+  // Painel de agentes (tarefas em segundo plano)
+  trash: Trash2,
+  expand: Maximize2,
 } as const satisfies Record<string, LucideIcon>;
 
 export type IconName = keyof typeof ICONS;

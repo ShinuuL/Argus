@@ -80,6 +80,21 @@ export function lastTurnDenied(events: AgentEvent[]): string | null {
   return null;
 }
 
+/** Estado visível de um subagente (mesmos ícones das sessões). */
+export function subagentStateKind(status: "running" | "ok" | "error" | "interrupted"): AgentStateKind {
+  return status === "running" ? "working" : status === "ok" ? "done" : status === "error" ? "failed" : "interrupted";
+}
+
+/** Só o ícone de um estado, sem precisar de uma `Task` (subagentes, comandos). */
+export function AgentStateIcon({ kind, size = 13, title }: { kind: AgentStateKind; size?: number; title?: string }) {
+  const t = title ?? INFO[kind].label;
+  return (
+    <span className={`agent-state ${kind}`} title={t} role="img" aria-label={t} data-state={kind}>
+      <Icon name={INFO[kind].icon} size={size} />
+    </span>
+  );
+}
+
 export interface AgentStateProps {
   task: Task;
   size?: number;

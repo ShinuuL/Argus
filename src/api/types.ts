@@ -372,6 +372,8 @@ export type Owner = { kind: "Session"; id: TaskId } | { kind: "Terminal"; id: Pt
 /** Processo vivo da árvore de um dono (sem a raiz, o próprio agente ou shell). */
 export interface OwnedProc {
   pid: number;
+  /** Servidor MCP aberto pelo agente (agrupado à parte na tela). */
+  mcp: boolean;
   parent: number | null;
   name: string;
   cmdline: string;

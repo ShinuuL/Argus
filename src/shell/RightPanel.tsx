@@ -1,20 +1,22 @@
 import { RIGHT_TABS, useApp, useLayout, type RightTab } from "@/store";
 import ExplorerView from "@/views/explorer";
 import ServersView from "@/views/servers";
-import { ChangesPanel, SubagentsPanel } from "@/views/session/panels";
+import { AgentsPanel } from "@/views/agentmap/AgentsPanel";
+import { ChangesPanel } from "@/views/session/panels";
 import { Icon, type IconName } from "./icons";
 import type { ActiveContext } from "./useActiveContext";
 
 const TAB_ICONS: Record<RightTab, IconName> = {
   files: "file",
   changes: "diff",
-  subagents: "tree",
+  agents: "tree",
   servers: "server",
 };
 
 /**
  * Painel direito, retrátil, sobre a sessão/projeto ativos: Arquivos,
- * Alterações (diff com Aplicar e Descartar), Subagentes e Servidores.
+ * Alterações (diff com Aplicar e Descartar), Agentes (mapa e tarefas em
+ * segundo plano) e Servidores.
  */
 export function RightPanel({ ctx }: { ctx: ActiveContext }) {
   const tab = useLayout((s) => s.rightTab);
@@ -44,7 +46,7 @@ export function RightPanel({ ctx }: { ctx: ActiveContext }) {
       <div className="rp-scroll" role="tabpanel">
         {tab === "files" && <ExplorerView />}
         {tab === "changes" && <ChangesPanel taskId={ctx.taskId} project={ctx.project} />}
-        {tab === "subagents" && <SubagentsPanel taskId={ctx.taskId} />}
+        {tab === "agents" && <AgentsPanel taskId={ctx.taskId} />}
         {tab === "servers" && <ServersView />}
       </div>
     </aside>

@@ -3,12 +3,12 @@ import { create } from "zustand";
 import type { Owner } from "@/api";
 
 /** Abas internas do painel direito. */
-export type RightTab = "files" | "changes" | "subagents" | "servers";
+export type RightTab = "files" | "changes" | "agents" | "servers";
 
 export const RIGHT_TABS: { id: RightTab; label: string }[] = [
   { id: "files", label: "Arquivos" },
   { id: "changes", label: "Alterações" },
-  { id: "subagents", label: "Subagentes" },
+  { id: "agents", label: "Agentes" },
   { id: "servers", label: "Servidores" },
 ];
 

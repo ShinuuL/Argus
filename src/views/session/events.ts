@@ -42,7 +42,7 @@ export type ChatEntry =
   | { type: "unknown"; kind: string };
 
 /** Ferramentas que criam subagente: o `SubagentStart` já vira o cartão. */
-const SPAWN_TOOLS = new Set(["agent", "task"]);
+export const SPAWN_TOOLS = new Set(["agent", "task"]);
 
 /** Dono do evento (null = agente principal) e o evento sem o invólucro `Scoped`. */
 export function unwrap(event: AgentEvent): { owner: string | null; event: AgentEvent } {

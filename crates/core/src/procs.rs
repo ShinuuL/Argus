@@ -54,6 +54,9 @@ pub struct ServerInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OwnedProc {
     pub pid: u32,
+    /// Servidor MCP aberto pelo agente (a tela agrupa à parte).
+    #[serde(default)]
+    pub mcp: bool,
     pub parent: Option<u32>,
     pub name: String,
     pub cmdline: String,
@@ -122,11 +125,18 @@ pub fn parse_lsof(out: &str) -> Vec<(u32, u16)> {
 }
 
 /// PIDs descendentes de `root` (inclui o próprio, se existir).
+///
+/// No Windows o parent pid de um órfão continua apontando para o pai morto, e esse
+/// número pode ser reutilizado por outro processo. Um filho de verdade nunca começa
+/// antes do pai: a ligação só vale com `filho.started_at >= pai.started_at`. Sem isso
+/// a árvore do agente "adotava" processos alheios (WebView2, o próprio Argus, conhost).
 pub fn descendants(root: u32, rows: &[ProcRow]) -> HashSet<u32> {
+    let start: HashMap<u32, u64> = rows.iter().map(|r| (r.pid, r.started_at)).collect();
     let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
     for r in rows {
         if let Some(p) = r.parent {
-            if p != r.pid {
+            let older_parent = start.get(&p).is_some_and(|ps| *ps <= r.started_at);
+            if p != r.pid && older_parent {
                 children.entry(p).or_default().push(r.pid);
             }
         }
@@ -259,12 +269,26 @@ impl ProcSource for SystemSource {
     }
 }
 
+/// Processos que nunca são tarefa do agente: a casca do console (conhost), o
+/// WebView2 e o próprio Argus. Se aparecerem na árvore é por vínculo errado.
+pub fn is_host_noise(name: &str) -> bool {
+    let n = name.to_lowercase();
+    let n = n.strip_suffix(".exe").unwrap_or(&n);
+    matches!(n, "conhost" | "msedgewebview2" | "argus-desktop" | "argus")
+}
+
+/// Linha de comando de um servidor MCP (ex.: `docker mcp gateway run`, `foo-mcp`).
+pub fn is_mcp(cmdline: &str) -> bool {
+    let c = cmdline.to_lowercase();
+    c.split(|ch: char| !ch.is_alphanumeric()).any(|w| w == "mcp" || w == "modelcontextprotocol")
+}
+
 // ---------------------------------------------------------------- rastreador
 
 #[derive(Default)]
 struct Inner {
-    /// Raízes registradas (pid -> dono).
-    roots: HashMap<u32, Owner>,
+    /// Raízes registradas (pid -> dono, start_time visto ao registrar ou no 1º poll).
+    roots: HashMap<u32, (Owner, Option<u64>)>,
     /// Todo PID já visto na árvore de um dono (com o start_time, contra reuso de PID).
     known: HashMap<u32, (Owner, u64)>,
     servers: Vec<ServerInfo>,
@@ -301,7 +325,8 @@ impl ProcTracker {
 
     /// Vincula a árvore de `pid` a `owner`.
     pub fn track(&self, pid: u32, owner: Owner) {
-        self.lock().roots.insert(pid, owner);
+        let st = self.src.processes().into_iter().find(|r| r.pid == pid).map(|r| r.started_at);
+        self.lock().roots.insert(pid, (owner, st));
     }
 
     /// Contador que muda a cada alteração da lista de servidores.
@@ -314,11 +339,24 @@ impl ProcTracker {
         let rows = self.src.processes();
         let by_pid: HashMap<u32, &ProcRow> = rows.iter().map(|r| (r.pid, r)).collect();
         let mut g = self.lock();
-        // Raízes mortas saem; os PIDs conhecidos continuam valendo.
-        g.roots.retain(|pid, _| by_pid.contains_key(pid));
-        let roots: Vec<(u32, Owner)> = g.roots.iter().map(|(p, o)| (*p, *o)).collect();
+        // Raízes mortas (ou com o PID reutilizado) saem; os PIDs conhecidos continuam valendo.
+        g.roots.retain(|pid, (_, st)| match (by_pid.get(pid), *st) {
+            (None, _) => false,
+            (Some(r), Some(s)) => r.started_at == s,
+            (Some(_), None) => true,
+        });
+        for (pid, (_, st)) in g.roots.iter_mut() {
+            if st.is_none() {
+                *st = by_pid.get(pid).map(|r| r.started_at);
+            }
+        }
+        let me = std::process::id();
+        let roots: Vec<(u32, Owner)> = g.roots.iter().map(|(p, (o, _))| (*p, *o)).collect();
         for (root, owner) in roots {
             for pid in descendants(root, &rows) {
+                if pid == me {
+                    continue;
+                }
                 if let Some(r) = by_pid.get(&pid) {
                     g.known.entry(pid).or_insert((owner, r.started_at));
                 }
@@ -378,7 +416,13 @@ impl ProcTracker {
     pub fn processes_of(&self, owner: Owner) -> Vec<OwnedProc> {
         let rows = self.src.processes();
         let g = self.lock();
-        let roots: HashSet<u32> = g.roots.iter().filter(|(_, o)| **o == owner).map(|(p, _)| *p).collect();
+        let by_pid: HashMap<u32, &ProcRow> = rows.iter().map(|r| (r.pid, r)).collect();
+        let roots: HashSet<u32> = g
+            .roots
+            .iter()
+            .filter(|(p, (o, st))| *o == owner && by_pid.get(p).is_some_and(|r| st.map_or(true, |s| s == r.started_at)))
+            .map(|(p, _)| *p)
+            .collect();
         let mut pids: HashSet<u32> = HashSet::new();
         for root in &roots {
             pids.extend(descendants(*root, &rows));
@@ -388,11 +432,13 @@ impl ProcTracker {
                 pids.insert(r.pid);
             }
         }
+        let me = std::process::id();
         let mut out: Vec<OwnedProc> = rows
             .iter()
-            .filter(|r| pids.contains(&r.pid) && !roots.contains(&r.pid))
+            .filter(|r| pids.contains(&r.pid) && !roots.contains(&r.pid) && r.pid != me && !is_host_noise(&r.name))
             .map(|r| OwnedProc {
                 pid: r.pid,
+                mcp: is_mcp(&r.cmdline),
                 parent: r.parent,
                 name: r.name.clone(),
                 cmdline: r.cmdline.clone(),
@@ -411,7 +457,7 @@ impl ProcTracker {
 
     /// PID raiz registrado para `owner` (ex.: o processo de um terminal).
     pub fn root_of(&self, owner: Owner) -> Option<u32> {
-        self.lock().roots.iter().find(|(_, o)| **o == owner).map(|(p, _)| *p)
+        self.lock().roots.iter().find(|(_, (o, _))| *o == owner).map(|(p, _)| *p)
     }
 
     /// Dono de um PID conhecido.
@@ -458,7 +504,7 @@ impl ProcTracker {
     /// Esquece um dono (ex.: terminal fechado).
     pub fn forget(&self, owner: Owner) {
         let mut g = self.lock();
-        g.roots.retain(|_, o| *o != owner);
+        g.roots.retain(|_, (o, _)| *o != owner);
         g.known.retain(|_, (o, _)| *o != owner);
         g.servers.retain(|s| s.owner != owner);
         g.rev += 1;
@@ -682,7 +728,7 @@ Conexões ativas
     #[test]
     fn processes_of_owner() {
         let fake = Arc::new(Fake {
-            rows: Mutex::new(vec![row(100, None, 1), row(101, Some(100), 3), row(102, Some(101), 2), row(200, None, 4), row(201, Some(200), 5)]),
+            rows: Mutex::new(vec![row(100, None, 1), row(101, Some(100), 2), row(102, Some(101), 3), row(200, None, 4), row(201, Some(200), 5)]),
             listen: Mutex::new(vec![(102, 5173)]),
         });
         let t = ProcTracker::new(fake.clone());
@@ -691,14 +737,70 @@ Conexões ativas
         t.poll();
         let p = t.processes_of(Owner::Session(7));
         // Sem a raiz (o próprio agente), ordenado pelo início.
-        assert_eq!(p.iter().map(|x| x.pid).collect::<Vec<_>>(), [102, 101]);
-        assert_eq!(p[0].port, Some(5173));
-        assert_eq!(p[1].port, None);
+        assert_eq!(p.iter().map(|x| x.pid).collect::<Vec<_>>(), [101, 102]);
+        assert_eq!(p[1].port, Some(5173));
+        assert_eq!(p[0].port, None);
         // Órfão continua listado depois que a raiz morre.
         fake.rows.lock().unwrap().retain(|r| r.pid != 100 && r.pid != 101);
         t.poll();
         assert_eq!(t.processes_of(Owner::Session(7)).iter().map(|x| x.pid).collect::<Vec<_>>(), [102]);
         assert!(t.processes_of(Owner::Session(8)).is_empty());
+    }
+
+    fn named(pid: u32, parent: Option<u32>, st: u64, name: &str, cmd: &str) -> ProcRow {
+        ProcRow { pid, parent, name: name.into(), cmdline: cmd.into(), started_at: st, cwd: None }
+    }
+
+    /// Bug real: apareciam msedgewebview2, o argus-desktop instalado e conhost na
+    /// sessão. Vinham de parent pid velho (reutilizado) e de PID de raiz reutilizado.
+    #[test]
+    fn session_never_lists_host_processes() {
+        let fake = Arc::new(Fake {
+            rows: Mutex::new(vec![
+                named(500, Some(1), 100, "claude.exe", "claude -p"),
+                named(501, Some(500), 101, "conhost.exe", "conhost.exe 0x4"),
+                named(502, Some(500), 102, "docker.exe", "docker mcp gateway run"),
+                named(503, Some(500), 105, "node.exe", "node server.js"),
+                // Órfãos antigos cujo parent pid morto (500) foi reutilizado pelo agente.
+                named(600, Some(500), 50, "msedgewebview2.exe", "msedgewebview2.exe --type=renderer"),
+                named(601, Some(500), 60, "argus-desktop.exe", "argus-desktop.exe"),
+                named(602, Some(500), 70, "node.exe", "node antigo.js"),
+                // conhost filho legítimo pelo horário, mas é ruído.
+                named(603, Some(503), 106, "conhost.exe", "conhost.exe"),
+            ]),
+            listen: Mutex::new(vec![]),
+        });
+        let t = ProcTracker::new(fake.clone());
+        t.track(500, Owner::Session(1));
+        t.poll();
+        let p = t.processes_of(Owner::Session(1));
+        assert_eq!(p.iter().map(|x| x.pid).collect::<Vec<_>>(), [502, 503]);
+        assert!(p[0].mcp && !p[1].mcp);
+        assert_eq!(t.owner_of(600), None);
+        assert_eq!(t.owner_of(601), None);
+        assert_eq!(t.owner_of(602), None);
+
+        // O agente termina e o PID 500 é reutilizado pelo WebView2: a raiz cai e
+        // os filhos do processo novo não entram na sessão.
+        {
+            let mut rows = fake.rows.lock().unwrap();
+            rows.retain(|r| r.pid != 500);
+            rows.push(named(500, Some(601), 200, "msedgewebview2.exe", "msedgewebview2.exe"));
+            rows.push(named(700, Some(500), 201, "node.exe", "node do-webview.js"));
+        }
+        t.poll();
+        let p = t.processes_of(Owner::Session(1));
+        assert_eq!(p.iter().map(|x| x.pid).collect::<Vec<_>>(), [502, 503]);
+        assert_eq!(t.owner_of(700), None);
+        assert_eq!(t.root_of(Owner::Session(1)), None);
+    }
+
+    #[test]
+    fn mcp_and_noise_detection() {
+        assert!(is_mcp("docker mcp gateway run"));
+        assert!(is_mcp("node screen-mirror-mcp/dist/cli.js"));
+        assert!(!is_mcp("node vite --port 5173"));
+        assert!(is_host_noise("Conhost.exe") && is_host_noise("msedgewebview2.exe") && !is_host_noise("node.exe"));
     }
 
     #[test]
