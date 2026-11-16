@@ -192,6 +192,8 @@ struct AppState {
     projects: Arc<RwLock<Vec<std::path::PathBuf>>>,
     /// Vira `true` quando o servidor é desligado: fecha os WebSockets abertos.
     stopped: watch::Receiver<bool>,
+    /// Avisos da IDE fora do orquestrador (ex.: build concluído), já em JSON.
+    notices: broadcast::Sender<Value>,
 }
 
 impl AppState {
@@ -533,15 +535,17 @@ pub fn event_json(ev: &OrchestratorEvent) -> Value {
 
 async fn stream(State(st): State<AppState>, ws: WebSocketUpgrade) -> Response {
     let rx = st.orch.subscribe();
+    let notices = st.notices.subscribe();
     let token = st.token.clone();
     let initial = token.read().unwrap().clone();
     let stopped = st.stopped.clone();
-    ws.on_upgrade(move |sock| ws_loop(sock, rx, token, initial, stopped))
+    ws.on_upgrade(move |sock| ws_loop(sock, rx, notices, token, initial, stopped))
 }
 
 async fn ws_loop(
     mut sock: WebSocket,
     mut rx: broadcast::Receiver<OrchestratorEvent>,
+    mut notices: broadcast::Receiver<Value>,
     token: Arc<RwLock<String>>,
     initial: String,
     mut stopped: watch::Receiver<bool>,
@@ -563,6 +567,13 @@ async fn ws_loop(
                     // cliente atrasou: pede para recarregar
                     if sock.send(Message::Text(json!({"type":"resync"}).to_string().into())).await.is_err() { break; }
                 }
+                Err(_) => break,
+            },
+            notice = notices.recv() => match notice {
+                Ok(v) => {
+                    if sock.send(Message::Text(v.to_string().into())).await.is_err() { break; }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => {}
                 Err(_) => break,
             },
             msg = sock.recv() => match msg {
@@ -621,6 +632,8 @@ pub struct RemoteServer {
     aw: Arc<RwLock<Option<AutoWork>>>,
     /// Projetos da pasta raiz aberta na IDE (os únicos onde o celular cria conversa).
     projects: Arc<RwLock<Vec<std::path::PathBuf>>>,
+    /// Avisos repassados a todos os celulares conectados em `/api/stream`.
+    notices: broadcast::Sender<Value>,
 }
 
 impl Default for RemoteServer {
@@ -631,12 +644,18 @@ impl Default for RemoteServer {
 
 impl RemoteServer {
     pub fn new() -> Self {
-        Self { token: Arc::new(RwLock::new(new_token())), running: Mutex::new(None), host: RwLock::new(None), aw: Arc::new(RwLock::new(None)), projects: Arc::new(RwLock::new(Vec::new())) }
+        Self { token: Arc::new(RwLock::new(new_token())), running: Mutex::new(None), host: RwLock::new(None), aw: Arc::new(RwLock::new(None)), projects: Arc::new(RwLock::new(Vec::new())), notices: broadcast::channel(64).0 }
     }
 
     /// Informa os projetos da pasta raiz aberta na IDE (`/api/projects`).
     pub fn set_projects(&self, projects: Vec<std::path::PathBuf>) {
         *self.projects.write().unwrap() = projects;
+    }
+
+    /// Envia um aviso (JSON com `type`) aos celulares conectados em `/api/stream`.
+    /// Sem ninguém conectado, o aviso se perde (não há fila).
+    pub fn notify(&self, notice: Value) {
+        let _ = self.notices.send(notice);
     }
 
     /// Liga os endpoints de auto-work (`/api/autowork`).
@@ -662,6 +681,7 @@ impl RemoteServer {
             token: self.token.clone(),
             projects: self.projects.clone(),
             stopped: stopped_rx,
+            notices: self.notices.clone(),
         });
         let (tx, rx) = oneshot::channel::<()>();
         tokio::spawn(async move {

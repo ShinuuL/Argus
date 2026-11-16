@@ -268,7 +268,19 @@ struct Inner {
     /// Todo PID já visto na árvore de um dono (com o start_time, contra reuso de PID).
     known: HashMap<u32, (Owner, u64)>,
     servers: Vec<ServerInfo>,
+    /// Processos vivos das árvores rastreadas, no último poll.
+    owned: Vec<TrackedProc>,
     rev: u64,
+}
+
+/// Processo vivo da árvore de um dono (para reconhecer builds rodando em terminais e sessões).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TrackedProc {
+    pub pid: u32,
+    pub owner: Owner,
+    pub cmdline: String,
+    pub cwd: Option<PathBuf>,
+    pub started_at: u64,
 }
 
 /// Rastreador de processos/servidores. Clonável (compartilhado).
@@ -314,6 +326,15 @@ impl ProcTracker {
         }
         // Esquece PIDs mortos ou reutilizados (start_time diferente).
         g.known.retain(|pid, (_, st)| by_pid.get(pid).is_some_and(|r| r.started_at == *st));
+        let owned: Vec<TrackedProc> = g
+            .known
+            .iter()
+            .filter_map(|(pid, (owner, _))| {
+                let r = by_pid.get(pid)?;
+                Some(TrackedProc { pid: *pid, owner: *owner, cmdline: r.cmdline.clone(), cwd: r.cwd.clone(), started_at: r.started_at })
+            })
+            .collect();
+        g.owned = owned;
         drop(g);
 
         let listen = if self.lock().known.is_empty() { Vec::new() } else { self.src.listening() };
@@ -381,6 +402,16 @@ impl ProcTracker {
             .collect();
         out.sort_by_key(|p| (p.started_at, p.pid));
         out
+    }
+
+    /// Processos vivos das árvores rastreadas (do último poll).
+    pub fn owned(&self) -> Vec<TrackedProc> {
+        self.lock().owned.clone()
+    }
+
+    /// PID raiz registrado para `owner` (ex.: o processo de um terminal).
+    pub fn root_of(&self, owner: Owner) -> Option<u32> {
+        self.lock().roots.iter().find(|(_, o)| **o == owner).map(|(p, _)| *p)
     }
 
     /// Dono de um PID conhecido.
@@ -691,6 +722,8 @@ Conexões ativas
         assert_eq!(t.servers_of(Owner::Session(7))[0].port, 5173);
         assert_eq!(t.servers_of(Owner::Session(7))[0].url, "http://localhost:5173");
         assert_eq!(t.servers_of(Owner::Terminal(1))[0].pid, 201);
+        assert_eq!(t.owned().len(), 5);
+        assert_eq!(t.root_of(Owner::Terminal(1)), Some(200));
 
         // O claude encerra o turno: 100 e 101 morrem, 102 fica órfão (parent antigo).
         fake.rows.lock().unwrap().retain(|r| r.pid != 100 && r.pid != 101);

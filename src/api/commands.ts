@@ -41,6 +41,12 @@ import type {
   RemoteInfo,
   RootInfo,
   ServerInfo,
+  BuildRecord,
+  DetectedCommand,
+  PreparedRun,
+  ProjectCommands,
+  RememberedServer,
+  RunInfo,
   SubagentInfo,
   SystemMedia,
   SystemUsage,
@@ -401,3 +407,34 @@ export const systemConfirm = (title: string, message: string): Promise<boolean> 
 
 /** Versão do app, caminho do banco e pasta de dados. */
 export const appInfo = (): Promise<AppInfo> => invoke("app_info");
+
+// --------------------------------------------- builds e servidores de dev
+
+/** Comandos de build e de servidor detectados no projeto. */
+export const runsDetect = (project: Path): Promise<DetectedCommand[]> => invoke("runs_detect", { project });
+
+/** Comandos detectados em todos os projetos da raiz (só os que têm algum). */
+export const runsDetectAll = (): Promise<ProjectCommands[]> => invoke("runs_detect_all");
+
+/**
+ * Valida e prepara um comando para abrir num terminal da IDE (troca a porta se
+ * preciso; recusa servidor com build do projeto rodando). Lembra o servidor do projeto.
+ */
+export const runsPrepare = (project: Path, commandId: string): Promise<PreparedRun> =>
+  invoke("runs_prepare", { project, commandId });
+
+/** Execuções em andamento e as encerradas nesta sessão do app. */
+export const runsList = (): Promise<RunInfo[]> => invoke("runs_list");
+
+/** Histórico de builds (do projeto ou de todos), mais recentes primeiro. */
+export const runsHistory = (project: Path | null, limit?: number): Promise<BuildRecord[]> =>
+  invoke("runs_history", { project, limit });
+
+/** Para uma execução (árvore de processos e terminal). */
+export const runsStop = (id: number): Promise<void> => invoke("runs_stop", { id });
+
+/** Último servidor iniciado em cada projeto da raiz. */
+export const runsRemembered = (): Promise<RememberedServer[]> => invoke("runs_remembered");
+
+/** Abre a pasta (ou seleciona o arquivo) no gerenciador de arquivos. */
+export const runsOpenFolder = (path: Path): Promise<void> => invoke("runs_open_folder", { path });

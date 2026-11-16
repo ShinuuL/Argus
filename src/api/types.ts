@@ -539,3 +539,92 @@ export interface AppInfo {
   has_db: boolean;
   data_dir: Path | null;
 }
+
+// ------------------------------------------------- builds e servidores de dev
+
+/** Tipo de um comando detectado no projeto. */
+export type RunKind = "build" | "servidor";
+
+/** Como trocar a porta de um servidor (parâmetro ou variável de ambiente). */
+export type PortStyle = { type: "Flag"; value: string } | { type: "Env"; value: string };
+
+/** Comando de build ou de servidor detectado pelos arquivos do projeto (`argus_core::runs`). */
+export interface DetectedCommand {
+  /** Estável no projeto, ex.: `npm:dev`, `cargo:build-release`. */
+  id: string;
+  label: string;
+  program: string;
+  args: string[];
+  kind: RunKind;
+  port: number | null;
+  port_style: PortStyle | null;
+  /** Arquivo de onde veio (`package.json`, `Cargo.toml`...). */
+  source: string;
+}
+
+export interface ProjectCommands {
+  project: Path;
+  commands: DetectedCommand[];
+}
+
+export interface Artifact {
+  path: Path;
+  size: number;
+  is_dir: boolean;
+}
+
+/** `running`, `ready` (servidor respondendo), `ok`, `failed`, `stopped` ou `ended` (sem código de saída). */
+export type RunState = "running" | "ready" | "ok" | "failed" | "stopped" | "ended" | "interrompido";
+
+/** Execução em andamento ou encerrada nesta sessão do app. */
+export interface RunInfo {
+  id: number;
+  db_id: number | null;
+  project: Path;
+  command_id: string | null;
+  label: string;
+  cmdline: string;
+  kind: RunKind;
+  /** `ide` (botão), `terminal` (digitado num terminal da IDE) ou `agente`. */
+  origin: string;
+  state: RunState;
+  exit_code: number | null;
+  /** Milissegundos Unix. */
+  started_at: number;
+  ended_at: number | null;
+  port: number | null;
+  url: string | null;
+  /** Terminal da IDE que roda o comando. */
+  pty: PtyId | null;
+  artifact: Artifact | null;
+}
+
+/** Build do histórico (SQLite). Tempos em milissegundos Unix. */
+export interface BuildRecord {
+  id: number;
+  project: string;
+  command_id: string | null;
+  label: string;
+  cmdline: string;
+  origin: string;
+  state: RunState;
+  exit_code: number | null;
+  started_at: number;
+  ended_at: number | null;
+  artifact_path: string | null;
+  artifact_size: number | null;
+}
+
+/** Comando pronto para abrir num terminal da IDE. */
+export interface PreparedRun {
+  command: CmdSpec;
+  title: string;
+  notice: string | null;
+  port: number | null;
+}
+
+/** Último servidor iniciado num projeto. */
+export interface RememberedServer {
+  project: Path;
+  command_id: string;
+}

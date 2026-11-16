@@ -32,6 +32,7 @@ fn main() {
             app.manage(ctx);
             events::start_orchestrator_forwarder(&handle);
             events::start_servers_forwarder(&handle);
+            commands::runs::start_watcher(&handle);
             // ARGUS_ROOT: abre a pasta raiz automaticamente (útil para testes).
             if let Some(dir) = std::env::var_os("ARGUS_ROOT").map(std::path::PathBuf::from).filter(|d| d.is_dir()) {
                 if let Err(e) = workspace::open_root(&handle, dir) {
@@ -110,6 +111,15 @@ fn main() {
             autowork::autowork_stop,
             // servidores
             servers::servers_list,
+            // builds e servidores de dev
+            runs::runs_detect,
+            runs::runs_detect_all,
+            runs::runs_prepare,
+            runs::runs_list,
+            runs::runs_history,
+            runs::runs_stop,
+            runs::runs_remembered,
+            runs::runs_open_folder,
             servers::servers_of,
             servers::owner_processes,
             servers::server_kill,

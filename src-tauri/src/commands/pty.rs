@@ -87,10 +87,12 @@ pub async fn pty_spawn(
     if cwd.is_some() {
         spec.cwd = cwd;
     }
+    let spec_seen = spec.clone();
     let (id, mut events) = ctx
         .pty
         .spawn(spec, cols.unwrap_or(80).max(2), rows.unwrap_or(24).max(2))
         .map_err(|e| format!("Falha ao iniciar terminal: {e}"))?;
+    super::runs::on_pty_spawn(&app, id, &spec_seen);
     tauri::async_runtime::spawn(async move {
         let b64 = base64::engine::general_purpose::STANDARD;
         while let Some(ev) = events.recv().await {
@@ -102,6 +104,7 @@ pub async fn pty_spawn(
                     let _ = app.emit(PTY_OUTPUT, PtyOutput { id, data: b64.encode(&bytes) });
                 }
                 PtyEvent::Exit(code) => {
+                    super::runs::on_pty_exit(&app, id, code);
                     let _ = app.emit(PTY_EXIT, PtyExit { id, code });
                     break;
                 }

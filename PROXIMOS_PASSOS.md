@@ -338,11 +338,13 @@ Em aberto:
     - Fontes: o campo `usage` de cada turno no stream-json e o tamanho da janela por modelo; para o claude, o comando `/context` devolve a divisão por categoria com custo 0.
     - Avisar quando passar de um limite (por exemplo 80%).
 12. **Monitor de builds e instaladores.**
+    - Feito (grupo C, 2026-11-16): `crates/core/src/runs.rs` (detecção, portas, artefatos), `src-tauri/src/commands/runs.rs` (execuções, watcher, histórico em `build_runs`), tela Builds no rodapé. Builds de fora dos botões são reconhecidos pela linha de comando (sem código de saída).
     - Acompanhar, por projeto, a geração de builds e de instaladores (por exemplo `cargo build`, `npm run build`, `npm run tauri build`, `gradle assemble`, `flutter build`): em andamento, concluído ou falhou, com duração, saída e o caminho e tamanho do artefato gerado.
     - Detectar os comandos de build de cada projeto pelos arquivos dele (scripts do `package.json`, `Cargo.toml`, `tauri.conf.json`, Gradle e outros) e oferecer um botão para cada um.
     - Histórico dos builds por projeto e aviso (pet, status bar e celular) quando um build termina ou falha.
     - Vale para builds iniciados pelo usuário num terminal da IDE e pelos agentes.
 13. **Servidores de dev com um clique.**
+    - Feito (grupo C, 2026-11-16): seção "Servidores de dev" no painel Servidores, botão no hover do projeto e no menu dele; porta livre mais próxima quando o comando aceita porta; último comando em `settings` (`devserver:<projeto>`).
     - Detectar os comandos de servidor de desenvolvimento de cada projeto (`npm run dev`, `npm run tauri dev`, `cargo run`, `vite` e outros) e mostrar um botão Iniciar/Parar por projeto, na barra esquerda e no painel Servidores.
     - Saber quando dá para abrir: bloquear ou avisar enquanto um build do mesmo projeto estiver rodando ou a porta estiver ocupada; mostrar "pronto" quando a porta começar a responder, com o botão Abrir no navegador.
     - Se a porta estiver em uso, escolher a livre mais próxima quando o comando aceitar a porta por parâmetro.

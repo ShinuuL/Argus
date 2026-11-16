@@ -11,4 +11,5 @@ pub mod permissions;
 pub mod procs;
 pub mod pty;
 pub mod remote;
+pub mod runs;
 pub mod workspace;

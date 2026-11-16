@@ -23,10 +23,12 @@ import { activeTab, PAGES, useApp, useLayout, useWorkbench, type PageId } from "
 import { cancelTask, deleteClosedTasks, deleteTask, discardTask } from "@/views/session/actions";
 import { sessionTitle } from "@/views/session/events";
 import { StateDot } from "@/views/session";
+import { devServerMenuItems, ProjectServerButton } from "@/views/servers/devservers";
 import "./projects.css";
 
 const PAGE_ICONS: Record<PageId, IconName> = {
   deps: "box",
+  builds: "hammer",
   metrics: "chart",
   remote: "phone",
   settings: "gear",
@@ -208,6 +210,7 @@ export default function ProjectsView() {
           disabled: closedCount === 0,
           onSelect: () => void deleteClosedTasks(p.path).catch(fail),
         },
+        ...(p.missing ? [] : devServerMenuItems(p.path)),
       ],
     });
   };
@@ -319,6 +322,7 @@ export default function ProjectsView() {
                 <Icon name={open ? "chevronDown" : "chevronRight"} size={13} className="pj-chev" />
                 <span className="pj-name ellipsis">{p.name || baseName(p.path)}</span>
                 <GitInfo status={statuses[p.path]} kinds={p.kinds} missing={p.missing} />
+                {!p.missing && <ProjectServerButton project={p.path} />}
                 {!p.missing && (
                 <button
                   className="pj-ibtn pj-add"

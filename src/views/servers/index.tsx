@@ -17,6 +17,7 @@ import {
 } from "@/api";
 import { useApp, useLayout, useWorkbench } from "@/store";
 import { Icon } from "@/shell/icons";
+import { DevServersSection } from "./devservers";
 import "./servers.css";
 
 export { askStopSession, stopSessionServers, type StopAction, type StopChoice } from "./stopSession";
@@ -262,6 +263,7 @@ export default function ServersView() {
           </button>
         </div>
       )}
+      {!filter && <DevServersSection />}
       <ServersList filter={filter} />
       <button className="rp-link" onClick={() => useWorkbench.getState().openPage("settings")}>
         <Icon name="shield" size={13} /> Comandos permitidos ao agente

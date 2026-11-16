@@ -9,6 +9,8 @@
 //! | `pty-exit`            | `{ id, code }`                                         |
 //! | `pty-missing-command` | `{ id, command, plan }` (sugestão de instalação)       |
 //! | `servers-changed`     | `ServerInfo[]`                                         |
+//! | `runs-changed`        | `RunInfo[]` (builds e servidores de dev)                |
+//! | `run-finished`        | `RunInfo` (uma execução terminou)                      |
 //! | `media-local`         | `{ type: "Error", message }` ou `{ type: "Finished" }` |
 use crate::state::AppCtx;
 use argus_core::agents::orchestrator::{OrchestratorEvent, TaskId, TaskState};
@@ -26,6 +28,8 @@ pub const PTY_EXIT: &str = "pty-exit";
 pub const PTY_MISSING_COMMAND: &str = "pty-missing-command";
 pub const SERVERS_CHANGED: &str = "servers-changed";
 pub const MEDIA_LOCAL: &str = "media-local";
+pub const RUNS_CHANGED: &str = "runs-changed";
+pub const RUN_FINISHED: &str = "run-finished";
 
 /// Espelho serializável de `OrchestratorEvent` (que não deriva `Serialize`).
 ///

@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { isTaskActive } from "@/api";
 import { useApp, useWorkbench } from "@/store";
 import { UsagePill } from "@/views/chat";
+import { BuildsStatusButton } from "@/views/builds";
 import PetView from "@/views/pet";
 import PlayerView from "@/views/player";
 import { ServersStatusButton } from "@/views/servers";
@@ -44,6 +45,7 @@ export function StatusBar() {
       <div className="wb-status-l">
         <AgentsRunning />
         <ServersStatusButton />
+        <BuildsStatusButton />
         <UsagePill />
       </div>
       <div className="wb-status-r">

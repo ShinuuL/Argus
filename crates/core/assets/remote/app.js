@@ -877,6 +877,10 @@ function onEvent(e) {
   switch (e.type) {
     case "ping":
       return;
+    case "build":
+      // Build terminado na IDE (ver `runs` no core): só um aviso, sem mudar a tela.
+      toast(e.text || "Build terminado.", e.ok ? "ok" : "err");
+      return;
     case "resync":
       refreshAll();
       return;

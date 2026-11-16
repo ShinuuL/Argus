@@ -126,6 +126,25 @@ impl TimeRange {
     }
 }
 
+/// Um build no histórico (`build_runs`). Tempos em milissegundos Unix.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BuildRecord {
+    pub id: i64,
+    pub project: String,
+    pub command_id: Option<String>,
+    pub label: String,
+    pub cmdline: String,
+    /// `ide` (botão), `terminal` (digitado num terminal da IDE) ou `agente`.
+    pub origin: String,
+    /// `running`, `ok`, `failed`, `stopped`, `ended` (sem código de saída) ou `interrompido`.
+    pub state: String,
+    pub exit_code: Option<i64>,
+    pub started_at: i64,
+    pub ended_at: Option<i64>,
+    pub artifact_path: Option<String>,
+    pub artifact_size: Option<i64>,
+}
+
 /// Banco thread-safe (conexão protegida por Mutex).
 pub struct Db {
     conn: Mutex<Connection>,
@@ -189,7 +208,21 @@ impl Db {
                 settings TEXT NOT NULL);
              CREATE TABLE IF NOT EXISTS settings(
                 key TEXT PRIMARY KEY,
-                value TEXT NOT NULL);",
+                value TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS build_runs(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project TEXT NOT NULL,
+                command_id TEXT,
+                label TEXT NOT NULL,
+                cmdline TEXT NOT NULL,
+                origin TEXT NOT NULL,
+                state TEXT NOT NULL,
+                exit_code INTEGER,
+                started_at INTEGER NOT NULL,
+                ended_at INTEGER,
+                artifact_path TEXT,
+                artifact_size INTEGER);
+             CREATE INDEX IF NOT EXISTS idx_build_runs ON build_runs(project, started_at);",
         )?;
         // Migração de bancos antigos: colunas novas em `tasks`.
         for col in ["workdir TEXT", "session_id TEXT", "model TEXT", "mode TEXT", "provider_state TEXT", "handoff INTEGER NOT NULL DEFAULT 0", "context TEXT"] {
@@ -285,6 +318,65 @@ impl Db {
     pub fn set_task_handoff(&self, id: i64, handoff: bool) -> rusqlite::Result<()> {
         self.c().execute("UPDATE tasks SET handoff=?2 WHERE id=?1", params![id, handoff])?;
         Ok(())
+    }
+
+    // ------------------------------------------------------------ builds
+
+    /// Registra um build iniciado. Devolve o id.
+    pub fn insert_build(&self, b: &BuildRecord) -> rusqlite::Result<i64> {
+        let c = self.c();
+        c.execute(
+            "INSERT INTO build_runs(project, command_id, label, cmdline, origin, state, exit_code, started_at, ended_at, artifact_path, artifact_size)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            params![b.project, b.command_id, b.label, b.cmdline, b.origin, b.state, b.exit_code, b.started_at, b.ended_at, b.artifact_path, b.artifact_size],
+        )?;
+        Ok(c.last_insert_rowid())
+    }
+
+    /// Fecha um build (estado, código, fim e artefato) e mantém só os `keep` mais recentes do projeto.
+    pub fn finish_build(&self, b: &BuildRecord, keep: usize) -> rusqlite::Result<()> {
+        let c = self.c();
+        c.execute(
+            "UPDATE build_runs SET state=?2, exit_code=?3, ended_at=?4, artifact_path=?5, artifact_size=?6 WHERE id=?1",
+            params![b.id, b.state, b.exit_code, b.ended_at, b.artifact_path, b.artifact_size],
+        )?;
+        c.execute(
+            "DELETE FROM build_runs WHERE project=?1 AND id NOT IN
+               (SELECT id FROM build_runs WHERE project=?1 ORDER BY started_at DESC, id DESC LIMIT ?2)",
+            params![b.project, keep as i64],
+        )?;
+        Ok(())
+    }
+
+    /// Histórico de builds (do projeto, ou de todos), mais recentes primeiro.
+    pub fn list_builds(&self, project: Option<&str>, limit: usize) -> rusqlite::Result<Vec<BuildRecord>> {
+        let c = self.c();
+        let mut st = c.prepare(
+            "SELECT id, project, command_id, label, cmdline, origin, state, exit_code, started_at, ended_at, artifact_path, artifact_size
+             FROM build_runs WHERE (?1 IS NULL OR project=?1) ORDER BY started_at DESC, id DESC LIMIT ?2",
+        )?;
+        let rows = st.query_map(params![project, limit as i64], |r| {
+            Ok(BuildRecord {
+                id: r.get(0)?,
+                project: r.get(1)?,
+                command_id: r.get(2)?,
+                label: r.get(3)?,
+                cmdline: r.get(4)?,
+                origin: r.get(5)?,
+                state: r.get(6)?,
+                exit_code: r.get(7)?,
+                started_at: r.get(8)?,
+                ended_at: r.get(9)?,
+                artifact_path: r.get(10)?,
+                artifact_size: r.get(11)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Builds deixados "em andamento" por uma sessão anterior do app viram "interrompido".
+    pub fn close_stale_builds(&self) -> rusqlite::Result<usize> {
+        self.c().execute("UPDATE build_runs SET state='interrompido' WHERE state='running'", [])
     }
 
     /// Preferência geral do app (chave e valor em texto).
@@ -542,6 +634,24 @@ fn task_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskRecord> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn build_history_keeps_last_n() {
+        let db = Db::open_in_memory().unwrap();
+        let mut ids = Vec::new();
+        for n in 0..5 {
+            let rec = BuildRecord { project: "p".into(), label: "cargo build".into(), cmdline: "cargo build".into(), origin: "ide".into(), state: "running".into(), started_at: n, ..Default::default() };
+            ids.push(db.insert_build(&rec).unwrap());
+        }
+        db.insert_build(&BuildRecord { project: "q".into(), state: "running".into(), started_at: 9, ..Default::default() }).unwrap();
+        let done = BuildRecord { id: ids[4], project: "p".into(), state: "ok".into(), exit_code: Some(0), ended_at: Some(10), artifact_path: Some("x.exe".into()), artifact_size: Some(3), ..Default::default() };
+        db.finish_build(&done, 3).unwrap();
+        let list = db.list_builds(Some("p"), 10).unwrap();
+        assert_eq!(list.len(), 3);
+        assert_eq!((list[0].id, list[0].state.as_str(), list[0].artifact_size), (ids[4], "ok", Some(3)));
+        assert_eq!(db.list_builds(None, 10).unwrap().len(), 4);
+        assert_eq!(db.close_stale_builds().unwrap(), 3);
+    }
 
     #[test]
     fn roundtrip() {

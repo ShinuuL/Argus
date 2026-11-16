@@ -24,6 +24,7 @@ import type {
   PtyOutput,
   RootInfo,
   ServerInfo,
+  RunInfo,
   TaskId,
   TaskState,
 } from "./types";
@@ -40,6 +41,8 @@ export const EVENTS = {
   ptyMissingCommand: "pty-missing-command",
   serversChanged: "servers-changed",
   mediaLocal: "media-local",
+  runsChanged: "runs-changed",
+  runFinished: "run-finished",
 } as const;
 
 function on<T>(event: string, cb: (payload: T) => void): Promise<Unlisten> {
@@ -182,3 +185,11 @@ export function onAnyPtyExit(cb: (id: PtyId, code: number | null) => void): Unli
 export function forgetPty(id: PtyId): void {
   channels.delete(id);
 }
+
+// --------------------------------------------- builds e servidores de dev
+
+/** Lista de execuções (builds e servidores de dev) sempre que muda. */
+export const onRunsChanged = (cb: (runs: RunInfo[]) => void): Promise<Unlisten> => on(EVENTS.runsChanged, cb);
+
+/** Uma execução terminou (ok, falhou, parada ou encerrada). */
+export const onRunFinished = (cb: (run: RunInfo) => void): Promise<Unlisten> => on(EVENTS.runFinished, cb);
