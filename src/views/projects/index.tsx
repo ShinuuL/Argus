@@ -29,6 +29,7 @@ import "./projects.css";
 const PAGE_ICONS: Record<PageId, IconName> = {
   deps: "box",
   builds: "hammer",
+  connections: "globe",
   metrics: "chart",
   remote: "phone",
   settings: "gear",

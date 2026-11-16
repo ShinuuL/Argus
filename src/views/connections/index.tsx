@@ -27,7 +27,7 @@ export default function ConnectionsView() {
   return (
     <div className="conn-view">
       <div className="conn-row">
-        <h2>Conexões</h2>
+        <h3>Login das CLIs</h3>
         <button onClick={refresh} disabled={list === null && !error}>
           Atualizar
         </button>
