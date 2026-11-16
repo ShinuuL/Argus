@@ -43,7 +43,22 @@ pub async fn devices_set_dir(app: AppHandle, dir: PathBuf) -> Result<MirrorStatu
     blocking(move || {
         let ctx = app.state::<AppCtx>();
         ctx.mirror.set_dir(&dir).map_err(err)?;
-        Ok(ctx.mirror.status(root(&ctx).as_deref()))
+        let root = root(&ctx);
+        ctx.mirror.sync_agent_mcp(root.as_deref());
+        Ok(ctx.mirror.status(root.as_deref()))
+    })
+    .await
+}
+
+/// Liga/desliga o MCP do Screen-Mirror nas conversas de agente (vale do próximo turno em diante).
+#[tauri::command]
+pub async fn devices_set_agents(app: AppHandle, on: bool) -> Result<MirrorStatus, String> {
+    blocking(move || {
+        let ctx = app.state::<AppCtx>();
+        ctx.mirror.set_agents(on).map_err(err)?;
+        let root = root(&ctx);
+        ctx.mirror.sync_agent_mcp(root.as_deref());
+        Ok(ctx.mirror.status(root.as_deref()))
     })
     .await
 }

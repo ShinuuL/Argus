@@ -41,6 +41,8 @@ pub fn open_root(app: &AppHandle, dir: PathBuf) -> Result<RootInfo, String> {
     *ctx.projects.lock().map_err(err)? = projects.clone();
     // O acesso remoto (celular) lista estes projetos e só cria conversa neles.
     ctx.remote.set_projects(paths.clone());
+    // O Screen-Mirror pode estar dentro da pasta raiz: atualiza o MCP dos agentes.
+    ctx.mirror.sync_agent_mcp(Some(&dir));
     let mut watch_error = monitor::start_watch(app, paths.clone()).err().map(|e| format!("Monitoramento indisponível: {e}"));
     if let Err(e) = start_root_watch(app, dir.clone()) {
         watch_error.get_or_insert(format!("Monitoramento da pasta raiz indisponível: {e}"));

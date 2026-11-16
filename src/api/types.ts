@@ -648,6 +648,8 @@ export interface MirrorStatus {
   url: string | null;
   pid: number | null;
   error: string | null;
+  /** MCP do Screen-Mirror oferecido às conversas de agente. */
+  agentsMcp: boolean;
 }
 
 export interface Device {

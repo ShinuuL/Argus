@@ -29,6 +29,9 @@ fn main() {
             let handle = app.handle().clone();
             // O orquestrador e o auto-work usam `tokio::spawn`: criamos dentro do runtime.
             let ctx = tauri::async_runtime::block_on(async { state::AppCtx::new() });
+            // MCP do Screen-Mirror nos agentes (pela variável ou pasta salva; a pasta
+            // raiz entra quando for aberta).
+            ctx.mirror.sync_agent_mcp(None);
             app.manage(ctx);
             events::start_orchestrator_forwarder(&handle);
             events::start_servers_forwarder(&handle);
@@ -132,6 +135,7 @@ fn main() {
             devices::devices_start,
             devices::devices_stop,
             devices::devices_set_dir,
+            devices::devices_set_agents,
             devices::devices_list,
             // dependências
             deps::deps_analyze,

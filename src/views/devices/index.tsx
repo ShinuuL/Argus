@@ -124,6 +124,23 @@ export default function DevicesView() {
           {list && list.devices.length === 0 && <span className="small muted">Nenhum celular conectado por ADB.</span>}
         </div>
         <span className="dv-spacer" />
+        {status?.dir && (
+          <label
+            className="dv-toggle small"
+            title="Claude e Codex recebem as ferramentas do Screen-Mirror (mcp__screen-mirror__*), a não ser que já o tenham configurado. A política do Screen-Mirror continua valendo. OpenCode e Gemini: registre o Screen-Mirror na configuração da própria CLI."
+          >
+            <input
+              type="checkbox"
+              checked={status.agentsMcp}
+              disabled={busy}
+              onChange={(e) => {
+                const on = e.target.checked;
+                void run(() => api.devicesSetAgents(on));
+              }}
+            />
+            Agentes controlam o celular
+          </label>
+        )}
         {url ? (
           <>
             <button title="Recarregar o painel" onClick={() => setFrameKey((k) => k + 1)}>

@@ -365,6 +365,9 @@ export const devicesStop = (): Promise<void> => invoke("devices_stop");
 /** Salva a pasta do projeto Screen-Mirror. */
 export const devicesSetDir = (dir: Path): Promise<MirrorStatus> => invoke("devices_set_dir", { dir });
 
+/** Liga/desliga o MCP do Screen-Mirror nas conversas de agente. */
+export const devicesSetAgents = (on: boolean): Promise<MirrorStatus> => invoke("devices_set_agents", { on });
+
 /** Aparelhos conectados por ADB. */
 export const devicesList = (): Promise<DeviceList> => invoke("devices_list");
 

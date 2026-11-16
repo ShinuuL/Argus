@@ -24,3 +24,4 @@
 .dv-field { display: flex; flex-direction: column; gap: 6px; }
 .dv-row { display: flex; gap: 8px; }
 .dv-row input { flex: 1; min-width: 0; }
+.dv-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); cursor: pointer; white-space: nowrap; }

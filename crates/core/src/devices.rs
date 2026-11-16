@@ -21,6 +21,8 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+use crate::agents::provider::CommandSpec;
+
 /// Variável que aponta a pasta do Screen-Mirror (tem prioridade sobre o resto).
 pub const DIR_VAR: &str = "ARGUS_SCREEN_MIRROR";
 /// Versão mínima do Node exigida pelo Screen-Mirror (`engines` do package.json).
@@ -45,6 +47,9 @@ pub struct MirrorStatus {
     pub pid: Option<u32>,
     /// Último erro de inicialização ou saída inesperada.
     pub error: Option<String>,
+    /// MCP do Screen-Mirror oferecido às conversas de agente.
+    #[serde(default)]
+    pub agents_mcp: bool,
 }
 
 /// Aparelho listado pelo Screen-Mirror (`GET /api/devices`).
@@ -70,6 +75,9 @@ pub struct DeviceList {
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Saved {
     dir: Option<PathBuf>,
+    /// Oferecer o MCP do Screen-Mirror aos agentes (None = padrão, ligado).
+    #[serde(default)]
+    agents: Option<bool>,
 }
 
 struct Running {
@@ -107,8 +115,31 @@ impl ScreenMirror {
         if let Some(parent) = file.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(file, serde_json::to_string_pretty(&Saved { dir: Some(dir.to_path_buf()) })?)?;
+        let mut saved = self.saved();
+        saved.dir = Some(dir.to_path_buf());
+        std::fs::write(file, serde_json::to_string_pretty(&saved)?)?;
         Ok(())
+    }
+
+    /// Liga/desliga o MCP do Screen-Mirror nas conversas de agente.
+    pub fn set_agents(&self, on: bool) -> anyhow::Result<()> {
+        let file = self.config_file.as_ref().ok_or_else(|| anyhow::anyhow!("sem pasta de dados para salvar a configuração"))?;
+        if let Some(parent) = file.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut saved = self.saved();
+        saved.agents = Some(on);
+        std::fs::write(file, serde_json::to_string_pretty(&saved)?)?;
+        Ok(())
+    }
+
+    /// Atualiza o que as conversas de agente recebem (chamar ao abrir a pasta raiz e
+    /// depois de mudar a configuração). Devolve se o MCP ficou ligado.
+    pub fn sync_agent_mcp(&self, root: Option<&Path>) -> bool {
+        let dir = self.locate(root).filter(|_| self.saved().agents.unwrap_or(true));
+        let claude_file = self.config_file.as_ref().and_then(|f| f.parent()).map(|d| d.join("mcp-screen-mirror.json"));
+        set_agent_mcp(dir.as_deref(), claude_file.as_deref());
+        dir.is_some()
     }
 
     /// Pasta do Screen-Mirror, pela ordem descrita no topo do módulo.
@@ -149,6 +180,7 @@ impl ScreenMirror {
             url: port.map(|p| format!("http://{HOST}:{p}")),
             pid,
             error: self.last_error.lock().unwrap().clone(),
+            agents_mcp: self.saved().agents.unwrap_or(true),
         }
     }
 
@@ -303,9 +335,192 @@ fn last_lines(s: &str, n: usize) -> String {
     lines[lines.len().saturating_sub(n)..].join("\n")
 }
 
+// ------------------------------------------------------------------ MCP nos agentes
+//
+// O MCP do Screen-Mirror (`node src/cli.ts mcp`, por stdio) é independente do servidor
+// do painel: cada CLI de agente o inicia por conta própria. A política do Screen-Mirror
+// (`~/.screen-mirror/policy.json`: modo, apps protegidos, pausa, confirmação para
+// instalar APK) continua valendo em toda ação, venha de qual agente vier.
+//
+// Por CLI:
+// - claude: `--mcp-config <arquivo>` (soma aos MCPs do usuário) e `--allowedTools
+//   mcp__screen-mirror`, porque no modo `-p` ninguém aprova a ferramenta;
+// - codex: `-c mcp_servers.screen-mirror.command=...` e `.args=[...]`;
+// - opencode e gemini: ficam de fora. O gemini não tem opção de linha de comando para
+//   MCP; no opencode 2.3.0 nem `OPENCODE_CONFIG_CONTENT` nem `OPENCODE_CONFIG` somaram
+//   um servidor novo (conferido com `opencode mcp list` em 2026-11-16). Nesses dois, o
+//   usuário registra o Screen-Mirror na configuração da própria CLI.
+//
+// Se o usuário já registrou o Screen-Mirror naquela CLI (global ou no projeto), nada é
+// injetado, para não duplicar o servidor.
+
+/// Nome do servidor MCP (prefixo das ferramentas: `mcp__screen-mirror__*`).
+pub const MCP_NAME: &str = "screen-mirror";
+
+#[derive(Debug, Clone)]
+struct AgentMcp {
+    dir: PathBuf,
+    claude_file: Option<PathBuf>,
+}
+
+static AGENT_MCP: Mutex<Option<AgentMcp>> = Mutex::new(None);
+
+/// Define (ou desliga, com `None`) o Screen-Mirror oferecido aos agentes. O arquivo
+/// do claude é gravado aqui.
+pub fn set_agent_mcp(dir: Option<&Path>, claude_file: Option<&Path>) {
+    let next = dir.map(|d| {
+        let claude_file = claude_file.and_then(|f| {
+            let json = serde_json::json!({ "mcpServers": { MCP_NAME: server_json(d) } });
+            if let Some(parent) = f.parent() {
+                std::fs::create_dir_all(parent).ok()?;
+            }
+            std::fs::write(f, serde_json::to_string_pretty(&json).ok()?).ok()?;
+            Some(f.to_path_buf())
+        });
+        AgentMcp { dir: d.to_path_buf(), claude_file }
+    });
+    *AGENT_MCP.lock().unwrap_or_else(|e| e.into_inner()) = next;
+}
+
+fn cli_path(dir: &Path) -> String {
+    dir.join("src").join("cli.ts").to_string_lossy().into_owned()
+}
+
+fn server_json(dir: &Path) -> serde_json::Value {
+    serde_json::json!({ "command": "node", "args": [cli_path(dir), "mcp"] })
+}
+
+fn program_stem(spec: &CommandSpec) -> String {
+    Path::new(&spec.program).file_stem().map(|s| s.to_string_lossy().to_ascii_lowercase()).unwrap_or_default()
+}
+
+/// Acrescenta o MCP do Screen-Mirror ao comando de um turno, se estiver ligado.
+pub fn apply_agent_mcp(spec: CommandSpec, workdir: &Path) -> CommandSpec {
+    let Some(mcp) = AGENT_MCP.lock().unwrap_or_else(|e| e.into_inner()).clone() else {
+        return spec;
+    };
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from);
+    inject(spec, &mcp, workdir, home.as_deref())
+}
+
+fn inject(mut spec: CommandSpec, mcp: &AgentMcp, workdir: &Path, home: Option<&Path>) -> CommandSpec {
+    match program_stem(&spec).as_str() {
+        "claude" => {
+            let Some(file) = &mcp.claude_file else { return spec };
+            if claude_has_it(workdir, home) {
+                return spec;
+            }
+            spec.args.push("--mcp-config".into());
+            spec.args.push(file.to_string_lossy().into_owned());
+            spec.args.push("--allowedTools".into());
+            spec.args.push(format!("mcp__{MCP_NAME}"));
+        }
+        "codex" => {
+            if home.is_some_and(|h| mentions(&h.join(".codex").join("config.toml"))) {
+                return spec;
+            }
+            // Logo depois de `exec`, antes do `resume` e do `-` do prompt.
+            let at = spec.args.iter().position(|a| a == "exec").map_or(0, |i| i + 1);
+            let args = serde_json::to_string(&[cli_path(&mcp.dir), "mcp".into()]).unwrap_or_default();
+            let extra = [
+                "-c".to_string(),
+                format!("mcp_servers.{MCP_NAME}.command=\"node\""),
+                "-c".to_string(),
+                format!("mcp_servers.{MCP_NAME}.args={args}"),
+            ];
+            spec.args.splice(at..at, extra);
+        }
+        _ => {}
+    }
+    spec
+}
+
+/// O arquivo cita o Screen-Mirror (por nome do servidor ou caminho).
+fn mentions(file: &Path) -> bool {
+    std::fs::read_to_string(file).is_ok_and(|s| s.to_ascii_lowercase().contains(MCP_NAME))
+}
+
+/// O claude já tem o Screen-Mirror: global ou do projeto em `~/.claude.json`, ou no
+/// `.mcp.json` da pasta de trabalho.
+fn claude_has_it(workdir: &Path, home: Option<&Path>) -> bool {
+    if mentions(&workdir.join(".mcp.json")) {
+        return true;
+    }
+    let Some(v) = home
+        .and_then(|h| std::fs::read_to_string(h.join(".claude.json")).ok())
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+    else {
+        return false;
+    };
+    let has = |servers: &serde_json::Value| {
+        servers.as_object().is_some_and(|m| {
+            m.iter().any(|(k, v)| k.to_ascii_lowercase().contains(MCP_NAME) || v.to_string().to_ascii_lowercase().contains(MCP_NAME))
+        })
+    };
+    if has(&v["mcpServers"]) {
+        return true;
+    }
+    // As chaves de `projects` usam barras normais no Windows.
+    let wd = workdir.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+    v["projects"]
+        .as_object()
+        .is_some_and(|p| p.iter().any(|(k, cfg)| k.replace('\\', "/").to_ascii_lowercase() == wd && has(&cfg["mcpServers"])))
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn injects_mcp_per_cli() {
+        let t = tempfile::tempdir().unwrap();
+        let (home, work, sm) = (t.path().join("home"), t.path().join("w"), t.path().join("sm"));
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&work).unwrap();
+        let file = t.path().join("mcp.json");
+        let mcp = AgentMcp { dir: sm, claude_file: Some(file.clone()) };
+
+        let c = inject(CommandSpec::new("claude").arg("-p"), &mcp, &work, Some(&home));
+        assert_eq!(c.args[1..], ["--mcp-config".to_string(), file.to_string_lossy().into_owned(), "--allowedTools".into(), "mcp__screen-mirror".into()]);
+
+        let c = inject(CommandSpec::new("codex").arg("exec").arg("--json").arg("-"), &mcp, &work, Some(&home));
+        assert_eq!(c.args[..3], ["exec", "-c", "mcp_servers.screen-mirror.command=\"node\""]);
+        assert!(c.args[4].starts_with("mcp_servers.screen-mirror.args=[") && c.args[4].ends_with(",\"mcp\"]"));
+        assert_eq!(c.args.last().unwrap(), "-");
+
+        for cli in ["gemini", "opencode"] {
+            let c = inject(CommandSpec::new(cli).arg("run"), &mcp, &work, Some(&home));
+            assert!(c.args == ["run"] && c.env.is_empty(), "{cli} não recebe nada");
+        }
+    }
+
+    #[test]
+    fn skips_when_already_configured() {
+        let t = tempfile::tempdir().unwrap();
+        let (home, work) = (t.path().join("home"), t.path().join("w"));
+        std::fs::create_dir_all(home.join(".codex")).unwrap();
+        std::fs::create_dir_all(&work).unwrap();
+        let mcp = AgentMcp { dir: t.path().join("sm"), claude_file: Some(t.path().join("mcp.json")) };
+        let claude = || CommandSpec::new("claude").arg("-p");
+
+        // claude: projeto registrado em ~/.claude.json
+        let key = work.to_string_lossy().replace('\\', "/");
+        let cfg = serde_json::json!({ "projects": { key: { "mcpServers": { "screen-mirror": {} } } } });
+        std::fs::write(home.join(".claude.json"), cfg.to_string()).unwrap();
+        assert_eq!(inject(claude(), &mcp, &work, Some(&home)).args, ["-p"]);
+        // ...outra pasta de trabalho recebe
+        let other = t.path().join("outra");
+        std::fs::create_dir_all(&other).unwrap();
+        assert!(inject(claude(), &mcp, &other, Some(&home)).args.len() > 1);
+        // ...a não ser que o .mcp.json dela já tenha
+        std::fs::write(other.join(".mcp.json"), r#"{"mcpServers":{"screen-mirror":{}}}"#).unwrap();
+        assert_eq!(inject(claude(), &mcp, &other, Some(&home)).args, ["-p"]);
+
+        std::fs::write(home.join(".codex/config.toml"), "[mcp_servers.screen-mirror]\ncommand = \"node\"").unwrap();
+        assert_eq!(inject(CommandSpec::new("codex").arg("exec"), &mcp, &work, Some(&home)).args, ["exec"]);
+    }
+
 
     #[test]
     fn versions() {
