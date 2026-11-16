@@ -225,7 +225,10 @@ export default function BuildsView() {
             <div className="bld-cmds">
               {commands[p].map((c) => {
                 const busy = starting === `${p}|${c.id}`;
-                const running = runs.some((r) => isActive(r) && samePath(r.project, p) && r.command_id === c.id);
+                const live = runs.find((r) => isActive(r) && samePath(r.project, p) && r.command_id === c.id);
+                const running = !!live;
+                // Rodando noutra porta (a esperada estava ocupada): mostra a de verdade.
+                const port = live?.port ?? c.port;
                 return (
                   <button
                     key={c.id}
@@ -236,7 +239,7 @@ export default function BuildsView() {
                   >
                     <Icon name={c.kind === "build" ? "hammer" : "play"} size={12} />
                     {c.label}
-                    {c.port != null && <span className="muted">:{c.port}</span>}
+                    {port != null && <span className="muted">:{port}</span>}
                     {running && <span className="muted">(rodando)</span>}
                   </button>
                 );

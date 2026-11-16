@@ -5,3 +5,9 @@
 .term-host { position: absolute; inset: 4px; }
 .tabs .tab .tab-title { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tabs .tab.ended .tab-title { opacity: .6; font-style: italic; }
+/* Muitos terminais: as abas encolhem (título com reticências) e, no limite, a faixa rola
+   em vez de vazar por cima do painel direito; "▾ Terminal" e "+" não quebram nem encolhem. */
+.bottom > .tabs { min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.bottom > .tabs > button.tab { flex: none; white-space: nowrap; }
+.bottom > .tabs > div.tab { min-width: 72px; }
+.bottom > .tabs > div.tab .tab-title { min-width: 0; flex: 0 1 auto; }
