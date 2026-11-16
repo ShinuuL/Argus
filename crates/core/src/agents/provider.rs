@@ -251,6 +251,39 @@ pub trait AgentProvider: Send + Sync {
     /// (None = sessão nova). Provedores cujo parser guarda estado por processo
     /// (totais acumulados) zeram esse estado aqui.
     fn begin_turn(&self, _session: Option<&str>) {}
+    /// Acompanhante do turno: vê cada linha da CLI e, quando o processo acaba
+    /// (normalmente ou cancelado), devolve os eventos que faltaram (uso parcial,
+    /// resultado que a CLI não imprimiu). Um por processo.
+    fn turn_tracker(&self) -> Box<dyn TurnTracker> {
+        Box::new(NoTracker)
+    }
+}
+
+/// Como o processo do turno terminou, para o [`TurnTracker`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnEnd {
+    /// Saiu sozinho; `ok` = código de saída zero.
+    Exited { ok: bool },
+    /// Morto pelo cancelamento do turno.
+    Cancelled,
+}
+
+/// Estado de um único processo de turno (ver [`AgentProvider::turn_tracker`]).
+pub trait TurnTracker: Send {
+    /// Linha crua da CLI e os eventos que o parser tirou dela.
+    fn observe(&mut self, line: &str, events: &[AgentEvent]);
+    /// Eventos a gravar no fim do processo.
+    fn finish(&mut self, end: TurnEnd) -> Vec<AgentEvent>;
+}
+
+/// Acompanhante que não acrescenta nada.
+pub struct NoTracker;
+
+impl TurnTracker for NoTracker {
+    fn observe(&mut self, _line: &str, _events: &[AgentEvent]) {}
+    fn finish(&mut self, _end: TurnEnd) -> Vec<AgentEvent> {
+        Vec::new()
+    }
 }
 
 /// Localiza um executável no PATH, como o shell faria: percorre o PATH em

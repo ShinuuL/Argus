@@ -3,7 +3,7 @@
 //! projeto), sessões conversacionais (vários turnos), modelo e provedor
 //! trocáveis por tarefa, eventos via broadcast e persistência opcional em SQLite.
 
-use super::provider::{subagents_of, valid_model_name, AgentEvent, AgentProvider, CommandSpec, SubagentInfo, TurnOptions};
+use super::provider::{subagents_of, valid_model_name, AgentEvent, AgentProvider, CommandSpec, SubagentInfo, TurnEnd, TurnOptions};
 use crate::db::Db;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -704,6 +704,20 @@ impl Orchestrator {
         let _ = self.inner.tx.send(OrchestratorEvent::Agent { task: id, event: ev });
     }
 
+    /// Grava um evento do processo do turno: preenche o modelo do uso que veio
+    /// sem ele (opencode: vale o da tarefa) e marca se algum modelo foi usado.
+    fn record_turn_event(&self, id: TaskId, task: &Task, turn: i64, mut ev: AgentEvent, model: Option<&str>, used: &std::sync::atomic::AtomicBool) {
+        if let AgentEvent::Usage(u) = &mut ev {
+            if u.model.is_none() {
+                u.model = model.map(str::to_string);
+            }
+        }
+        if matches!(ev.inner(), AgentEvent::Usage(u) if !u.is_empty()) {
+            used.store(true, Ordering::SeqCst);
+        }
+        self.record(id, task, turn, ev);
+    }
+
     /// Roda um turno. Devolve o estado final e se algum modelo foi usado (houve
     /// consumo): um comando de barra resolvido pela própria CLI devolve `false`.
     async fn run_turn(
@@ -757,20 +771,18 @@ impl Orchestrator {
         let used_model = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let used = used_model.clone();
         let turn_model = opts.model.clone();
+        // Acompanha o processo para completar o que a CLI não imprimiu (uso de
+        // turno cancelado, resultado que faltou). Compartilhado com a leitura.
+        let tracker = Arc::new(std::sync::Mutex::new(prov.turn_tracker()));
+        let tracker_out = tracker.clone();
+        let model_out = turn_model.clone();
         let out_task = tokio::spawn(async move {
             let mut lines = BufReader::new(stdout).lines();
             while let Ok(Some(l)) = lines.next_line().await {
-                for mut ev in prov.parse_line(&l) {
-                    // CLI que não informa o modelo no uso (opencode): vale o da tarefa.
-                    if let AgentEvent::Usage(u) = &mut ev {
-                        if u.model.is_none() {
-                            u.model = turn_model.clone();
-                        }
-                    }
-                    if matches!(ev.inner(), AgentEvent::Usage(u) if !u.is_empty()) {
-                        used.store(true, Ordering::SeqCst);
-                    }
-                    this.record(id, &t, turn, ev);
+                let evs = prov.parse_line(&l);
+                tracker_out.lock().unwrap_or_else(|e| e.into_inner()).observe(&l, &evs);
+                for ev in evs {
+                    this.record_turn_event(id, &t, turn, ev, model_out.as_deref(), &used);
                 }
             }
         });
@@ -790,15 +802,21 @@ impl Orchestrator {
                 let _ = out_task.await;
                 let _ = err_task.await;
                 let s = s?;
-                if s.success() { TaskState::Completed } else { TaskState::Failed(format!("código de saída {:?}", s.code())) }
+                (if s.success() { TaskState::Completed } else { TaskState::Failed(format!("código de saída {:?}", s.code())) },
+                 TurnEnd::Exited { ok: s.success() })
             }
             _ = cancel.notified() => {
                 kill_tree(&mut child).await;
                 out_task.abort();
                 err_task.abort();
-                TaskState::Cancelled
+                (TaskState::Cancelled, TurnEnd::Cancelled)
             }
         };
+        let (result, end) = result;
+        let tail = tracker.lock().unwrap_or_else(|e| e.into_inner()).finish(end);
+        for ev in tail {
+            self.record_turn_event(id, task, turn, ev, turn_model.as_deref(), &used_model);
+        }
         Ok((result, used_model.load(Ordering::SeqCst)))
     }
 
@@ -1664,5 +1682,109 @@ mod tests {
             assert_eq!(TaskState::from_db(&s.to_db()), s);
         }
         assert_eq!(TaskState::from_db("Completed"), TaskState::Completed);
+    }
+
+    /// Imprime um arquivo de linhas reais e, se `hang`, fica esperando (para o
+    /// cancelamento). O parser e o acompanhante são os do provedor real.
+    struct Lines(PathBuf, bool, Arc<dyn AgentProvider>);
+    impl AgentProvider for Lines {
+        fn id(&self) -> &str {
+            "lines"
+        }
+        fn display_name(&self) -> &str {
+            "Lines"
+        }
+        fn detect(&self) -> Option<PathBuf> {
+            None
+        }
+        fn login_status(&self) -> LoginStatus {
+            LoginStatus::Unknown
+        }
+        fn login_command(&self) -> CommandSpec {
+            CommandSpec::new("cmd")
+        }
+        fn task_command(&self, _p: &str, cwd: &Path, _s: Option<&str>, _o: &TurnOptions) -> CommandSpec {
+            let f = self.0.to_string_lossy().into_owned();
+            let c = if cfg!(windows) {
+                let tail = if self.1 { " & ping -n 30 127.0.0.1 >NUL" } else { "" };
+                CommandSpec::new("cmd").arg("/c").arg(format!("type {}{tail}", f.replace('/', "\\")))
+            } else {
+                let tail = if self.1 { "; sleep 30" } else { "" };
+                CommandSpec::new("sh").arg("-c").arg(format!("cat '{f}'{tail}"))
+            };
+            c.cwd(cwd)
+        }
+        fn parse_line(&self, l: &str) -> Vec<AgentEvent> {
+            self.2.parse_line(l)
+        }
+        fn turn_tracker(&self) -> Box<dyn crate::agents::provider::TurnTracker> {
+            self.2.turn_tracker()
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_claude_turn_records_partial_usage() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("parcial.jsonl");
+        std::fs::write(
+            &f,
+            [
+                r#"{"type":"system","subtype":"init","cwd":"x","session_id":"s-cancel","model":"claude-sonnet-4-5"}"#,
+                r#"{"type":"assistant","message":{"id":"msg_1","model":"claude-sonnet-4-5","content":[{"type":"text","text":"Vou ler"}],"usage":{"input_tokens":3,"cache_creation_input_tokens":2000,"cache_read_input_tokens":15000,"output_tokens":8}},"parent_tool_use_id":null,"session_id":"s-cancel"}"#,
+                r#"{"type":"assistant","message":{"id":"msg_1","model":"claude-sonnet-4-5","content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{"file_path":"a.txt"}}],"usage":{"input_tokens":3,"cache_creation_input_tokens":2000,"cache_read_input_tokens":15000,"output_tokens":61}},"parent_tool_use_id":null,"session_id":"s-cancel"}"#,
+            ]
+            .join("\n")
+                + "\n",
+        )
+        .unwrap();
+        let dbp = dir.path().join("h.db");
+        let prov: Arc<dyn AgentProvider> = Arc::new(Lines(f, true, Arc::new(crate::agents::claude::ClaudeProvider::new())));
+        let o = Orchestrator::with_db(vec![prov], 1, Some(Db::open(&dbp).unwrap()));
+        let id = o.submit(dir.path(), "lines", "leia a.txt").unwrap();
+        // Espera as linhas chegarem antes de cancelar.
+        for _ in 0..200 {
+            if o.history(id).iter().any(|e| matches!(e, AgentEvent::ToolUse { .. })) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        o.cancel(id).unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Cancelled);
+        let rows = o.db().unwrap().usage_rows(crate::db::TimeRange::all()).unwrap();
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        let u = &rows[0].usage;
+        assert_eq!((u.input_tokens, u.output_tokens, u.cache_read, u.cache_write), (3, 61, 15000, 2000));
+        assert_eq!(u.model.as_deref(), Some("claude-sonnet-4-5"));
+        assert!(o.history(id).iter().any(|e| matches!(e, AgentEvent::Usage(_))));
+        assert!(!o.history(id).iter().any(|e| matches!(e, AgentEvent::Result { .. })));
+    }
+
+    #[tokio::test]
+    async fn opencode_without_last_step_finish_gets_result() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("oc.jsonl");
+        std::fs::write(
+            &f,
+            [
+                r#"{"type":"step_start","timestamp":1,"sessionID":"ses_abc","part":{"id":"prt_1","sessionID":"ses_abc","messageID":"msg_1","type":"step-start"}}"#,
+                r#"{"type":"tool_use","timestamp":2,"sessionID":"ses_abc","part":{"type":"tool","id":"call_3","tool":"read","state":{"status":"completed","input":{"filePath":"a.txt"},"output":"a"}}}"#,
+                r#"{"type":"step_finish","timestamp":3,"sessionID":"ses_abc","part":{"type":"step-finish","reason":"tool-calls","cost":0,"tokens":{"input":10959,"output":36,"reasoning":114,"cache":{"read":0,"write":0}}}}"#,
+                r#"{"type":"step_start","timestamp":4,"sessionID":"ses_abc","part":{"id":"prt_2","sessionID":"ses_abc","messageID":"msg_2","type":"step-start"}}"#,
+                r#"{"type":"text","timestamp":5,"sessionID":"ses_abc","part":{"type":"text","text":"pronto","time":{"start":1,"end":2}}}"#,
+            ]
+            .join("\n")
+                + "\n",
+        )
+        .unwrap();
+        let dbp = dir.path().join("h.db");
+        let prov: Arc<dyn AgentProvider> = Arc::new(Lines(f, false, Arc::new(crate::agents::opencode::OpencodeProvider::new())));
+        let o = Orchestrator::with_db(vec![prov], 1, Some(Db::open(&dbp).unwrap()));
+        let id = o.submit(dir.path(), "lines", "leia").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        let h = o.history(id);
+        assert!(matches!(h.last(), Some(AgentEvent::Result { ok: true, cost: None, .. })), "{h:?}");
+        let rows = o.db().unwrap().usage_rows(crate::db::TimeRange::all()).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].usage.input_tokens, 10959);
     }
 }

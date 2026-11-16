@@ -86,6 +86,70 @@ impl AgentProvider for OpencodeProvider {
             None => Err("Não foi possível executar o opencode.".into()),
         }
     }
+
+    fn turn_tracker(&self) -> Box<dyn TurnTracker> {
+        Box::new(MissingResult::default())
+    }
+}
+
+/// O opencode 2.0.22 não imprime o `step_finish` do último passo em
+/// `run --format json`: nem o uso desse passo nem o fim do turno chegam. O uso
+/// de cada passo concluído já é gravado no próprio `step_finish`; aqui, se o
+/// processo sai sem nenhum evento de resultado, o resultado é sintetizado (sem
+/// custo: o custo do passo que faltou não é conhecido). Nenhum número é
+/// inventado: o uso do último passo só entra se alguma linha o trouxer.
+#[derive(Debug, Default)]
+pub struct MissingResult {
+    saw_result: bool,
+    /// Uso do passo em andamento encontrado fora de um `step_finish` (alguma
+    /// versão que imprima a mensagem com `tokens`); descartado no `step_finish`.
+    pending: Option<TokenUsage>,
+}
+
+/// `tokens` no formato do opencode (`input`, `output`, `reasoning`, `cache`).
+fn usage_from_tokens(t: &Value, cost: Option<f64>) -> TokenUsage {
+    TokenUsage {
+        input_tokens: u(t.get("input")),
+        // Tokens de raciocínio são cobrados como saída.
+        output_tokens: u(t.get("output")) + u(t.get("reasoning")),
+        cache_read: u(t.pointer("/cache/read")),
+        cache_write: u(t.pointer("/cache/write")),
+        model: None,
+        cost_usd: cost,
+    }
+}
+
+impl TurnTracker for MissingResult {
+    fn observe(&mut self, line: &str, events: &[AgentEvent]) {
+        if events.iter().any(|e| matches!(e.inner(), AgentEvent::Result { .. })) {
+            self.saw_result = true;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(line.trim()) else { return };
+        match v.get("type").and_then(Value::as_str) {
+            Some("step_finish") | Some("step_start") => self.pending = None,
+            _ => {
+                let part = v.get("part").unwrap_or(&v);
+                let tokens = part.get("tokens").or_else(|| part.pointer("/info/tokens"));
+                if let Some(t) = tokens {
+                    let cost = part.get("cost").or_else(|| part.pointer("/info/cost")).and_then(Value::as_f64);
+                    let u = usage_from_tokens(t, cost);
+                    if !u.is_empty() {
+                        self.pending = Some(u);
+                    }
+                }
+            }
+        }
+    }
+
+    fn finish(&mut self, end: TurnEnd) -> Vec<AgentEvent> {
+        let mut evs: Vec<AgentEvent> = self.pending.take().map(AgentEvent::Usage).into_iter().collect();
+        if let TurnEnd::Exited { ok } = end {
+            if !self.saw_result {
+                evs.push(AgentEvent::Result { ok, summary: if ok { "stop".into() } else { String::new() }, cost: None });
+            }
+        }
+        evs
+    }
 }
 
 /// Saída de `opencode models`: um `provedor/modelo` por linha.
@@ -184,16 +248,9 @@ pub fn parse_json_event(line: &str, model: Option<&str>) -> Vec<AgentEvent> {
             evs
         }
         Some("step_finish") => {
-            let t = part.get("tokens");
-            let mut evs = vec![AgentEvent::Usage(TokenUsage {
-                input_tokens: u(t.and_then(|t| t.get("input"))),
-                // Tokens de raciocínio são cobrados como saída.
-                output_tokens: u(t.and_then(|t| t.get("output"))) + u(t.and_then(|t| t.get("reasoning"))),
-                cache_read: u(t.and_then(|t| t.pointer("/cache/read"))),
-                cache_write: u(t.and_then(|t| t.pointer("/cache/write"))),
-                model: model.map(str::to_string),
-                cost_usd: part.get("cost").and_then(Value::as_f64),
-            })];
+            let mut usage = usage_from_tokens(part.get("tokens").unwrap_or(&Value::Null), part.get("cost").and_then(Value::as_f64));
+            usage.model = model.map(str::to_string);
+            let mut evs = vec![AgentEvent::Usage(usage)];
             let reason = part.get("reason").and_then(Value::as_str).unwrap_or_default();
             if reason != "tool-calls" {
                 evs.push(AgentEvent::Result {
@@ -327,5 +384,52 @@ mod tests {
         let out = "\u{1b}[90m┌  Credentials\u{1b}[0m\n│\n●  Google            API key                     stored\n●  OpenAI            OAuth                       stored\n└  2 credentials\n";
         assert_eq!(parse_auth_list(out), LoginStatus::LoggedIn);
         assert_eq!(parse_auth_list("┌  Credentials\n└  0 credentials\n"), LoginStatus::LoggedOut);
+    }
+
+    fn run(lines: &[&str], end: TurnEnd) -> Vec<AgentEvent> {
+        let mut t = OpencodeProvider::new().turn_tracker();
+        let mut all = Vec::new();
+        for l in lines {
+            let evs = parse_json_event(l, None);
+            t.observe(l, &evs);
+            all.extend(evs);
+        }
+        all.extend(t.finish(end));
+        all
+    }
+
+    #[test]
+    fn missing_last_step_finish_synthesizes_result() {
+        // opencode 2.0.22: o último passo (texto final) sai sem `step_finish`.
+        let evs = run(&[START, TOOL, STEP_TOOLS, START, TEXT], TurnEnd::Exited { ok: true });
+        let usages = evs.iter().filter(|e| matches!(e, AgentEvent::Usage(_))).count();
+        assert_eq!(usages, 1, "só o passo que terminou tem uso conhecido");
+        assert_eq!(evs.last(), Some(&AgentEvent::Result { ok: true, summary: "stop".into(), cost: None }));
+        // Saída com erro: resultado de falha.
+        let evs = run(&[START, TEXT], TurnEnd::Exited { ok: false });
+        assert!(matches!(evs.last(), Some(AgentEvent::Result { ok: false, .. })));
+    }
+
+    #[test]
+    fn result_is_not_duplicated() {
+        let evs = run(&[START, TOOL, STEP_TOOLS, START, TEXT, STEP_STOP], TurnEnd::Exited { ok: true });
+        assert_eq!(evs.iter().filter(|e| matches!(e, AgentEvent::Result { .. })).count(), 1);
+        let evs = run(&[START, ERR], TurnEnd::Exited { ok: false });
+        assert_eq!(evs.iter().filter(|e| matches!(e, AgentEvent::Result { .. })).count(), 1);
+        // Cancelado: sem resultado sintético (o estado da tarefa já diz).
+        let evs = run(&[START, TOOL, STEP_TOOLS, START], TurnEnd::Cancelled);
+        assert!(!evs.iter().any(|e| matches!(e, AgentEvent::Result { .. })));
+        assert_eq!(evs.iter().filter(|e| matches!(e, AgentEvent::Usage(_))).count(), 1);
+    }
+
+    #[test]
+    fn last_step_usage_from_other_line() {
+        // Se alguma linha trouxer os tokens do passo em andamento, eles entram.
+        let msg = r#"{"type":"message","timestamp":5,"sessionID":"ses_e288325f7ffe","part":{"type":"assistant","tokens":{"input":344,"output":6,"reasoning":0,"cache":{"read":11008,"write":0}},"cost":0}}"#;
+        let evs = run(&[START, TEXT, msg], TurnEnd::Exited { ok: true });
+        assert!(evs.iter().any(|e| matches!(e, AgentEvent::Usage(u) if u.input_tokens == 344 && u.cache_read == 11008)));
+        // Com o `step_finish` do passo, a linha extra não conta duas vezes.
+        let evs = run(&[START, TEXT, msg, STEP_STOP], TurnEnd::Exited { ok: true });
+        assert_eq!(evs.iter().filter(|e| matches!(e, AgentEvent::Usage(_))).count(), 1);
     }
 }

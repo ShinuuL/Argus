@@ -90,6 +90,93 @@ impl AgentProvider for ClaudeProvider {
     fn list_models(&self) -> Result<Vec<ModelInfo>, String> {
         probe_models()
     }
+
+    fn turn_tracker(&self) -> Box<dyn TurnTracker> {
+        Box::new(PartialUsage::default())
+    }
+}
+
+/// Uso parcial de um processo do claude: soma o `usage` das mensagens
+/// `assistant` vistas depois do último `result`. Se o processo morre sem
+/// `result` (turno cancelado, CLI que caiu), esse uso vira linhas de consumo
+/// sem custo informado (o custo equivalente é calculado em `metrics`).
+///
+/// O stream-json repete a mesma mensagem (mesmo `message.id`, mesmo `usage`)
+/// numa linha por bloco de conteúdo, por isso o uso é guardado por id; cada
+/// campo fica com o maior valor visto (a contagem de saída só cresce). Inclui
+/// as mensagens dos subagentes, como o `modelUsage` do `result`.
+#[derive(Debug, Default)]
+pub struct PartialUsage {
+    /// Ordem de chegada das mensagens.
+    order: Vec<String>,
+    by_msg: HashMap<String, TokenUsage>,
+}
+
+impl PartialUsage {
+    fn take_by_model(&mut self) -> Vec<TokenUsage> {
+        let mut out: Vec<TokenUsage> = Vec::new();
+        for id in self.order.drain(..) {
+            let Some(u) = self.by_msg.remove(&id) else { continue };
+            match out.iter_mut().find(|o| o.model == u.model) {
+                Some(o) => {
+                    o.input_tokens += u.input_tokens;
+                    o.output_tokens += u.output_tokens;
+                    o.cache_read += u.cache_read;
+                    o.cache_write += u.cache_write;
+                }
+                None => out.push(u),
+            }
+        }
+        self.by_msg.clear();
+        out.into_iter().filter(|u| !u.is_empty()).collect()
+    }
+}
+
+impl TurnTracker for PartialUsage {
+    fn observe(&mut self, line: &str, _events: &[AgentEvent]) {
+        let Ok(v) = serde_json::from_str::<Value>(line.trim()) else { return };
+        match v.get("type").and_then(Value::as_str) {
+            // O `result` já informa o acumulado do processo (o parser desconta o
+            // anterior): o que foi visto até aqui está contado.
+            Some("result") => {
+                self.order.clear();
+                self.by_msg.clear();
+            }
+            Some("assistant") => {
+                let Some(us) = v.pointer("/message/usage") else { return };
+                let id = v.pointer("/message/id").and_then(Value::as_str).unwrap_or_default();
+                // Sem id não há como juntar as repetições: conta a linha sozinha.
+                let id = if id.is_empty() { format!("#{}", self.order.len()) } else { id.to_string() };
+                let model = v.pointer("/message/model").and_then(Value::as_str).filter(|m| !m.starts_with('<'));
+                let cur = TokenUsage {
+                    input_tokens: u(us, "input_tokens"),
+                    output_tokens: u(us, "output_tokens"),
+                    cache_read: u(us, "cache_read_input_tokens"),
+                    cache_write: u(us, "cache_creation_input_tokens"),
+                    model: model.map(str::to_string),
+                    cost_usd: None,
+                };
+                match self.by_msg.get_mut(&id) {
+                    Some(p) => {
+                        p.input_tokens = p.input_tokens.max(cur.input_tokens);
+                        p.output_tokens = p.output_tokens.max(cur.output_tokens);
+                        p.cache_read = p.cache_read.max(cur.cache_read);
+                        p.cache_write = p.cache_write.max(cur.cache_write);
+                    }
+                    None => {
+                        self.order.push(id.clone());
+                        self.by_msg.insert(id, cur);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn finish(&mut self, _end: TurnEnd) -> Vec<AgentEvent> {
+        // Só sobra uso quando nenhum `result` cobriu as últimas mensagens.
+        self.take_by_model().into_iter().map(AgentEvent::Usage).collect()
+    }
 }
 
 /// Lê a lista de modelos da resposta ao pedido de controle `initialize` do
@@ -419,11 +506,17 @@ impl StreamParser {
                 }
                 let is_error = v.get("is_error").and_then(Value::as_bool).unwrap_or(false);
                 let sub_ok = v.get("subtype").and_then(Value::as_str).map_or(true, |s| s == "success");
-                evs.push(AgentEvent::Result {
-                    ok: !is_error && sub_ok,
-                    summary: v.get("result").and_then(Value::as_str).unwrap_or_default().to_string(),
-                    cost,
-                });
+                let ok = !is_error && sub_ok;
+                let summary = v.get("result").and_then(Value::as_str).unwrap_or_default().to_string();
+                // `result` vazio: sucesso sem texto, sem uso novo e sem negação. É o
+                // que a CLI imprime quando nada novo aconteceu (num processo retomado,
+                // um `result` de zero turnos antes de chamar o modelo; ou um `result`
+                // repetido com o mesmo acumulado). Gravá-lo virava um "resultado ok,
+                // custo 0" fantasma no meio do turno; o `result` de verdade vem depois.
+                if ok && summary.trim().is_empty() && evs.is_empty() && cost.unwrap_or(0.0) <= 0.0 {
+                    return evs;
+                }
+                evs.push(AgentEvent::Result { ok, summary, cost });
                 evs
             }
             Some("system") => match (v.get("subtype").and_then(Value::as_str), v.get("session_id").and_then(Value::as_str)) {
@@ -695,5 +788,83 @@ mod tests {
         let done = r#"{"type":"system","subtype":"task_notification","tool_use_id":"tA","status":"completed","summary":"feito"}"#;
         assert_eq!(p.parse(done), vec![AgentEvent::SubagentEnd { id: "tA".into(), ok: true, result: "feito".into() }]);
         assert!(p.parse(done).is_empty());
+    }
+
+    // Mensagem `assistant` no formato do stream-json (claude 2.1.x): a mesma
+    // mensagem sai numa linha por bloco, repetindo id e `usage`.
+    const A1_TEXT: &str = r#"{"type":"assistant","message":{"id":"msg_01A","model":"claude-sonnet-4-5","content":[{"type":"text","text":"Vou ler"}],"usage":{"input_tokens":3,"cache_creation_input_tokens":2000,"cache_read_input_tokens":15000,"output_tokens":8}},"parent_tool_use_id":null,"session_id":"s1"}"#;
+    const A1_TOOL: &str = r#"{"type":"assistant","message":{"id":"msg_01A","model":"claude-sonnet-4-5","content":[{"type":"tool_use","id":"toolu_1","name":"Read","input":{"file_path":"a.txt"}}],"usage":{"input_tokens":3,"cache_creation_input_tokens":2000,"cache_read_input_tokens":15000,"output_tokens":61}},"parent_tool_use_id":null,"session_id":"s1"}"#;
+    const U1: &str = r#"{"type":"user","message":{"role":"user","content":[{"tool_use_id":"toolu_1","type":"tool_result","content":"a"}]},"parent_tool_use_id":null,"session_id":"s1"}"#;
+    const A2: &str = r#"{"type":"assistant","message":{"id":"msg_01B","model":"claude-sonnet-4-5","content":[{"type":"tool_use","id":"toolu_2","name":"Bash","input":{"command":"ls"}}],"usage":{"input_tokens":1,"cache_creation_input_tokens":300,"cache_read_input_tokens":17000,"output_tokens":40}},"parent_tool_use_id":null,"session_id":"s1"}"#;
+    const A_SUB: &str = r#"{"type":"assistant","message":{"id":"msg_01S","model":"claude-haiku-4-5-20251001","content":[{"type":"text","text":"sub"}],"usage":{"input_tokens":5,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":7}},"parent_tool_use_id":"toolu_9","session_id":"s1"}"#;
+
+    fn feed(t: &mut dyn TurnTracker, p: &mut StreamParser, lines: &[&str]) {
+        for l in lines {
+            let evs = p.parse(l);
+            t.observe(l, &evs);
+        }
+    }
+
+    #[test]
+    fn cancelled_turn_keeps_partial_usage() {
+        let prov = ClaudeProvider::new();
+        let mut t = prov.turn_tracker();
+        let mut p = StreamParser::new();
+        feed(t.as_mut(), &mut p, &[INIT, A1_TEXT, A1_TOOL, U1, A2, A_SUB]);
+        let evs = t.finish(TurnEnd::Cancelled);
+        let sonnet = TokenUsage {
+            input_tokens: 4,
+            output_tokens: 101, // 61 (maior valor da msg_01A) + 40
+            cache_read: 32000,
+            cache_write: 2300,
+            model: Some("claude-sonnet-4-5".into()),
+            cost_usd: None,
+        };
+        let haiku = TokenUsage { input_tokens: 5, output_tokens: 7, model: Some("claude-haiku-4-5-20251001".into()), ..Default::default() };
+        assert_eq!(evs, vec![AgentEvent::Usage(sonnet), AgentEvent::Usage(haiku)]);
+        // Nada é devolvido duas vezes.
+        assert!(t.finish(TurnEnd::Cancelled).is_empty());
+    }
+
+    #[test]
+    fn result_covers_partial_usage() {
+        let prov = ClaudeProvider::new();
+        let mut p = StreamParser::new();
+        // Turno completo: o `result` já informa tudo, nada sobra no fim.
+        let mut t = prov.turn_tracker();
+        feed(t.as_mut(), &mut p, &[INIT, A1_TEXT, A1_TOOL, U1, RESULT]);
+        assert!(t.finish(TurnEnd::Exited { ok: true }).is_empty());
+        // Depois do `result` a CLI acordou (comando em segundo plano) e foi cancelada
+        // antes do segundo `result`: só o uso visto depois do primeiro entra.
+        let mut t = prov.turn_tracker();
+        feed(t.as_mut(), &mut p, &[A1_TEXT, RESULT, A2]);
+        let evs = t.finish(TurnEnd::Cancelled);
+        assert_eq!(evs.len(), 1);
+        assert!(matches!(&evs[0], AgentEvent::Usage(u) if u.output_tokens == 40 && u.cache_read == 17000));
+    }
+
+    #[test]
+    fn empty_result_is_not_an_event() {
+        // Processo retomado: `result` de zero turnos, sem texto e sem custo, antes
+        // de o modelo ser chamado.
+        let empty = r#"{"type":"result","subtype":"success","is_error":false,"duration_ms":4,"num_turns":0,"result":"","stop_reason":null,"session_id":"s2","total_cost_usd":0,"usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0},"modelUsage":{},"permission_denials":[]}"#;
+        let mut p = StreamParser::new();
+        assert!(p.parse(empty).is_empty());
+        // `result` repetido com o mesmo acumulado do processo, sem texto: também some.
+        let r2 = RESULT.replace(r#""result":"oi \"aspas\" 100%""#, r#""result":"""#);
+        assert_ne!(r2, RESULT);
+        assert!(p.parse(RESULT).iter().any(|e| matches!(e, AgentEvent::Result { .. })));
+        assert!(p.parse(&r2).is_empty());
+        // Resposta ao `initialize` e linhas de sistema nunca viram resultado.
+        let ctl = r#"{"type":"control_response","response":{"subtype":"success","request_id":"r1","response":{"models":[]}}}"#;
+        let st = r#"{"type":"system","subtype":"status","status":null,"session_id":"s2"}"#;
+        assert!(p.parse(ctl).is_empty());
+        assert!(p.parse(st).is_empty());
+        // Falha sem texto continua sendo resultado (o turno falhou).
+        let err = r#"{"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":0,"result":"","session_id":"s3","total_cost_usd":0,"modelUsage":{}}"#;
+        assert!(matches!(p.parse(err).as_slice(), [AgentEvent::Result { ok: false, .. }]));
+        // Comando resolvido pela CLI (`/cost`): sem uso, mas com texto.
+        let local = r#"{"type":"result","subtype":"success","is_error":false,"num_turns":0,"result":"Total cost: $0.00","session_id":"s4","total_cost_usd":0,"modelUsage":{}}"#;
+        assert!(matches!(p.parse(local).as_slice(), [AgentEvent::Result { ok: true, .. }]));
     }
 }
