@@ -52,7 +52,8 @@ pub fn detect_kinds(dir: &Path) -> Vec<ProjectKind> {
     kinds
 }
 
-/// Lista os projetos que são filhos diretos da pasta raiz, ordenados por nome.
+/// Lista as subpastas diretas da pasta raiz, ordenadas por nome. Toda pasta
+/// visível conta como projeto, mesmo sem marcador (`kinds` vazio).
 pub fn scan(root: &Path) -> Result<Vec<Project>, WorkspaceError> {
     if !root.is_dir() {
         return Err(WorkspaceError::InvalidRoot(root.to_path_buf()));
@@ -66,9 +67,7 @@ pub fn scan(root: &Path) -> Result<Vec<Project>, WorkspaceError> {
             continue;
         }
         let kinds = detect_kinds(&path);
-        if !kinds.is_empty() {
-            projects.push(Project { name, path, kinds, missing: false });
-        }
+        projects.push(Project { name, path, kinds, missing: false });
     }
     projects.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     Ok(projects)
@@ -124,7 +123,8 @@ mod tests {
         fs::write(r.join(".oculto/Cargo.toml"), "").unwrap();
 
         let p = scan(r).unwrap();
-        assert_eq!(p.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["api", "web"]);
+        assert_eq!(p.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["api", "vazio", "web"]);
+        assert!(p[1].kinds.is_empty());
         assert_eq!(p[0].kinds, vec![ProjectKind::Rust, ProjectKind::Git]);
     }
 
@@ -140,6 +140,7 @@ mod tests {
         fs::create_dir(r.join("web")).unwrap();
         fs::write(r.join("web/package.json"), "{}").unwrap();
         let scanned = scan(r).unwrap();
+        assert_eq!(scanned.len(), 1);
         let p = with_session_projects(
             r,
             scanned,

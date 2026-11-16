@@ -404,3 +404,7 @@ Falta:
 - Nenhuma marca ou nome de empresa no projeto. O identificador do app é `dev.argus.app`.
 - O custo é sempre exibido como "equivalente em API".
 - Textos da interface em português do Brasil. Windows primeiro.
+
+## Integração de outros projetos
+
+Os planos para unificar Screen-Mirror, Gerenciador de Portas e AllSeenEye no Argus estão em [PENDENCIAS.md](PENDENCIAS.md).
