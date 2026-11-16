@@ -113,6 +113,9 @@ pub struct Task {
     /// Houve troca de provedor: o próximo turno leva o resumo da conversa.
     #[serde(default)]
     pub handoff: bool,
+    /// Ocupação da janela de contexto no último pedido do agente principal.
+    #[serde(default)]
+    pub context: Option<crate::agents::context::ContextUsage>,
     /// Sessão e modelo dos provedores que já atenderam a tarefa (por id).
     #[serde(skip)]
     pub others: HashMap<String, ProviderState>,
@@ -237,6 +240,7 @@ impl Orchestrator {
                                 // Tarefas antigas (sem a coluna) rodaram todas em worktree.
                                 mode: r.mode.as_deref().and_then(WorkMode::parse).unwrap_or_default(),
                                 handoff: r.handoff,
+                                context: r.context.as_deref().and_then(|s| serde_json::from_str(s).ok()),
                                 others: r
                                     .provider_state
                                     .as_deref()
@@ -423,6 +427,7 @@ impl Orchestrator {
             model,
             mode,
             handoff: false,
+            context: None,
             others: HashMap::new(),
         };
         if let Some(db) = &self.inner.db {
@@ -696,6 +701,20 @@ impl Orchestrator {
                 if let Some(db) = &self.inner.db {
                     let _ = db.set_task_session(id as i64, s);
                 }
+            }
+            AgentEvent::Context(c) => {
+                // Só o último valor importa: fica na tarefa (e no banco), não no histórico.
+                let mut c = c.clone();
+                let model = self.inner.tasks.lock().unwrap().get(&id).and_then(|t| t.model.clone()).or_else(|| task.model.clone());
+                crate::agents::context::resolve_window(&mut c, model.as_deref());
+                if let Some(t) = self.inner.tasks.lock().unwrap().get_mut(&id) {
+                    t.context = Some(c.clone());
+                }
+                if let Some(db) = &self.inner.db {
+                    let _ = db.set_task_context(id as i64, &serde_json::to_string(&c).unwrap_or_default());
+                }
+                let _ = self.inner.tx.send(OrchestratorEvent::Agent { task: id, event: AgentEvent::Context(c) });
+                return;
             }
             AgentEvent::Usage(u) => {
                 if let Some(db) = &self.inner.db {
@@ -1225,10 +1244,17 @@ mod tests {
         assert!(live.iter().any(|e| matches!(e, AgentEvent::SubagentStart { id, parent: None, .. } if id == SUB)), "{live:?}");
         assert!(live.iter().any(|e| matches!(e, AgentEvent::Scoped { subagent, .. } if subagent == SUB)));
         assert!(live.iter().any(|e| matches!(e, AgentEvent::SubagentEnd { id, ok: true, .. } if id == SUB)));
+
+        // A ocupação de contexto foi ao vivo, mas não para o histórico.
+        assert!(live.iter().any(|e| matches!(e, AgentEvent::Context(_))));
         drop(o);
 
         // Do disco, noutra instância.
         let o = mk();
+        // Último pedido do agente principal (o do subagente não conta), com a
+        // janela informada pelo `result`; sobrevive ao reinício.
+        let c = o.task(id).unwrap().context.expect("contexto salvo");
+        assert_eq!((c.total(), c.window), (40538, Some(1_000_000)));
         let kinds: Vec<&str> = o.history(id).iter().map(|e| e.kind()).collect();
         assert_eq!(
             kinds,

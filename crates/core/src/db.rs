@@ -30,9 +30,12 @@ pub struct TaskRecord {
     /// O próximo turno precisa receber o resumo da conversa (houve troca de provedor).
     #[serde(default)]
     pub handoff: bool,
+    /// JSON do último `ContextUsage` (ocupação da janela de contexto).
+    #[serde(default)]
+    pub context: Option<String>,
 }
 
-const TASK_COLS: &str = "id, project, provider, prompt, state, created_at, workdir, session_id, model, mode, provider_state, handoff";
+const TASK_COLS: &str = "id, project, provider, prompt, state, created_at, workdir, session_id, model, mode, provider_state, handoff, context";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventRecord {
@@ -189,7 +192,7 @@ impl Db {
                 value TEXT NOT NULL);",
         )?;
         // Migração de bancos antigos: colunas novas em `tasks`.
-        for col in ["workdir TEXT", "session_id TEXT", "model TEXT", "mode TEXT", "provider_state TEXT", "handoff INTEGER NOT NULL DEFAULT 0"] {
+        for col in ["workdir TEXT", "session_id TEXT", "model TEXT", "mode TEXT", "provider_state TEXT", "handoff INTEGER NOT NULL DEFAULT 0", "context TEXT"] {
             let name = col.split_whitespace().next().unwrap();
             let exists: bool = conn
                 .prepare("SELECT 1 FROM pragma_table_info('tasks') WHERE name=?1")?
@@ -270,6 +273,12 @@ impl Db {
             "UPDATE tasks SET provider=?2, session_id=?3, model=?4, provider_state=?5, handoff=?6 WHERE id=?1",
             params![id, provider, session_id, model, provider_state, handoff],
         )?;
+        Ok(())
+    }
+
+    /// Última ocupação da janela de contexto (JSON de `ContextUsage`).
+    pub fn set_task_context(&self, id: i64, context: &str) -> rusqlite::Result<()> {
+        self.c().execute("UPDATE tasks SET context=?2 WHERE id=?1", params![id, context])?;
         Ok(())
     }
 
@@ -526,6 +535,7 @@ fn task_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskRecord> {
         mode: r.get(9)?,
         provider_state: r.get(10)?,
         handoff: r.get::<_, Option<i64>>(11)?.unwrap_or(0) != 0,
+        context: r.get(12)?,
     })
 }
 

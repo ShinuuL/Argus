@@ -214,7 +214,21 @@ export type AgentEvent =
   /** O usuário trocou o agente da conversa (ids de provedor). */
   | { ProviderSwitch: { from: string; to: string } }
   /** A CLI negou uma ferramenta por falta de permissão (`command` vazio se não for de shell). */
-  | { Denied: { tool: string; command: string } };
+  | { Denied: { tool: string; command: string } }
+  /** Ocupação da janela de contexto (último pedido do agente principal). Não vai para o histórico. */
+  | { Context: ContextUsage };
+
+/** Tokens do último pedido do agente principal ao modelo (o que ocupa a janela de contexto). */
+export interface ContextUsage {
+  input_tokens: number;
+  cache_read: number;
+  cache_write: number;
+  /** Saída daquele pedido. */
+  output_tokens: number;
+  model: string | null;
+  /** Tamanho da janela em tokens (null = desconhecido: mostra só os tokens). */
+  window: number | null;
+}
 
 /** Conjunto padrão de comandos liberados ao agente e o que cada nível de git acrescenta. */
 export interface DefaultPermissions {
@@ -275,6 +289,8 @@ export interface Task {
   mode: WorkMode;
   /** Houve troca de agente: o próximo turno leva o resumo da conversa. */
   handoff: boolean;
+  /** Última ocupação da janela de contexto (null = ainda sem pedido ao modelo). */
+  context?: ContextUsage | null;
 }
 
 // ------------------------------------------------------------------ auto-work

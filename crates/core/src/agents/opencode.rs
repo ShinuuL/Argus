@@ -250,7 +250,20 @@ pub fn parse_json_event(line: &str, model: Option<&str>) -> Vec<AgentEvent> {
         Some("step_finish") => {
             let mut usage = usage_from_tokens(part.get("tokens").unwrap_or(&Value::Null), part.get("cost").and_then(Value::as_f64));
             usage.model = model.map(str::to_string);
+            // Contexto: entrada do pedido deste passo (o opencode não imprime os
+            // passos das sessões filhas, então é sempre o agente principal).
+            let ctx = crate::agents::context::ContextUsage {
+                input_tokens: usage.input_tokens,
+                cache_read: usage.cache_read,
+                cache_write: usage.cache_write,
+                output_tokens: usage.output_tokens,
+                model: usage.model.clone(),
+                window: part.pointer("/tokens/contextWindow").or_else(|| part.get("contextWindow")).and_then(Value::as_u64),
+            };
             let mut evs = vec![AgentEvent::Usage(usage)];
+            if ctx.total() > 0 {
+                evs.push(AgentEvent::Context(ctx));
+            }
             let reason = part.get("reason").and_then(Value::as_str).unwrap_or_default();
             if reason != "tool-calls" {
                 evs.push(AgentEvent::Result {
@@ -296,13 +309,16 @@ mod tests {
             [AgentEvent::ToolUse { name, input }] if name == "patch" && input["patchText"] == "*** Begin Patch"
         ));
         let e = parse_json_event(STEP_TOOLS, Some("openai/x"));
-        assert_eq!(e.len(), 1);
+        assert_eq!(e.len(), 2);
+        assert!(matches!(&e[1], AgentEvent::Context(c) if c.total() == 11182 && c.output_tokens == 150 && c.window.is_none()));
         assert!(matches!(&e[0], AgentEvent::Usage(u) if u.input_tokens == 11182 && u.output_tokens == 150 && u.model.as_deref() == Some("openai/x")));
         assert_eq!(parse_json_event(TEXT, None), vec![AgentEvent::Text("pronto".into())]);
         let e = parse_json_event(STEP_STOP, None);
-        assert_eq!(e.len(), 2);
+        assert_eq!(e.len(), 3);
         assert!(matches!(&e[0], AgentEvent::Usage(u) if u.cache_read == 11008 && u.cost_usd == Some(0.0)));
-        assert!(matches!(&e[1], AgentEvent::Result { ok: true, summary, .. } if summary == "stop"));
+        // Contexto = só o último passo (344 + 11008), não a soma dos passos.
+        assert!(matches!(&e[1], AgentEvent::Context(c) if c.total() == 11352 && c.cache_read == 11008));
+        assert!(matches!(&e[2], AgentEvent::Result { ok: true, summary, .. } if summary == "stop"));
         assert!(matches!(
             parse_json_event(ERR, None).as_slice(),
             [AgentEvent::Result { ok: false, summary, .. }] if summary == "Free usage limit reached."

@@ -69,6 +69,11 @@ function handleOrch(ev: OrchEvent, refreshTasks: () => void, refreshToday: () =>
   } else if ("Agent" in ev) {
     const kind = variantOf(ev.Agent.event).kind;
     if (kind === "Usage") refreshToday();
+    if ("Context" in ev.Agent.event) {
+      const { task } = ev.Agent;
+      const context = ev.Agent.event.Context;
+      useApp.setState((s) => ({ tasks: s.tasks.map((t) => (t.id === task ? { ...t, context } : t)) }));
+    }
     if (kind === "Text" || kind === "Result") noteActivity(ev.Agent.task);
   }
 }

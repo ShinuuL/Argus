@@ -99,6 +99,9 @@ pub enum AgentEvent {
     /// ferramenta ("Bash", "PowerShell"...) e `command` o comando pedido (vazio
     /// quando a ferramenta não é de shell).
     Denied { tool: String, command: String },
+    /// Ocupação da janela de contexto: tokens do último pedido do agente
+    /// principal ao modelo. Não vai para o histórico: o último valor fica na tarefa.
+    Context(crate::agents::context::ContextUsage),
 }
 
 /// Opções de um turno, escolhidas por tarefa.
@@ -221,6 +224,7 @@ impl AgentEvent {
             AgentEvent::Raw(_) => "Raw",
             AgentEvent::ProviderSwitch { .. } => "ProviderSwitch",
             AgentEvent::Denied { .. } => "Denied",
+            AgentEvent::Context(_) => "Context",
         }
     }
 }

@@ -1,5 +1,6 @@
 //! Provedor Claude Code (CLI oficial `claude`).
 
+use super::context::ContextUsage;
 use super::provider::*;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -407,6 +408,28 @@ pub struct StreamParser {
     /// Último total acumulado informado por sessão, no processo em andamento
     /// (zerado por `begin_turn` quando um processo novo começa).
     totals: HashMap<String, SessionTotals>,
+    /// Último pedido do agente principal por sessão: (id da mensagem, uso).
+    ctx: HashMap<String, (String, ContextUsage)>,
+    /// Tamanho da janela por modelo, informado pela CLI (`modelUsage.*.contextWindow`).
+    windows: HashMap<String, u64>,
+}
+
+/// Janela informada pela CLI para `model`: o nome exato ou, como a chave do
+/// `modelUsage` pode trazer sufixos (`[1m]`, data), o que começar igual.
+fn window_of(windows: &HashMap<String, u64>, model: &str) -> Option<u64> {
+    if let Some(w) = windows.get(model) {
+        return Some(*w);
+    }
+    let base = |m: &str| m.trim_end_matches("[1m]").to_string();
+    let m = base(model);
+    windows
+        .iter()
+        .filter(|(k, _)| {
+            let k = base(k);
+            !k.is_empty() && !m.is_empty() && (k.starts_with(&m) || m.starts_with(&k))
+        })
+        .map(|(_, w)| *w)
+        .max()
 }
 
 #[derive(Debug, Default)]
@@ -443,6 +466,46 @@ impl StreamParser {
         Self::default()
     }
 
+    /// Ocupação de contexto de uma mensagem `assistant` do agente principal. A
+    /// mesma mensagem sai numa linha por bloco (mesmo `message.id`): cada campo
+    /// fica com o maior valor visto. Devolve Some só quando o valor mudou.
+    fn context_of(&mut self, v: &Value) -> Option<ContextUsage> {
+        let us = v.pointer("/message/usage")?;
+        let session = v.get("session_id").and_then(Value::as_str).unwrap_or_default().to_string();
+        let id = v.pointer("/message/id").and_then(Value::as_str).unwrap_or_default().to_string();
+        let model = v
+            .pointer("/message/model")
+            .and_then(Value::as_str)
+            .filter(|m| !m.is_empty() && !m.starts_with('<'))
+            .map(str::to_string);
+        // Mensagem sintética (erro local, sem chamada ao modelo): não muda o contexto.
+        model.as_ref()?;
+        let mut cur = ContextUsage {
+            input_tokens: u(us, "input_tokens"),
+            cache_read: u(us, "cache_read_input_tokens"),
+            cache_write: u(us, "cache_creation_input_tokens"),
+            output_tokens: u(us, "output_tokens"),
+            window: model.as_deref().and_then(|m| window_of(&self.windows, m)),
+            model,
+        };
+        if cur.total() == 0 && cur.output_tokens == 0 {
+            return None;
+        }
+        if let Some((pid, p)) = self.ctx.get(&session) {
+            if !id.is_empty() && *pid == id {
+                cur.input_tokens = cur.input_tokens.max(p.input_tokens);
+                cur.cache_read = cur.cache_read.max(p.cache_read);
+                cur.cache_write = cur.cache_write.max(p.cache_write);
+                cur.output_tokens = cur.output_tokens.max(p.output_tokens);
+            }
+            if *p == cur && *pid == id {
+                return None;
+            }
+        }
+        self.ctx.insert(session, (id, cur.clone()));
+        Some(cur)
+    }
+
     pub fn parse(&mut self, line: &str) -> Vec<AgentEvent> {
         let line = line.trim();
         if line.is_empty() {
@@ -455,7 +518,10 @@ impl StreamParser {
         let parent = v.get("parent_tool_use_id").and_then(Value::as_str);
         match v.get("type").and_then(Value::as_str) {
             Some("assistant") => {
-                let Some(content) = v.pointer("/message/content").and_then(Value::as_array) else { return vec![] };
+                let ctx = if parent.is_none() { self.context_of(&v) } else { None };
+                let Some(content) = v.pointer("/message/content").and_then(Value::as_array) else {
+                    return ctx.map(AgentEvent::Context).into_iter().collect();
+                };
                 let mut evs = Vec::new();
                 for block in content {
                     match block.get("type").and_then(Value::as_str) {
@@ -487,6 +553,7 @@ impl StreamParser {
                         _ => {}
                     }
                 }
+                evs.extend(ctx.map(AgentEvent::Context));
                 evs
             }
             // Mensagens `user` só interessam pelo `tool_result` que encerra um subagente.
@@ -531,6 +598,9 @@ impl StreamParser {
                 let mut usages = Vec::new();
                 if let Some(mu) = v.get("modelUsage").and_then(Value::as_object).filter(|m| !m.is_empty()) {
                     for (model, m) in mu {
+                        if let Some(w) = m.get("contextWindow").and_then(Value::as_u64).filter(|w| *w > 0) {
+                            self.windows.insert(model.clone(), w);
+                        }
                         usages.push(TokenUsage {
                             input_tokens: u(m, "inputTokens"),
                             output_tokens: u(m, "outputTokens"),
@@ -595,6 +665,14 @@ impl StreamParser {
                 if ok && summary.trim().is_empty() && evs.is_empty() && cost.unwrap_or(0.0) <= 0.0 {
                     return evs;
                 }
+                // A janela informada no `result` completa o último pedido da sessão.
+                if let Some((_, c)) = v.get("session_id").and_then(Value::as_str).and_then(|sid| self.ctx.get_mut(sid)) {
+                    let w = c.model.as_deref().and_then(|m| window_of(&self.windows, m));
+                    if w.is_some() && w != c.window {
+                        c.window = w;
+                        evs.push(AgentEvent::Context(c.clone()));
+                    }
+                }
                 evs.push(AgentEvent::Result { ok, summary, cost });
                 evs
             }
@@ -640,7 +718,8 @@ mod tests {
         assert_eq!(p.parse_line(INIT), vec![AgentEvent::Session("0730ecc5-b2da".into())]);
         assert!(p.parse_line(HOOK).is_empty());
         let evs = p.parse_line(MIXED);
-        assert_eq!(evs.len(), 2);
+        assert_eq!(evs.len(), 3);
+        assert!(matches!(&evs[2], AgentEvent::Context(c) if c.input_tokens == 9 && c.model.as_deref() == Some("m")));
         assert_eq!(evs[0], AgentEvent::Text("Vou listar".into()));
         match &evs[1] {
             AgentEvent::ToolUse { name, input } => {
@@ -809,11 +888,58 @@ mod tests {
     const FIXTURE: &str = include_str!("../../tests/fixtures/claude_subagent.jsonl");
     const SUB: &str = "toolu_01CsNFNQqgKLL88nwZezfZRE";
 
+    /// Contexto na saída real: só as mensagens do agente principal contam (a do
+    /// subagente, 27245 de cache gravado, não); a repetição da mesma mensagem
+    /// não gera evento novo; o `result` traz a janela (`contextWindow`).
+    #[test]
+    fn context_from_real_stream() {
+        let p = ClaudeProvider::new();
+        let ctx: Vec<ContextUsage> = FIXTURE
+            .lines()
+            .flat_map(|l| p.parse_line(l))
+            .filter_map(|e| match e {
+                AgentEvent::Context(c) => Some(c),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ctx.len(), 3, "{ctx:#?}");
+        assert_eq!((ctx[0].total(), ctx[0].window), (39408, None));
+        assert_eq!((ctx[1].input_tokens, ctx[1].cache_write, ctx[1].output_tokens), (2, 40536, 31));
+        assert_eq!((ctx[2].total(), ctx[2].window, ctx[2].model.as_deref()), (40538, Some(1_000_000), Some("claude-fable-5")));
+        // A janela aprendida vale para os próximos pedidos do mesmo modelo.
+        let next = r#"{"type":"assistant","message":{"id":"msg_X","model":"claude-fable-5","content":[],"usage":{"input_tokens":1,"cache_read_input_tokens":40538,"cache_creation_input_tokens":10,"output_tokens":3}},"parent_tool_use_id":null,"session_id":"s2"}"#;
+        assert!(matches!(p.parse_line(next).as_slice(), [AgentEvent::Context(c)] if c.window == Some(1_000_000) && c.total() == 40549));
+    }
+
+    /// Troca de modelo: o contexto passa a ser o do pedido novo, com a janela do
+    /// modelo novo; a soma do turno nunca entra.
+    #[test]
+    fn context_follows_last_call_and_model_switch() {
+        let mut p = StreamParser::new();
+        let ctx = |evs: Vec<AgentEvent>| evs.into_iter().find_map(|e| match e { AgentEvent::Context(c) => Some(c), _ => None });
+        let a = ctx(p.parse(A1_TEXT)).unwrap();
+        assert_eq!((a.total(), a.output_tokens), (17003, 8));
+        // Mesma mensagem, mais saída: atualiza só a saída.
+        let a = ctx(p.parse(A1_TOOL)).unwrap();
+        assert_eq!((a.total(), a.output_tokens), (17003, 61));
+        assert!(ctx(p.parse(A1_TOOL)).is_none(), "repetição idêntica não emite");
+        // Subagente não conta.
+        assert!(ctx(p.parse(A_SUB)).is_none());
+        let b = ctx(p.parse(A2)).unwrap();
+        assert_eq!(b.total(), 17301);
+        let sw = r#"{"type":"assistant","message":{"id":"msg_01C","model":"claude-opus-4-5[1m]","content":[],"usage":{"input_tokens":5,"cache_creation_input_tokens":0,"cache_read_input_tokens":300000,"output_tokens":2}},"parent_tool_use_id":null,"session_id":"s1"}"#;
+        let c = ctx(p.parse(sw)).unwrap();
+        assert_eq!((c.total(), c.model.as_deref()), (300005, Some("claude-opus-4-5[1m]")));
+        let mut c2 = c.clone();
+        crate::agents::context::resolve_window(&mut c2, None);
+        assert_eq!(c2.window, Some(1_000_000));
+    }
+
     /// Saída real (claude 2.1.220) de um turno que delega a listagem de arquivos a um subagente.
     #[test]
     fn real_subagent_stream() {
         let p = ClaudeProvider::new();
-        let evs: Vec<AgentEvent> = FIXTURE.lines().flat_map(|l| p.parse_line(l)).collect();
+        let evs: Vec<AgentEvent> = FIXTURE.lines().flat_map(|l| p.parse_line(l)).filter(|e| !matches!(e, AgentEvent::Context(_))).collect();
         let kinds: Vec<&str> = evs.iter().map(|e| e.kind()).collect();
         assert_eq!(
             kinds,

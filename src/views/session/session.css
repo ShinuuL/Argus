@@ -17,6 +17,22 @@
 .cv-state.muted { color: var(--text-2); }
 .cv-agent { flex: 0 2 auto; min-width: 96px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--text-2); cursor: default; }
 @container (max-width: 680px) { .cv-agent { display: none; } }
+.cv-ctx { position: relative; flex: none; display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 4px; border-radius: 4px; font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; cursor: default; outline: none; }
+.cv-ctx:focus-visible { box-shadow: 0 0 0 2px var(--focus); }
+.cv-ctx-bar { width: 44px; height: 3px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.cv-ctx-fill { display: block; height: 100%; background: var(--accent); }
+.cv-ctx.warn .cv-ctx-fill { background: var(--warn); }
+.cv-ctx.err .cv-ctx-fill { background: var(--err); }
+.cv-ctx.warn .cv-ctx-pct { color: var(--warn); }
+.cv-ctx.err .cv-ctx-pct { color: var(--err); }
+.cv-ctx-tip { display: none; position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; min-width: 230px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 6px; box-shadow: 0 6px 18px var(--shadow); color: var(--text); white-space: normal; }
+.cv-ctx:hover .cv-ctx-tip, .cv-ctx:focus-visible .cv-ctx-tip { display: block; }
+.cv-ctx-tip dl { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; margin: 6px 0 0; }
+.cv-ctx-tip dt { color: var(--text-2); }
+.cv-ctx-tip dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.cv-ctx-alert { display: block; margin-top: 6px; padding: 3px 6px; border-radius: 4px; }
+.cv-ctx-alert.warn { background: var(--warn-bg); color: var(--warn); }
+.cv-ctx-alert.err { background: var(--err-bg); color: var(--err); }
 .cv-total { flex: none; white-space: nowrap; font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; cursor: default; }
 @container (max-width: 620px) { .cv-total-tok { display: none; } }
 @container (max-width: 520px) { .cv-state { display: none; } .chat-pill-label { display: none; } }

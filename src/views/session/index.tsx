@@ -61,6 +61,7 @@ import {
   type SubagentNode,
 } from "./events";
 import { AgentModelPill, ComposerOptions, DirectHold, hasGaps, IsolationHold, useWorkModeInfo, WORK_MODE_LABEL } from "./pills";
+import { ContextMeter } from "./ContextMeter";
 import { Transcript } from "./Transcript";
 import { useTaskEvents } from "./useTaskEvents";
 import "./session.css";
@@ -699,6 +700,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
             </span>
           )}
           {taskId != null && <SessionServersBadge taskId={taskId} />}
+          {task?.context && <ContextMeter ctx={task.context} />}
           {totals.turns > 0 && (
             <span
               className="cv-total"

@@ -109,7 +109,7 @@ export function chatEntries(events: AgentEvent[], owner: string | null): ChatEnt
     } else if ("Result" in event) out.push({ type: "result", ok: event.Result.ok, summary: event.Result.summary });
     else if ("Usage" in event) out.push({ type: "usage", usage: event.Usage });
     else if ("Raw" in event) pushNotice(out, event.Raw);
-    else if ("Session" in event) continue;
+    else if ("Session" in event || "Context" in event) continue;
     else out.push({ type: "unknown", kind });
   }
   return out;

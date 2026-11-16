@@ -750,6 +750,19 @@ async function loadChat(id, quiet) {
   }
 }
 
+/** Ocupação da janela de contexto para o subtítulo da conversa (vazio sem dado). */
+function contextInfo(c) {
+  if (!c || typeof c !== "object") return [];
+  const total = (Number(c.input_tokens) || 0) + (Number(c.cache_read) || 0) + (Number(c.cache_write) || 0);
+  const win = Number(c.window) || 0;
+  const n = (v) => Number(v).toLocaleString("pt-BR");
+  if (!win) return [" · contexto " + n(total) + " tokens"];
+  const pct = Math.min(100, Math.round((total / win) * 100));
+  const level = pct >= 95 ? "err" : pct >= 80 ? "warn" : "";
+  const text = "contexto " + pct + "%" + (level === "err" ? " (quase cheio)" : level === "warn" ? " (acima de 80%)" : "");
+  return [" · ", h("span", { class: "ctx " + level, title: n(total) + " de " + n(win) + " tokens" + (c.model ? " · " + c.model : "") }, text)];
+}
+
 /* ============================================================ WebSocket */
 
 let ws = null;
@@ -899,6 +912,15 @@ function onEvent(e) {
     case "stderr": {
       const ev = e.type === "agent" ? e.event : { Raw: e.line };
       if (e.type === "stderr" && isHiddenNotice(e.line)) return;
+      // Ocupação da janela de contexto: só atualiza a tarefa (não entra no chat).
+      if (ev && typeof ev === "object" && "Context" in ev) {
+        const t = taskById(e.task);
+        if (t) {
+          t.context = ev.Context;
+          changed();
+        }
+        return;
+      }
       // Agente trocado no computador: o provedor e o modelo da sessão mudaram.
       if (ev && typeof ev === "object" && "ProviderSwitch" in ev) loadTasks();
       if (chat.id === e.task) {
@@ -1560,8 +1582,10 @@ VIEWS.chat = (r, top, view, foot) => {
       const info = stateInfo(t.state);
       bar.h1.textContent = sessionTitle(t.prompt, 70);
       // Provedor e modelo atuais (mudam quando o agente é trocado no computador).
-      bar.sub.textContent =
-        projectName(t.project) + " · " + providerName(t.provider) + " · " + (t.model || "modelo padrão") + (t.mode === "Direct" ? " · direto na pasta" : "") + " · #" + t.id;
+      bar.sub.replaceChildren(
+        projectName(t.project) + " · " + providerName(t.provider) + " · " + (t.model || "modelo padrão") + (t.mode === "Direct" ? " · direto na pasta" : "") + " · #" + t.id,
+        ...contextInfo(t.context),
+      );
       bar.sub.hidden = false;
       pill.hidden = false;
       pill.className = "pill " + info.tone;

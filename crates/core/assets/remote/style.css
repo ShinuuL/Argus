@@ -181,6 +181,8 @@ a { color: inherit; text-decoration: none; }
 .chip.run { color: var(--run); border-color: color-mix(in srgb, var(--run) 50%, var(--border)); }
 .chip.ok { color: var(--ok); }
 .chip.warn { color: var(--warn); }
+.ctx.warn { color: var(--warn); }
+.ctx.err { color: var(--err); font-weight: 600; }
 
 /* Barra de abas */
 #tabs {
