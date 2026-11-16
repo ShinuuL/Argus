@@ -97,7 +97,7 @@ button.df-file:hover { background: var(--bg-hover); }
 .df-meta { color: var(--text-2); }
 
 /* ---------- Status bar ---------- */
-.wb-status { position: relative; height: var(--status-height); }
+.wb-status { position: relative; height: var(--status-height); border-top: 1px solid var(--border); }
 .wb-status-l, .wb-status-r { height: 100%; gap: 4px; }
 .wb-status-l { flex: 1 1 auto; overflow: hidden; }
 .wb-status-r { flex: 0 1 auto; }

@@ -16,7 +16,8 @@
   --bg: #0d1b2a;
   --surface: #1b263b;
   --surface-2: color-mix(in srgb, #1b263b 70%, #415a77);
-  --border: color-mix(in srgb, #1b263b 50%, #415a77);
+  /* Borda suave: um pouco do texto sobre a superfície; a hierarquia vem do tom. */
+  --border: color-mix(in srgb, #e0e1dd 10%, #1b263b);
   --border-strong: #415a77;
   --text: #e0e1dd;
   /* #778da9 puro dá 4,4:1 sobre a superfície; clareado com o texto da paleta. */
@@ -27,17 +28,18 @@
   --accent-text: color-mix(in srgb, #778da9 55%, #e0e1dd);
   --selection: color-mix(in srgb, #1b263b 35%, #415a77);
   --focus: color-mix(in srgb, #778da9 50%, #e0e1dd);
-  --status-bg: #415a77;
-  --on-status: #e0e1dd;
+  /* Status bar neutra: o fundo do app com texto secundário (8,6:1). */
+  --status-bg: #0d1b2a;
+  --on-status: color-mix(in srgb, #778da9 72%, #e0e1dd);
 }
 
 /* ---------- Nebulosa: #10002b #240046 #3c096c #5a189a #7b2cbf #9d4edd #c77dff #e0aaff ---------- */
 [data-theme="nebulosa"] {
-  /* Fundo quase preto com um toque da paleta; o roxo fica no destaque, nas bordas e na seleção. */
+  /* Fundo quase preto com um toque da paleta; o roxo fica no destaque, na borda forte e na seleção. */
   --bg: #0d061c;
   --surface: #1a0a2a;
   --surface-2: #281140;
-  --border: #341752;
+  --border: color-mix(in srgb, #eee2f7 9%, #1a0a2a);
   --border-strong: #441770;
   --text: #eee2f7;
   --text-2: #bf9edc;
@@ -47,17 +49,17 @@
   --accent-text: #c77dff;
   --selection: #37105c;
   --focus: #c77dff;
-  --status-bg: #3c096c;
-  --on-status: #eee2f7;
+  --status-bg: #0d061c;
+  --on-status: #bf9edc;
 }
 
 /* ---------- Brasa: #0b090a #161a1d #660708 #a4161a #ba181b #e5383b #b1a7a6 #d3d3d3 #f5f3f4 #ffffff ---------- */
 [data-theme="brasa"] {
-  /* Os vermelhos escuros da paleta entram nos controles, nas bordas, na seleção e na barra de status. */
+  /* Os vermelhos escuros da paleta entram nos controles, na borda forte e na seleção. */
   --bg: #0b090a;
   --surface: #161a1d;
   --surface-2: #2e1417;
-  --border: #3e1113;
+  --border: color-mix(in srgb, #f5f3f4 7%, #1f1416);
   --border-strong: #660708;
   --text: #f5f3f4;
   --text-2: #b1a7a6;
@@ -67,8 +69,8 @@
   --accent-text: color-mix(in srgb, #e5383b 65%, #f5f3f4);
   --selection: #560b0c;
   --focus: #e5383b;
-  --status-bg: #a4161a;
-  --on-status: #ffffff;
+  --status-bg: #0b090a;
+  --on-status: #b1a7a6;
 }
 
 :root {
