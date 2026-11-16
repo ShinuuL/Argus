@@ -162,11 +162,9 @@
 .ses-sub-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
 .ses-sub-box { padding: 10px 13px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; max-height: 320px; overflow: auto; }
 
-/* Conversa estreita (split): as pílulas sobem para uma linha própria, acima dos botões. */
+/* Conversa estreita (split): a barra continua numa linha só (ver chat.css); só a coluna perde folga. */
 .chat-pills + * { margin-left: auto; }
 @container (max-width: 460px) {
-  .chat-bar { flex-wrap: wrap; }
-  .chat-pills { order: -1; flex: 1 1 100%; padding-left: 0; }
   .cv-col { padding: 0 12px; }
 }
 

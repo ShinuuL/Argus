@@ -227,6 +227,7 @@ export default function SettingsView() {
   const setSection = useWorkbench((s) => s.setSettingsSection);
 
   return (
+    <div className="set-wrap">
     <div className="set-layout">
       <nav className="set-nav" aria-label="Seções de Configurações">
         {SETTINGS_SECTIONS.map((sec) => (
@@ -286,6 +287,7 @@ export default function SettingsView() {
           </section>
         )}
       </div>
+    </div>
     </div>
   );
 }
