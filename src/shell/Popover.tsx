@@ -47,7 +47,9 @@ export function Popover({ anchor, open, onClose, ariaLabel, width = 320, classNa
   const placed = open && pos != null;
   useEffect(() => {
     if (!placed || !pop.current) return;
-    const first = pop.current.querySelector<HTMLElement>("[data-autofocus], button:not(:disabled), input:not(:disabled)");
+    const first =
+      pop.current.querySelector<HTMLElement>("[data-autofocus]") ??
+      pop.current.querySelector<HTMLElement>("button:not(:disabled), input:not(:disabled)");
     (first ?? pop.current).focus();
   }, [placed]);
 

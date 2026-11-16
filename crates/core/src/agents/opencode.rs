@@ -162,7 +162,7 @@ pub fn parse_models(out: &str) -> Vec<ModelInfo> {
         .filter(|l| seen.insert(l.to_string()))
         .map(|l| {
             let (prov, name) = l.split_once('/').unwrap_or(("", l));
-            ModelInfo { value: l.to_string(), label: name.to_string(), hint: prov.to_string() }
+            ModelInfo { group: prov.to_string(), ..ModelInfo::new(l, pretty_model_name(name), prov) }
         })
         .collect()
 }
@@ -392,7 +392,7 @@ mod tests {
         let out = "\u{1b}[90mgoogle/gemini-2.5-pro\u{1b}[0m\nopenai/gpt-6-luna\n\nopenai/gpt-6-luna\naviso solto\n";
         let m = parse_models(out);
         assert_eq!(m.len(), 2);
-        assert_eq!((m[0].value.as_str(), m[0].label.as_str(), m[0].hint.as_str()), ("google/gemini-2.5-pro", "gemini-2.5-pro", "google"));
+        assert_eq!((m[0].value.as_str(), m[0].label.as_str(), m[0].hint.as_str()), ("google/gemini-2.5-pro", "Gemini 2.5 Pro", "google"));
     }
 
     #[test]

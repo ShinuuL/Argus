@@ -191,8 +191,8 @@ pub enum InitReply {
 
 /// Lê a lista de modelos da resposta ao pedido de controle `initialize` do
 /// stream-json (conferido no claude 2.1.220: `response.response.models`, cada
-/// item com `value`, `displayName` e `description`). O item "default" fica de
-/// fora: a interface já oferece "Padrão da CLI". Nenhum outro campo da resposta
+/// item com `value`, `resolvedModel`, `displayName` e `description`). O item
+/// "default" vem marcado (`default: true`), com o modelo que ele resolve na dica. Nenhum outro campo da resposta
 /// (conta, organização) é lido.
 pub fn models_from_initialize(v: &Value) -> Option<Vec<ModelInfo>> {
     match init_reply(v)? {
@@ -223,14 +223,39 @@ pub fn init_reply(v: &Value) -> Option<InitReply> {
         list.iter()
             .filter_map(|m| {
                 let value = m.get("value")?.as_str()?;
-                if value == "default" || !valid_model_name(value) {
+                let is_default = value == "default";
+                if !is_default && !valid_model_name(value) {
                     return None;
                 }
-                // O rótulo é o próprio valor aceito em `--model` (há nomes de exibição
-                // repetidos); a dica é o começo da descrição ("Opus 5 with 1M context · ...").
-                let about = s(m, "description").split(" · ").next().unwrap_or_default().trim();
-                let hint = if about.is_empty() { s(m, "displayName") } else { about };
-                Some(ModelInfo { value: value.to_string(), label: value.to_string(), hint: hint.to_string() })
+                // A descrição vem como "Opus 5 with 1M context · Best for everyday...":
+                // antes do " · " o nome com versão, depois a descrição. O
+                // `displayName` ("Opus (1M context)") não traz a versão.
+                let desc = s(m, "description");
+                let (head, tail) = desc.split_once(" · ").unwrap_or((desc, ""));
+                let wide = value.ends_with("[1m]") || head.contains("1M context");
+                let mut name = head.replace(" with 1M context", "").trim().to_string();
+                if name.is_empty() {
+                    name = s(m, "displayName").replace(" (1M context)", "").trim().to_string();
+                }
+                if name.is_empty() {
+                    name = value.to_string();
+                }
+                if is_default {
+                    // Qual modelo o padrão resolve, se a CLI disse.
+                    let which = if head.is_empty() {
+                        "o padrão da CLI".to_string()
+                    } else if wide {
+                        format!("{name} · 1M")
+                    } else {
+                        name
+                    };
+                    return Some(ModelInfo {
+                        default: true,
+                        ..ModelInfo::new(value, "Padrão (recomendado)", format!("{which} — usado quando nenhum é escolhido"))
+                    });
+                }
+                let badge = if wide { "1M" } else { "" };
+                Some(ModelInfo { badge: badge.into(), ..ModelInfo::new(value, name, tail.trim()) })
             })
             .collect(),
     ))
@@ -858,9 +883,10 @@ mod tests {
                 {"value":"com espaço","displayName":"x","description":""}
             ]}}});
         let m = models_from_initialize(&v).unwrap();
-        assert_eq!(m.len(), 2, "sem o default e sem nome inválido: {m:?}");
-        assert_eq!((m[0].value.as_str(), m[0].label.as_str(), m[0].hint.as_str()), ("opus[1m]", "opus[1m]", "Opus 5 with 1M context"));
-        assert_eq!((m[1].value.as_str(), m[1].label.as_str(), m[1].hint.as_str()), ("haiku", "haiku", "Haiku"));
+        assert_eq!(m.len(), 3, "sem nome inválido: {m:?}");
+        assert!(m[0].default && m[0].hint == "d — usado quando nenhum é escolhido", "{:?}", m[0]);
+        assert_eq!((m[1].value.as_str(), m[1].label.as_str(), m[1].hint.as_str(), m[1].badge.as_str()), ("opus[1m]", "Opus 5", "Best for everyday, complex tasks", "1M"));
+        assert_eq!((m[2].value.as_str(), m[2].label.as_str(), m[2].hint.as_str(), m[2].badge.as_str()), ("haiku", "Haiku", "", ""));
         assert_eq!(models_from_initialize(&serde_json::json!({"type":"system","subtype":"init"})), None);
     }
 
@@ -884,9 +910,15 @@ mod tests {
         let v: Value = serde_json::from_str(REAL_INIT).unwrap();
         let m = models_from_initialize(&v).unwrap();
         let vals: Vec<&str> = m.iter().map(|m| m.value.as_str()).collect();
-        assert_eq!(vals, ["opus[1m]", "claude-fable-5-2[1m]", "sonnet", "haiku"]);
-        assert_eq!(m[1].hint, "Fable 5.2");
-        assert_eq!(m[3].hint, "Haiku 4.5");
+        assert_eq!(vals, ["default", "opus[1m]", "claude-fable-5-2[1m]", "sonnet", "haiku"]);
+        assert!(m[0].default);
+        assert_eq!(m[0].label, "Padrão (recomendado)");
+        assert_eq!(m[0].hint, "Opus 5 · 1M — usado quando nenhum é escolhido");
+        assert_eq!((m[2].label.as_str(), m[2].badge.as_str()), ("Fable 5.2", "1M"));
+        assert_eq!(m[2].hint, "Most capable for your hardest and longest-running tasks");
+        assert_eq!((m[3].label.as_str(), m[3].badge.as_str()), ("Sonnet 5", ""));
+        assert_eq!(m[4].label, "Haiku 4.5");
+        assert!(m.iter().skip(1).all(|m| !m.default));
     }
 
     #[test]

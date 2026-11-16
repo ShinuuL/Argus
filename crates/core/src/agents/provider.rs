@@ -125,8 +125,69 @@ pub struct ModelInfo {
     pub value: String,
     /// Nome para exibir.
     pub label: String,
-    /// Descrição curta informada pela CLI (pode ser vazia).
+    /// Segunda linha: descrição informada pela CLI ou o provedor (pode ser vazia).
     pub hint: String,
+    /// Grupo na lista (provedor do prefixo "provedor/"; vazio = sem grupo).
+    #[serde(default)]
+    pub group: String,
+    /// Selo curto ao lado do nome (ex.: "1M" para janela de 1M tokens).
+    #[serde(default)]
+    pub badge: String,
+    /// O item representa o padrão da CLI (não é passado em `--model`): só o
+    /// rótulo e a dica (qual modelo ele resolve) são usados.
+    #[serde(default)]
+    pub default: bool,
+}
+
+impl ModelInfo {
+    pub fn new(value: impl Into<String>, label: impl Into<String>, hint: impl Into<String>) -> Self {
+        ModelInfo { value: value.into(), label: label.into(), hint: hint.into(), group: String::new(), badge: String::new(), default: false }
+    }
+}
+
+/// Nome legível a partir do id de um modelo, sem inventar nada além de caixa e
+/// separadores: "openai/gpt-6-luna" -> "GPT-6 Luna", "claude-sonnet-4-5" ->
+/// "Claude Sonnet 4.5", "llama-3.1-70b-instruct" -> "Llama 3.1 70B Instruct".
+pub fn pretty_model_name(id: &str) -> String {
+    const UPPER: &[&str] = &["gpt", "glm", "oss", "ai", "vl", "llm", "qwq", "moe", "api", "tts"];
+    let name = id.rsplit('/').next().unwrap_or(id);
+    let mut out = String::new();
+    let mut prev: Option<&str> = None;
+    for raw in name.split(['-', '_', ' ']).filter(|t| !t.is_empty()) {
+        let lower = raw.to_ascii_lowercase();
+        let digit_start = raw.starts_with(|c: char| c.is_ascii_digit());
+        let word = if UPPER.contains(&lower.as_str()) || (digit_start && raw.len() <= 5 && raw.ends_with(['b', 'k', 'm'])) {
+            raw.to_ascii_uppercase()
+        } else {
+            let mut c = raw.chars();
+            c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
+        };
+        let all_digits = |t: &str| !t.is_empty() && t.chars().all(|c| c.is_ascii_digit());
+        let sep = match prev {
+            None => "",
+            Some(p) if all_digits(raw) && all_digits(p) && raw.len() <= 2 && p.len() <= 2 => ".",
+            Some(p) if digit_start && UPPER.contains(&p.to_ascii_lowercase().as_str()) => "-",
+            _ => " ",
+        };
+        out.push_str(sep);
+        out.push_str(&word);
+        prev = Some(raw);
+    }
+    if out.is_empty() { id.to_string() } else { out }
+}
+
+#[cfg(test)]
+mod pretty_tests {
+    use super::pretty_model_name as p;
+    #[test]
+    fn pretty_names() {
+        assert_eq!(p("openai/gpt-6-luna"), "GPT-6 Luna");
+        assert_eq!(p("anthropic/claude-sonnet-4-5"), "Claude Sonnet 4.5");
+        assert_eq!(p("gemini-2.5-pro"), "Gemini 2.5 Pro");
+        assert_eq!(p("meta/llama-3.1-70b-instruct"), "Llama 3.1 70B Instruct");
+        assert_eq!(p("x/gpt-oss-120b"), "GPT OSS-120B");
+        assert_eq!(p("claude-haiku-4-5-20251001"), "Claude Haiku 4.5 20251001");
+    }
 }
 
 /// Um nome de modelo pode virar argumento de linha de comando? Recusa vazio,

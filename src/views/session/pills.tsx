@@ -4,7 +4,7 @@
  * auto-work) e o aviso que segura o envio
  * quando a cópia isolada não teria o que o pedido precisa.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { api, errorMessage, type IsolationReport, type ModelInfo, type Path, type TaskId, type WorkMode, type WorkModeInfo } from "@/api";
 import { Icon } from "@/shell/icons";
 import { Popover } from "@/shell/Popover";
@@ -121,22 +121,15 @@ export function AgentModelPill(props: AgentModelPillProps) {
   const { providers, provider, onProvider, providerDisabled, providerHint, model, onModel, disabled, modelHint, warning } = props;
   const { models, loading, error, load } = useModels(provider);
   const [open, setOpen] = useState(false);
-  const [typed, setTyped] = useState("");
   const btn = useRef<HTMLButtonElement>(null);
   const close = useCallback((focus: boolean) => {
     setOpen(false);
-    setTyped("");
     if (focus) btn.current?.focus();
   }, []);
 
   const providerName = providers.find((p) => p.id === provider)?.name ?? provider;
-  const modelLabel = model || "padrão";
-  const typedName = typed.trim();
-  const typedOk = isValidModelName(typedName);
-  const q = typedName.toLowerCase();
-  const shown = q ? models.filter((m) => `${m.value} ${m.hint}`.toLowerCase().includes(q)) : models;
-  const exact = models.some((m) => m.value.toLowerCase() === q);
-
+  const info = models.find((m) => !m.default && m.value === model);
+  const modelLabel = model ? (info ? info.label + (info.badge ? ` · ${info.badge}` : "") : model) : "padrão";
   const pickModel = (m: string) => {
     if (m !== model) onModel(m);
     close(true);
@@ -189,87 +182,15 @@ export function AgentModelPill(props: AgentModelPillProps) {
             ))}
           </div>
         </div>
-        <div className="pop-sec">
-          <div className="pop-title">Modelo</div>
-          {modelHint && <p className="pop-help">{modelHint}</p>}
-          <input
-            className="sel-search pop-input"
-            placeholder="Filtrar ou digitar um modelo…"
-            aria-label="Filtrar ou digitar o nome de um modelo"
-            value={typed}
-            data-autofocus=""
-            onChange={(e) => setTyped(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key !== "Enter") return;
-              e.preventDefault();
-              const hit = models.find((m) => m.value.toLowerCase() === q) ?? (shown.length === 1 ? shown[0] : undefined);
-              if (hit) pickModel(hit.value);
-              else if (typedOk) pickModel(typedName);
-            }}
-          />
-          <div className="pop-list" role="radiogroup" aria-label="Modelo">
-            {!q && (
-              <button
-                type="button"
-                role="radio"
-                aria-checked={model === ""}
-                className={`sel-opt pop-opt${model === "" ? " cur" : ""}`}
-                onClick={() => pickModel("")}
-              >
-                <span className="sel-opt-label">Padrão da CLI</span>
-                <span className="sel-opt-hint">o modelo que a CLI escolher</span>
-                {model === "" && <Check />}
-              </button>
-            )}
-            {shown.map((m) => (
-              <button
-                key={m.value}
-                type="button"
-                role="radio"
-                aria-checked={m.value === model}
-                className={`sel-opt pop-opt${m.value === model ? " cur" : ""}`}
-                onClick={() => pickModel(m.value)}
-              >
-                <span className="sel-opt-label">{m.label}</span>
-                {m.hint && <span className="sel-opt-hint">{m.hint}</span>}
-                {m.value === model && <Check />}
-              </button>
-            ))}
-            {/* O modelo em uso aparece mesmo fora da lista da CLI. */}
-            {!q && model && !models.some((m) => m.value === model) && (
-              <button type="button" role="radio" aria-checked className="sel-opt pop-opt cur" onClick={() => close(true)}>
-                <span className="sel-opt-label">{model}</span>
-                <span className="sel-opt-hint">em uso</span>
-                <Check />
-              </button>
-            )}
-            {q && !exact && (
-              <button
-                type="button"
-                className="sel-opt pop-opt"
-                disabled={!typedOk}
-                title={typedOk ? undefined : "Nome inválido: sem espaços, sem começar com \"-\"."}
-                onClick={() => pickModel(typedName)}
-              >
-                <span className="sel-opt-label">Usar “{typedName}”</span>
-                <span className="sel-opt-hint">{typedOk ? "nome digitado" : "nome inválido"}</span>
-              </button>
-            )}
-            {loading && (
-              <div className="pop-status" role="status">
-                Carregando modelos…
-              </div>
-            )}
-            {!loading && error && (
-              <div className="pop-status pop-err" role="alert">
-                <span>Não foi possível listar os modelos: {error}</span>
-                <button type="button" className="pop-link" onClick={() => void load(true)}>
-                  Tentar de novo
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+        <ModelPicker
+          models={models}
+          loading={loading}
+          error={error}
+          model={model}
+          modelHint={modelHint}
+          onPick={pickModel}
+          onRetry={() => void load(true)}
+        />
         {warning && (
           <div className="sel-note sel-warn" role="note">
             {warning}
@@ -277,6 +198,211 @@ export function AgentModelPill(props: AgentModelPillProps) {
         )}
       </Popover>
     </>
+  );
+}
+
+/** Sem acentos e sem caixa, para a busca. */
+function fold(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+/** A partir de quantos modelos a lista é agrupada por provedor. */
+const GROUP_FROM = 12;
+
+interface PickRow {
+  key: string;
+  /** Valor escolhido ("" = padrão da CLI). */
+  value: string;
+  label: string;
+  hint: string;
+  badge: string;
+  group: string;
+  /** Id técnico, só na dica do mouse. */
+  id?: string;
+  kind: "default" | "model" | "current" | "typed";
+  invalid?: boolean;
+}
+
+interface ModelPickerProps {
+  models: ModelInfo[];
+  loading: boolean;
+  error: string | null;
+  model: string;
+  modelHint?: string;
+  onPick(value: string): void;
+  onRetry(): void;
+}
+
+/**
+ * Seção "Selecione um modelo": busca fixa no topo (foco ao abrir; filtra por
+ * nome, id, descrição e provedor, sem acentos nem caixa), lista em duas linhas
+ * (nome em destaque, descrição abaixo), agrupada por provedor quando é grande.
+ * Setas, PageUp/PageDown e Enter navegam; Esc fecha (o Popover cuida). Quando
+ * o digitado não é um modelo da lista, oferece usá-lo como nome.
+ */
+function ModelPicker({ models, loading, error, model, modelHint, onPick, onRetry }: ModelPickerProps) {
+  const [typed, setTyped] = useState("");
+  const [active, setActive] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
+  const listId = useId();
+
+  const typedName = typed.trim();
+  const typedOk = isValidModelName(typedName);
+  const searching = typedName.length > 0;
+
+  const rows = useMemo<PickRow[]>(() => {
+    const words = fold(typedName).split(/\s+/).filter(Boolean);
+    const matches = (text: string) => words.every((w) => fold(text).includes(w));
+    const def = models.find((m) => m.default);
+    const list = models.filter((m) => !m.default);
+    const out: PickRow[] = [];
+    const defRow: PickRow = {
+      key: "__default",
+      value: "",
+      label: def?.label ?? "Padrão da CLI",
+      hint: def?.hint ?? "o padrão da CLI — usado quando nenhum é escolhido",
+      badge: "",
+      group: "",
+      kind: "default",
+    };
+    if (matches(`${defRow.label} padrao default ${defRow.hint}`)) out.push(defRow);
+    const grouped = list.length >= GROUP_FROM;
+    for (const m of list) {
+      if (!matches(`${m.label} ${m.value} ${m.hint} ${m.group} ${m.badge}`)) continue;
+      out.push({
+        key: m.value,
+        value: m.value,
+        label: m.label,
+        // Agrupado, o provedor já está no cabeçalho do grupo.
+        hint: grouped && m.hint === m.group ? "" : m.hint,
+        badge: m.badge,
+        group: grouped ? m.group : "",
+        id: m.value,
+        kind: "model",
+      });
+    }
+    // O modelo em uso aparece mesmo fora da lista da CLI.
+    if (!words.length && model && !list.some((m) => m.value === model)) {
+      out.push({ key: "__current", value: model, label: model, hint: "em uso (fora da lista da CLI)", badge: "", group: "", kind: "current" });
+    }
+    if (typedName && !list.some((m) => m.value.toLowerCase() === typedName.toLowerCase())) {
+      out.push({
+        key: "__typed",
+        value: typedName,
+        label: `Usar “${typedName}”`,
+        hint: typedOk ? "nome digitado, passado à CLI como está" : "nome inválido: sem espaços e sem começar com hífen",
+        badge: "",
+        group: "",
+        kind: "typed",
+        invalid: !typedOk,
+      });
+    }
+    return out;
+  }, [models, model, typedName, typedOk]);
+
+  // Ao abrir ou filtrar: destaca o escolhido (sem busca) ou o primeiro resultado.
+  useEffect(() => {
+    const cur = rows.findIndex((r) => r.kind !== "typed" && r.value === model);
+    setActive(searching ? 0 : Math.max(0, cur));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typedName, models.length]);
+
+  useEffect(() => {
+    listRef.current?.querySelector(".am-opt.on")?.scrollIntoView({ block: "nearest" });
+  }, [active, rows]);
+
+  const choose = (r: PickRow | undefined) => {
+    if (!r || r.invalid) return;
+    onPick(r.value);
+  };
+  const optId = (i: number) => `${listId}-o${i}`;
+  const at = Math.min(active, rows.length - 1);
+
+  const onKey = (e: React.KeyboardEvent) => {
+    const last = rows.length - 1;
+    if (e.key === "ArrowDown") setActive((i) => (i >= last ? 0 : i + 1));
+    else if (e.key === "ArrowUp") setActive((i) => (i <= 0 ? last : i - 1));
+    else if (e.key === "PageDown") setActive((i) => Math.min(last, i + 8));
+    else if (e.key === "PageUp") setActive((i) => Math.max(0, i - 8));
+    else if (e.key === "Enter") choose(rows[at]);
+    else return;
+    e.preventDefault();
+  };
+
+  const items: React.ReactNode[] = [];
+  let lastGroup = "";
+  rows.forEach((r, i) => {
+    if (r.group && r.group !== lastGroup) {
+      items.push(
+        <div key={`g-${r.group}`} className="am-group" role="presentation">
+          {r.group}
+        </div>,
+      );
+    }
+    lastGroup = r.group;
+    const selected = r.kind !== "typed" && r.value === model;
+    items.push(
+      <div
+        key={r.key}
+        id={optId(i)}
+        role="option"
+        aria-selected={selected}
+        aria-disabled={r.invalid || undefined}
+        title={r.id && r.id !== r.label ? `id: ${r.id}` : undefined}
+        className={`sel-opt am-opt${i === at ? " on" : ""}${selected ? " cur" : ""}${r.invalid ? " off" : ""}`}
+        onMouseEnter={() => setActive(i)}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => choose(r)}
+      >
+        <span className="am-opt-text">
+          <span className="am-opt-name">
+            <span className="am-opt-label">{r.label}</span>
+            {r.badge && <span className="am-badge">{r.badge}</span>}
+          </span>
+          {r.hint && <span className="am-opt-hint">{r.hint}</span>}
+        </span>
+        {selected && <Check />}
+      </div>,
+    );
+  });
+
+  return (
+    <div className="pop-sec am-models">
+      <div className="pop-title">Selecione um modelo</div>
+      {modelHint && <p className="pop-help">{modelHint}</p>}
+      <input
+        className="sel-search pop-input"
+        placeholder="Buscar ou digitar um modelo…"
+        aria-label="Buscar ou digitar o nome de um modelo"
+        role="combobox"
+        aria-expanded
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-activedescendant={rows.length ? optId(at) : undefined}
+        value={typed}
+        data-autofocus=""
+        spellCheck={false}
+        onChange={(e) => setTyped(e.target.value)}
+        onKeyDown={onKey}
+      />
+      <div ref={listRef} id={listId} className="am-list" role="listbox" aria-label="Modelos">
+        {items}
+        {!rows.length && !loading && <div className="sel-empty">Nenhum modelo encontrado.</div>}
+        {loading && (
+          <div className="pop-status" role="status">
+            Carregando modelos…
+          </div>
+        )}
+        {!loading && error && (
+          <div className="pop-status pop-err" role="alert">
+            <span>Não foi possível listar os modelos: {error}</span>
+            <button type="button" className="pop-link" onClick={onRetry}>
+              Tentar de novo
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

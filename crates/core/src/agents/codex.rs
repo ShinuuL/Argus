@@ -105,7 +105,7 @@ impl AgentProvider for CodexProvider {
     fn list_models(&self) -> Result<Vec<ModelInfo>, String> {
         Ok(KNOWN_MODELS
             .iter()
-            .map(|(v, l)| ModelInfo { value: v.to_string(), label: l.to_string(), hint: "lista fixa do Argus".into() })
+            .map(|(v, l)| ModelInfo::new(*v, *l, "lista fixa do Argus"))
             .collect())
     }
 

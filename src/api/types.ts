@@ -142,9 +142,16 @@ export interface ProviderInfo {
 export interface ModelInfo {
   /** Valor passado à CLI. */
   value: string;
+  /** Nome legível ("Opus 5", "GPT-6 Luna"). */
   label: string;
-  /** Descrição curta informada pela CLI (pode vir vazia). */
+  /** Segunda linha: descrição informada pela CLI ou o provedor (pode vir vazia). */
   hint: string;
+  /** Provedor do prefixo "provedor/" (vazio = sem grupo). */
+  group: string;
+  /** Selo ao lado do nome (ex.: "1M"). */
+  badge: string;
+  /** Item que descreve o padrão da CLI (não é um valor de `--model`). */
+  default: boolean;
 }
 
 /**

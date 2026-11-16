@@ -114,7 +114,7 @@ impl AgentProvider for GeminiProvider {
         let fixed = || {
             KNOWN_MODELS
                 .iter()
-                .map(|(v, l)| ModelInfo { value: v.to_string(), label: l.to_string(), hint: "lista fixa do Argus".into() })
+                .map(|(v, l)| ModelInfo::new(*v, *l, "lista fixa do Argus"))
                 .collect::<Vec<_>>()
         };
         let Some(bin) = self.detect() else { return Err("A CLI gemini não está instalada.".into()) };
@@ -168,7 +168,7 @@ pub fn parse_models(out: &str) -> Vec<ModelInfo> {
                 Some(c) => format!("{desc} · {c} tokens de contexto"),
                 None => desc.to_string(),
             };
-            Some(ModelInfo { value: id.to_string(), label, hint })
+            Some(ModelInfo::new(id, label, hint))
         })
         .collect()
 }
