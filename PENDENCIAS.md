@@ -111,6 +111,10 @@ O Screen-Mirror funciona e tem MCP pronto. Reescrever o protocolo do scrcpy de c
 
 ---
 
+## Conversa (interface)
+
+- [ ] C1. Links clicáveis no chat: URLs na resposta do agente (ex.: link de PR) não abrem. Tornar links do markdown e URLs soltas clicáveis, abrindo no navegador padrão pelo opener do Tauri (nunca dentro do WebView); caminhos de arquivo (`arquivo:linha`) abrindo no editor do Argus.
+
 ## 4. Ordem sugerida
 
 1. Base comum: registro de módulos, gerenciador de sidecars e política unificada.
