@@ -232,7 +232,19 @@ pub fn apply(mut spec: CommandSpec, project: &Path, levels: GitLevels, mode: Per
         let cmds = crate::procs::allowed_commands(project);
         spec.args.extend(args(&cmds, levels));
         if auto {
-            replace_after(&mut spec.args, "--permission-mode", "auto");
+            // O classificador do modo `auto` não atende o Haiku: com ele a CLI
+            // cai em "pedir permissão" e, em `-p`, nega até o Edit (visto no
+            // claude 2.1.220). Para o Haiku fica `acceptEdits` com o shell
+            // liberado e só a lista de nocivos negada.
+            let haiku = spec.args.windows(2).any(|w| w[0] == "--model" && w[1].to_lowercase().contains("haiku"));
+            if haiku {
+                if let Some(i) = spec.args.iter().position(|a| a == "--allowedTools") {
+                    spec.args.insert(i + 1, "PowerShell".into());
+                    spec.args.insert(i + 1, "Bash".into());
+                }
+            } else {
+                replace_after(&mut spec.args, "--permission-mode", "auto");
+            }
             let mut deny = crate::harmful::claude_disallowed();
             // Quem liberou algo de propósito na lista do projeto não é contrariado.
             deny.retain(|d| !cmds.iter().any(|c| d.contains(c.trim_end_matches(":*").trim_end_matches('*'))));
@@ -369,6 +381,12 @@ mod tests {
         let cut = c.args.iter().position(|x| x == "--disallowedTools").unwrap();
         assert!(c.args[cut..].iter().any(|x| x == "Bash(git reset --hard:*)"));
         assert!(c.args[..cut].iter().any(|x| x == "Bash(git status:*)"));
+        // Haiku: o classificador do `auto` não o atende; fica acceptEdits + shell liberado.
+        let h = apply(CommandSpec::new("claude").arg("-p").arg("--model").arg("haiku").arg("--permission-mode").arg("acceptEdits"), dir, lv, a);
+        assert_eq!(h.args[4], "acceptEdits");
+        let i = h.args.iter().position(|x| x == "--allowedTools").unwrap();
+        assert_eq!(&h.args[i + 1..i + 3], ["Bash", "PowerShell"]);
+        assert!(h.args.iter().any(|x| x == "Bash(git reset --hard:*)"));
         let x = apply(sp("codex", &["exec", "--sandbox", "workspace-write", "-c", "approval_policy=never", "-"]), dir, lv, a);
         assert_eq!(x.args, ["exec", "--sandbox", "workspace-write", "-c", "approval_policy=never", "-c", "sandbox_workspace_write.network_access=true", "-"]);
         let g = apply(sp("gemini", &["--approval-mode", "auto_edit"]), dir, lv, a);
