@@ -7,8 +7,8 @@ import {
   api,
   autoWorkStatusLabel,
   errorMessage,
-  formatTokens,
-  formatUsd,
+  formatTokensPt,
+  formatUsdPt,
   variantOf,
   type AutoWorkEvent,
   type AutoWorkSettings,
@@ -84,7 +84,7 @@ export function AutoWorkBadge({ taskId, readOnly = false }: AutoWorkBadgeProps) 
 
   const { cls, label } = pill(ev);
   const kind = variantOf(ev.status).kind;
-  const tip = `${describeAutoWork(ev)}\ntokens: ${formatTokens(ev.tokens)} · ${formatUsd(ev.cost_usd)} equivalente em API`;
+  const tip = `${describeAutoWork(ev)}\ntokens: ${formatTokensPt(ev.tokens)} · ${formatUsdPt(ev.cost_usd)} equivalente em API`;
   const total = Math.max(ev.total, 1);
 
   return (

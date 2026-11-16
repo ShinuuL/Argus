@@ -1,22 +1,10 @@
 import { useEffect, useState } from "react";
-import { api, onOrch, totalTokens, variantOf, type CostLine } from "@/api";
+import { api, formatTokensPt, formatUsdPt, onOrch, totalTokens, variantOf, type CostLine } from "@/api";
 import { useApp } from "@/store";
 
-/** 950 · 12,3 mil · 1,2 mi (português). */
-export function tokensPt(n: number): string {
-  const f = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
-  if (n >= 1e9) return `${f(n / 1e9)} bi`;
-  if (n >= 1e6) return `${f(n / 1e6)} mi`;
-  if (n >= 1e3) return `${f(n / 1e3)} mil`;
-  return String(Math.round(n));
-}
-
-/** US$ 3,40. */
-export function usdPt(v: number): string {
-  const digits = v > 0 && v < 0.01 ? 4 : 2;
-  v = v || 0; // -0 e NaN viram 0 (senão sai "US$ -0,00")
-  return `US$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
-}
+/** Mantidos por compatibilidade: delegam ao formatador único de @/api. */
+export const tokensPt = formatTokensPt;
+export const usdPt = formatUsdPt;
 
 /**
  * Pílula "hoje: 1,2 mi tokens · ≈ US$ 3,40 (equivalente em API)". O detalhe

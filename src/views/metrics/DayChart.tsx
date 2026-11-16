@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type RefObject } from "react";
-import { formatTokens, formatUsd, totalTokens, type DayLine } from "@/api";
+import { formatTokensPt, formatUsdPt, totalTokens, type DayLine } from "@/api";
 
 export type Measure = "cost" | "tokens";
 
@@ -57,7 +57,7 @@ export function DayChart({ days, measure }: { days: DayLine[]; measure: Measure 
 
   if (days.length === 0) return <div className="muted small">Sem dados.</div>;
 
-  const fmt = measure === "cost" ? formatUsd : formatTokens;
+  const fmt = measure === "cost" ? formatUsdPt : formatTokensPt;
   const plotW = width - M.left - M.right;
   const plotH = HEIGHT - M.top - M.bottom;
   const n = days.length;
@@ -146,8 +146,8 @@ export function DayChart({ days, measure }: { days: DayLine[]; measure: Measure 
           role="status"
         >
           <b>{shortDay(tipDay.day)}</b>
-          <span>Custo equivalente: {formatUsd(tipDay.line.api_cost_usd)}</span>
-          <span>Tokens: {formatTokens(totalTokens(tipDay.line))}</span>
+          <span>Custo equivalente: {formatUsdPt(tipDay.line.api_cost_usd)}</span>
+          <span>Tokens: {formatTokensPt(totalTokens(tipDay.line))}</span>
           <span>Turnos: {tipDay.line.turns}</span>
         </div>
       )}

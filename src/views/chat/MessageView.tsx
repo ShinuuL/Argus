@@ -1,5 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { api, formatTokens, variantOf, type AgentEvent, type TokenUsage } from "@/api";
+import { api, formatTokensPt, variantOf, type AgentEvent, type TokenUsage } from "@/api";
 import { splitPrompt } from "./attachments";
 import { Thumb } from "./Lightbox";
 import { md } from "./markdown";
@@ -109,9 +109,9 @@ function toolSummary(input: unknown): string {
 }
 
 function usageLine(u: TokenUsage): string {
-  const parts = [`${formatTokens(u.input_tokens)} entrada`, `${formatTokens(u.output_tokens)} saída`];
-  if (u.cache_read) parts.push(`${formatTokens(u.cache_read)} cache lido`);
-  if (u.cache_write) parts.push(`${formatTokens(u.cache_write)} cache gravado`);
+  const parts = [`${formatTokensPt(u.input_tokens)} entrada`, `${formatTokensPt(u.output_tokens)} saída`];
+  if (u.cache_read) parts.push(`${formatTokensPt(u.cache_read)} cache lido`);
+  if (u.cache_write) parts.push(`${formatTokensPt(u.cache_write)} cache gravado`);
   if (u.model) parts.push(u.model);
   return parts.join(" · ");
 }
