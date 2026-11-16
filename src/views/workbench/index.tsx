@@ -17,6 +17,7 @@ import {
 import BuildsView from "@/views/builds";
 import ConnectionsView from "@/views/connections";
 import DepsView from "@/views/deps";
+import DevicesView from "@/views/devices";
 import MetricsView from "@/views/metrics";
 import RemoteView from "@/views/remote";
 import ChatTab from "@/views/session";
@@ -60,6 +61,7 @@ const PAGE_ICONS: Record<PageId, IconName> = {
   deps: "box",
   builds: "hammer",
   connections: "globe",
+  devices: "devices",
   metrics: "chart",
   remote: "phone",
   settings: "gear",
@@ -234,6 +236,7 @@ function Page({ page: raw }: { page: PageId }) {
   const page: PageId = (raw as string) === "providers" ? "settings" : raw;
   const info = PAGES.find((p) => p.id === page);
   if (page === "metrics") return <MetricsView />;
+  if (page === "devices") return <DevicesView />;
   return (
     <div className="page scroll">
       <div className="page-col">

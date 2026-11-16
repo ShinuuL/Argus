@@ -31,6 +31,7 @@ const PAGE_ICONS: Record<PageId, IconName> = {
   deps: "box",
   builds: "hammer",
   connections: "globe",
+  devices: "devices",
   metrics: "chart",
   remote: "phone",
   settings: "gear",

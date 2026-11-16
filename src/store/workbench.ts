@@ -24,7 +24,7 @@ export type TabKind =
   /** Telas que abrem como aba pelo rodapé da barra esquerda. */
   | { type: "page"; page: PageId };
 
-export type PageId = "deps" | "builds" | "connections" | "metrics" | "remote" | "settings";
+export type PageId = "deps" | "builds" | "connections" | "devices" | "metrics" | "remote" | "settings";
 
 /**
  * "providers" era uma aba própria; hoje é a seção Provedores de Configurações.
@@ -52,6 +52,7 @@ export const PAGES: { id: PageId; label: string; short: string; title: string }[
   { id: "deps", label: "Dependências", short: "Deps.", title: "Dependências dos projetos" },
   { id: "builds", label: "Builds", short: "Builds", title: "Builds, instaladores e servidores de dev dos projetos" },
   { id: "connections", label: "Conexões", short: "Conexões", title: "Conexões: GitHub, Google Cloud, Firebase e Vercel pelas CLIs" },
+  { id: "devices", label: "Dispositivos", short: "Disp.", title: "Celulares Android: espelhamento e controle (Screen-Mirror)" },
   { id: "metrics", label: "Métricas", short: "Métricas", title: "Métricas de tokens e custo equivalente em API" },
   { id: "remote", label: "Remoto", short: "Remoto", title: "Acesso remoto pelo celular" },
   { id: "settings", label: "Configurações", short: "Config.", title: "Configurações: tema, agentes, provedores e projetos" },

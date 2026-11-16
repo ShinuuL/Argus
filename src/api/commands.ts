@@ -14,6 +14,8 @@ import type {
   CmdSpec,
   CommandSpec,
   DepIssue,
+  DeviceList,
+  MirrorStatus,
   DirEntry,
   FileStat,
   InstallPlan,
@@ -354,6 +356,26 @@ export const pricingPath = (): Promise<Path | null> => invoke("pricing_path");
 // --------------------------------------------------------------------- remoto
 
 /** Estado do servidor remoto (null se desligado). */
+// ------------------------------------------------------------ celulares (Screen-Mirror)
+
+/** Estado do Screen-Mirror (pasta, Node, servidor no ar). */
+export const devicesStatus = (): Promise<MirrorStatus> => invoke("devices_status");
+
+/** Inicia o Screen-Mirror como processo auxiliar; devolve o estado com a URL do painel. */
+export const devicesStart = (): Promise<MirrorStatus> => invoke("devices_start");
+
+/** Encerra o Screen-Mirror. */
+export const devicesStop = (): Promise<void> => invoke("devices_stop");
+
+/** Salva a pasta do projeto Screen-Mirror. */
+export const devicesSetDir = (dir: Path): Promise<MirrorStatus> => invoke("devices_set_dir", { dir });
+
+/** Liga/desliga o MCP do Screen-Mirror nas conversas de agente. */
+export const devicesSetAgents = (on: boolean): Promise<MirrorStatus> => invoke("devices_set_agents", { on });
+
+/** Aparelhos conectados por ADB. */
+export const devicesList = (): Promise<DeviceList> => invoke("devices_list");
+
 export const remoteInfo = (): Promise<RemoteInfo | null> => invoke("remote_info");
 
 /** Liga o servidor remoto na porta; devolve a URL de pareamento e o QR code em SVG. */

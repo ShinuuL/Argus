@@ -4,6 +4,7 @@ pub mod agents;
 pub mod autowork;
 pub mod connections;
 pub mod deps;
+pub mod devices;
 pub mod extra_agents;
 pub mod extra_chat;
 pub mod fs;

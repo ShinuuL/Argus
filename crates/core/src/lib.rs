@@ -5,6 +5,7 @@ pub mod connections;
 pub mod db;
 pub mod harmful;
 pub mod deps;
+pub mod devices;
 pub mod isolation;
 pub mod metrics;
 pub mod monitor;

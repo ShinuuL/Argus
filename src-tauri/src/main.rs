@@ -29,6 +29,9 @@ fn main() {
             let handle = app.handle().clone();
             // O orquestrador e o auto-work usam `tokio::spawn`: criamos dentro do runtime.
             let ctx = tauri::async_runtime::block_on(async { state::AppCtx::new() });
+            // MCP do Screen-Mirror nos agentes (pela variável ou pasta salva; a pasta
+            // raiz entra quando for aberta).
+            ctx.mirror.sync_agent_mcp(None);
             app.manage(ctx);
             events::start_orchestrator_forwarder(&handle);
             events::start_servers_forwarder(&handle);
@@ -129,6 +132,13 @@ fn main() {
             servers::server_restart,
             servers::allowed_commands_get,
             servers::allowed_commands_set,
+            // celulares (Screen-Mirror)
+            devices::devices_status,
+            devices::devices_start,
+            devices::devices_stop,
+            devices::devices_set_dir,
+            devices::devices_set_agents,
+            devices::devices_list,
             // dependências
             connections::connections_status,
             connections::connections_repo,
@@ -165,6 +175,14 @@ fn main() {
             system::system_confirm,
             system::app_info,
         ])
-        .run(tauri::generate_context!())
-        .expect("falha ao iniciar o Argus");
+        .build(tauri::generate_context!())
+        .expect("falha ao iniciar o Argus")
+        .run(|app, event| {
+            // Processos auxiliares não podem sobreviver à janela.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(ctx) = app.try_state::<state::AppCtx>() {
+                    ctx.mirror.stop();
+                }
+            }
+        });
 }

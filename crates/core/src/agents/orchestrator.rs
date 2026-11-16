@@ -793,6 +793,8 @@ impl Orchestrator {
         // Os anexos do chat ficam fora da pasta de trabalho: libera a leitura deles.
         let dirs = crate::attachments::dirs_for(&crate::attachments::root(), id, &[&task.prompt, prompt]);
         let spec = crate::attachments::apply_add_dirs(spec, &dirs);
+        // Celulares Android: MCP do Screen-Mirror, se configurado e ligado.
+        let spec = crate::devices::apply_agent_mcp(spec, workdir);
         let mut cmd = build_command(&spec, Some(workdir));
         #[cfg(unix)]
         cmd.process_group(0); // permite matar a árvore inteira no cancelamento
