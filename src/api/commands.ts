@@ -443,3 +443,7 @@ export const runsRemembered = (): Promise<RememberedServer[]> => invoke("runs_re
 
 /** Abre a pasta (ou seleciona o arquivo) no gerenciador de arquivos. */
 export const runsOpenFolder = (path: Path): Promise<void> => invoke("runs_open_folder", { path });
+
+/** Uso de CPU/memória/GPU por dono rastreado. `gpu` consulta os contadores do Windows (mais lento). */
+export const ownersUsage = (gpu: boolean): Promise<import("./types").OwnerUsage[]> =>
+  invoke("owners_usage", { gpu });

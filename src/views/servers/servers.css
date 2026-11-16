@@ -12,3 +12,10 @@
 .srv-ask p { margin: 0; line-height: 1.45; }
 .srv-ask-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 .srv-ask-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.srv-usage {
+  margin-left: 8px;
+  font-size: 11px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}

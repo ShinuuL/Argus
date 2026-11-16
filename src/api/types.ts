@@ -640,3 +640,14 @@ export interface RememberedServer {
   project: Path;
   command_id: string;
 }
+
+/** Uso de recursos da árvore de processos de um dono (agente, filhos e servidores). */
+export interface OwnerUsage {
+  owner: Owner;
+  /** % do total da máquina. */
+  cpu: number;
+  /** Bytes residentes. */
+  memory: number;
+  gpu: number | null;
+  processes: number;
+}

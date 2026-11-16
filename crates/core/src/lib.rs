@@ -1,6 +1,7 @@
 pub mod agents;
 pub mod attachments;
 pub mod autowork;
+pub mod connections;
 pub mod db;
 pub mod harmful;
 pub mod deps;
@@ -13,4 +14,5 @@ pub mod procs;
 pub mod pty;
 pub mod remote;
 pub mod runs;
+pub mod usage;
 pub mod workspace;
