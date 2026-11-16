@@ -179,17 +179,46 @@ impl TurnTracker for PartialUsage {
     }
 }
 
+/// Resposta ao pedido de controle `initialize`, lida de uma linha do stream-json.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InitReply {
+    /// Lista de modelos aceitos (sem o "default").
+    Models(Vec<ModelInfo>),
+    /// A CLI respondeu com erro (ou sem a lista de modelos).
+    Error(String),
+}
+
 /// Lê a lista de modelos da resposta ao pedido de controle `initialize` do
 /// stream-json (conferido no claude 2.1.220: `response.response.models`, cada
 /// item com `value`, `displayName` e `description`). O item "default" fica de
 /// fora: a interface já oferece "Padrão da CLI". Nenhum outro campo da resposta
 /// (conta, organização) é lido.
 pub fn models_from_initialize(v: &Value) -> Option<Vec<ModelInfo>> {
+    match init_reply(v)? {
+        InitReply::Models(m) => Some(m),
+        InitReply::Error(_) => None,
+    }
+}
+
+/// Classifica uma linha como resposta ao `initialize`: lista de modelos ou erro
+/// (`subtype: "error"`, ou sucesso sem `models`). Outras linhas: None.
+pub fn init_reply(v: &Value) -> Option<InitReply> {
     if v.get("type").and_then(Value::as_str) != Some("control_response") {
         return None;
     }
-    let list = v.pointer("/response/response/models")?.as_array()?;
-    Some(
+    let r = v.get("response")?;
+    if r.get("subtype").and_then(Value::as_str) == Some("error") {
+        let msg = s(r, "error");
+        return Some(InitReply::Error(if msg.is_empty() {
+            "a CLI recusou o pedido de inicialização".into()
+        } else {
+            msg.to_string()
+        }));
+    }
+    let Some(list) = r.pointer("/response/models").and_then(Value::as_array) else {
+        return Some(InitReply::Error("a resposta da CLI não traz a lista de modelos (versão da CLI diferente?)".into()));
+    };
+    Some(InitReply::Models(
         list.iter()
             .filter_map(|m| {
                 let value = m.get("value")?.as_str()?;
@@ -203,29 +232,36 @@ pub fn models_from_initialize(v: &Value) -> Option<Vec<ModelInfo>> {
                 Some(ModelInfo { value: value.to_string(), label: value.to_string(), hint: hint.to_string() })
             })
             .collect(),
-    )
+    ))
 }
+
+/// Quanto esperar a resposta ao `initialize`. A CLI roda os hooks de início de
+/// sessão do usuário antes de responder (visto: de 5 a 18 s numa máquina com
+/// três hooks), por isso a folga é grande.
+const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
 
 /// Sobe um `claude -p` que não grava sessão, manda só o pedido de controle
 /// `initialize` (nenhuma mensagem: nenhum modelo é chamado), lê a resposta e
-/// mata o processo.
+/// mata o processo. Falhas (CLI que encerra antes, resposta de erro, tempo
+/// esgotado) voltam com o fim da saída de erro da CLI, para a interface mostrar.
 fn probe_models() -> Result<Vec<ModelInfo>, String> {
-    use std::io::{BufRead, BufReader, Write};
+    use std::io::{BufRead, BufReader, Read, Write};
     use std::process::{Command, Stdio};
+    use std::sync::mpsc::RecvTimeoutError;
 
-    let exe = which_bin("claude").ok_or_else(|| "A CLI claude não está instalada.".to_string())?;
-    let mut cmd = Command::new(exe);
+    let exe = which_bin("claude").ok_or_else(|| "A CLI claude não está instalada (não foi achada no PATH).".to_string())?;
+    let mut cmd = Command::new(&exe);
     cmd.args(["-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--no-session-persistence"])
         .current_dir(std::env::temp_dir())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(Stdio::piped());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
-    let mut child = cmd.spawn().map_err(|e| format!("Não foi possível executar o claude: {e}"))?;
+    let mut child = cmd.spawn().map_err(|e| format!("Não foi possível executar {}: {e}", exe.display()))?;
     // O stdin fica aberto até a resposta: fechá-lo antes encerraria a CLI.
     let mut stdin = child.stdin.take();
     if let Some(stdin) = stdin.as_mut() {
@@ -233,26 +269,69 @@ fn probe_models() -> Result<Vec<ModelInfo>, String> {
         let _ = stdin.write_all(format!("{line}\n").as_bytes());
         let _ = stdin.flush();
     }
+    // Só o fim da saída de erro é guardado, para explicar uma falha.
+    let errbuf = Arc::new(Mutex::new(String::new()));
+    if let Some(mut stderr) = child.stderr.take() {
+        let errbuf = errbuf.clone();
+        std::thread::spawn(move || {
+            let mut chunk = [0u8; 4096];
+            while let Ok(n) = stderr.read(&mut chunk) {
+                if n == 0 {
+                    break;
+                }
+                let mut b = errbuf.lock().unwrap_or_else(|e| e.into_inner());
+                b.push_str(&String::from_utf8_lossy(&chunk[..n]));
+                if b.len() > 8192 {
+                    let mut cut = b.len() - 4096;
+                    while !b.is_char_boundary(cut) {
+                        cut += 1;
+                    }
+                    b.drain(..cut);
+                }
+            }
+        });
+    }
     let Some(stdout) = child.stdout.take() else {
         let _ = child.kill();
         let _ = child.wait();
         return Err("O claude não abriu a saída.".into());
     };
-    let (tx, rx) = std::sync::mpsc::channel();
+    let (tx, rx) = std::sync::mpsc::channel::<Option<InitReply>>();
     std::thread::spawn(move || {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
             let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
-            if let Some(models) = models_from_initialize(&v) {
-                let _ = tx.send(models);
+            if let Some(reply) = init_reply(&v) {
+                let _ = tx.send(Some(reply));
                 return;
             }
         }
+        // A saída fechou sem resposta: a CLI encerrou.
+        let _ = tx.send(None);
     });
-    let got = rx.recv_timeout(std::time::Duration::from_secs(45));
+    let got = rx.recv_timeout(PROBE_TIMEOUT);
     let _ = child.kill();
     let _ = child.wait();
     drop(stdin);
-    got.map_err(|_| "O claude não informou a lista de modelos a tempo.".to_string())
+    let tail = || {
+        let b = errbuf.lock().unwrap_or_else(|e| e.into_inner());
+        let t = strip_ansi(&b).split_whitespace().collect::<Vec<_>>().join(" ");
+        let n = t.chars().count();
+        let t: String = t.chars().skip(n.saturating_sub(400)).collect();
+        if t.is_empty() {
+            String::new()
+        } else {
+            format!(" Saída da CLI: {t}")
+        }
+    };
+    match got {
+        Ok(Some(InitReply::Models(m))) if !m.is_empty() => Ok(m),
+        Ok(Some(InitReply::Models(_))) => Err("A CLI claude respondeu sem nenhum modelo.".into()),
+        Ok(Some(InitReply::Error(e))) => Err(format!("A CLI claude recusou a consulta: {e}.")),
+        Ok(None) | Err(RecvTimeoutError::Disconnected) => Err(format!("A CLI claude encerrou sem informar os modelos.{}", tail())),
+        Err(RecvTimeoutError::Timeout) => {
+            Err(format!("O claude não informou a lista de modelos em {} s.{}", PROBE_TIMEOUT.as_secs(), tail()))
+        }
+    }
 }
 
 fn ev_is_empty_denial(ev: &AgentEvent) -> bool {
@@ -682,6 +761,42 @@ mod tests {
         assert_eq!((m[0].value.as_str(), m[0].label.as_str(), m[0].hint.as_str()), ("opus[1m]", "opus[1m]", "Opus 5 with 1M context"));
         assert_eq!((m[1].value.as_str(), m[1].label.as_str(), m[1].hint.as_str()), ("haiku", "haiku", "Haiku"));
         assert_eq!(models_from_initialize(&serde_json::json!({"type":"system","subtype":"init"})), None);
+    }
+
+    /// Consulta real à CLI instalada (só o pedido `initialize`: nenhum modelo é
+    /// chamado). `cargo test -p argus-core -- --ignored probe_models_live`.
+    #[test]
+    #[ignore]
+    fn probe_models_live() {
+        let t = std::time::Instant::now();
+        let r = probe_models();
+        eprintln!("{:?} em {:?}", r, t.elapsed());
+        assert!(!r.unwrap().is_empty());
+    }
+
+    /// Resposta real do claude 2.1.220 ao `initialize`, observada em 2026-11-16
+    /// (só `models` e campos inofensivos; `account`, `commands` e o resto saíram).
+    const REAL_INIT: &str = r#"{"type":"control_response","response":{"subtype":"success","request_id":"argus-modelos","response":{"output_style":"default","models":[{"value":"default","resolvedModel":"claude-opus-5[1m]","displayName":"Default (recommended)","description":"Opus 5 with 1M context · Best for everyday, complex tasks","supportsEffort":true,"supportedEffortLevels":["low","medium","high","xhigh","max"],"supportsAdaptiveThinking":true,"supportsFastMode":true,"supportsAutoMode":true},{"value":"opus[1m]","resolvedModel":"claude-opus-5[1m]","displayName":"Opus (1M context)","description":"Opus 5 with 1M context · Best for everyday, complex tasks","supportsEffort":true,"supportsFastMode":true},{"value":"claude-fable-5-2[1m]","resolvedModel":"claude-fable-5-2","displayName":"Fable","description":"Fable 5.2 · Most capable for your hardest and longest-running tasks","supportsEffort":true},{"value":"sonnet","resolvedModel":"claude-sonnet-5","displayName":"Sonnet","description":"Sonnet 5 · Efficient for routine tasks","supportsEffort":true},{"value":"haiku","resolvedModel":"claude-haiku-4-5-20251001","displayName":"Haiku","description":"Haiku 4.5 · Fastest for quick answers"}],"pid":1234}}}"#;
+
+    #[test]
+    fn real_initialize_response_is_parsed() {
+        let v: Value = serde_json::from_str(REAL_INIT).unwrap();
+        let m = models_from_initialize(&v).unwrap();
+        let vals: Vec<&str> = m.iter().map(|m| m.value.as_str()).collect();
+        assert_eq!(vals, ["opus[1m]", "claude-fable-5-2[1m]", "sonnet", "haiku"]);
+        assert_eq!(m[1].hint, "Fable 5.2");
+        assert_eq!(m[3].hint, "Haiku 4.5");
+    }
+
+    #[test]
+    fn initialize_errors_are_reported() {
+        let err = serde_json::json!({"type":"control_response","response":{"subtype":"error","request_id":"x","error":"Already initialized"}});
+        assert_eq!(init_reply(&err), Some(InitReply::Error("Already initialized".into())));
+        assert_eq!(models_from_initialize(&err), None);
+        // Sucesso sem `models` (formato mudou): erro explícito, nunca lista vazia calada.
+        let other = serde_json::json!({"type":"control_response","response":{"subtype":"success","request_id":"x","response":{"commands":[]}}});
+        assert!(matches!(init_reply(&other), Some(InitReply::Error(_))));
+        assert_eq!(init_reply(&serde_json::json!({"type":"system","subtype":"hook_started"})), None);
     }
 
     #[test]

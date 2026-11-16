@@ -10,6 +10,7 @@ const PATHS = {
   folderOpen: "M3 19V6h7l2 2h8v3M3 19l3-8h16l-3 8z",
   collapse: "M7 9l5-5 5 5M7 15l5 5 5-5",
   filter: "M4 6h16M7 12h10M10 18h4",
+  sliders: "M4 6h16M4 12h16M4 18h16M9 4v4M15 10v4M7 16v4",
   chevronRight: "M9 6l6 6-6 6",
   chevronDown: "M6 9l6 6 6-6",
   chat: "M4 5h16v11H9l-5 4z",

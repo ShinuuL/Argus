@@ -15,8 +15,7 @@ import {
   type Path,
   type TaskId,
 } from "@/api";
-import { useApp, useWorkbench } from "@/store";
-import { Icon } from "@/shell/icons";
+import { useApp } from "@/store";
 import "./autowork.css";
 
 export interface AutoWorkPanelProps {
@@ -150,17 +149,12 @@ function onSettingsChanged(project: Path, cb: () => void): () => void {
   return () => window.removeEventListener(SETTINGS_EVENT, handler);
 }
 
-export interface AutoWorkPillProps {
-  project: Path | null;
-  /** Sessão aberta, para mostrar o progresso quando o auto-work está rodando nela. */
-  taskId?: TaskId | null;
-}
-
 /**
- * Pílula da caixa de composição: liga/desliga o auto-work do projeto e mostra o
- * progresso quando ativo. Os limites ficam na aba Configurações.
+ * Estado do auto-work do projeto para a caixa de composição: ligado ou não,
+ * progresso na sessão aberta (`taskId`) e a ação de ligar/desligar. Os limites
+ * ficam na aba Configurações.
  */
-export function AutoWorkPill({ project, taskId = null }: AutoWorkPillProps) {
+export function useAutoWork(project: Path | null, taskId: TaskId | null = null) {
   const ev = useApp((s) => (taskId != null ? s.autowork[taskId] : undefined));
   const [settings, setSettings] = useState<AutoWorkSettings | null>(null);
   const [busy, setBusy] = useState(false);
@@ -182,13 +176,13 @@ export function AutoWorkPill({ project, taskId = null }: AutoWorkPillProps) {
     };
   }, [project]);
 
-  if (!project) return null;
   const on = settings?.enabled ?? false;
   const kind = ev ? variantOf(ev.status).kind : null;
   const progress = ev && (kind === "Running" || kind === "Paused") ? ` ${ev.done}/${ev.total}` : "";
+  const detail = ev ? describeAutoWork(ev) : null;
 
   const toggle = async () => {
-    if (!settings || busy) return;
+    if (!project || !settings || busy) return;
     setBusy(true);
     try {
       setSettings(await api.autoworkSetSettings(project, { ...settings, enabled: !settings.enabled }));
@@ -200,34 +194,7 @@ export function AutoWorkPill({ project, taskId = null }: AutoWorkPillProps) {
     }
   };
 
-  return (
-    <span className="chat-pill-group">
-      <button
-        type="button"
-        className={on ? "chat-pill on" : "chat-pill"}
-        aria-pressed={on}
-        disabled={!settings || busy}
-        title={
-          (on
-            ? "Auto-work ligado neste projeto: ao fim de cada turno, o Argus verifica as pendências e dispara novos turnos. Clique para desligar."
-            : "Auto-work desligado neste projeto. Clique para ligar.") + (ev ? `\n${describeAutoWork(ev)}` : "")
-        }
-        onClick={() => void toggle()}
-      >
-        <Icon name="loop" size={12} />
-        Auto-work{on ? (progress || " ligado") : ""}
-      </button>
-      <button
-        type="button"
-        className="chat-pill chat-pill-ic"
-        title="Limites do auto-work (aba Configurações)"
-        aria-label="Limites do auto-work"
-        onClick={() => useWorkbench.getState().openPage("settings")}
-      >
-        <Icon name="gear" size={12} />
-      </button>
-    </span>
-  );
+  return { ready: settings != null, on, busy, progress, detail, toggle };
 }
 
 /** Campo numérico que só grava ao sair ou no Enter; vazio = sem valor. */

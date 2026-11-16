@@ -10,7 +10,7 @@ use argus_core::isolation::IsolationReport;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::State;
 
 #[derive(Debug, Clone, Serialize)]
@@ -38,14 +38,32 @@ pub async fn agents_models(ctx: State<'_, AppCtx>, provider: String, refresh: Op
         }
     }
     blocking(move || {
-        let list = p.list_models()?;
-        // Lista vazia não é guardada: a próxima abertura tenta de novo.
-        if !list.is_empty() {
-            models_cache().lock().map_err(err)?.insert(provider, list.clone());
+        // Uma consulta por provedor de cada vez: quem chega durante uma consulta
+        // espera por ela e usa o resultado, em vez de subir outra CLI.
+        let gate = {
+            let mut gates = probe_gates().lock().map_err(err)?;
+            gates.entry(provider.clone()).or_insert_with(|| Arc::new(Mutex::new(()))).clone()
+        };
+        let _one = gate.lock().unwrap_or_else(|e| e.into_inner());
+        if refresh != Some(true) {
+            if let Some(list) = models_cache().lock().map_err(err)?.get(&provider) {
+                return Ok(list.clone());
+            }
         }
+        let list = p.list_models()?;
+        // Só lista com modelos é guardada; vazia vira erro (a próxima abertura tenta de novo).
+        if list.is_empty() {
+            return Err("A CLI não informou nenhum modelo.".into());
+        }
+        models_cache().lock().map_err(err)?.insert(provider, list.clone());
         Ok(list)
     })
     .await
+}
+
+fn probe_gates() -> &'static Mutex<HashMap<String, Arc<Mutex<()>>>> {
+    static GATES: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
+    GATES.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// Modo de trabalho padrão das conversas novas.

@@ -67,3 +67,35 @@
 @media (prefers-reduced-motion: reduce) {
   .sel-chev, .tip { transition: none; }
 }
+
+/* Popover (Popover.tsx): painel com seções, no mesmo visual da lista. */
+.pop { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.pop-sec { padding: 8px 6px 6px; }
+.pop-sec + .pop-sec { border-top: 1px solid var(--border); }
+.pop-title { padding: 0 8px 4px; color: var(--text-2); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.pop-help { margin: 0 8px 6px; color: var(--text-2); font-size: 12px; line-height: 1.45; white-space: normal; }
+.pop-help b { color: var(--text); font-weight: 600; }
+.pop-list { display: flex; flex-direction: column; }
+.pop-opt { width: 100%; border: 0; background: none; color: inherit; font: inherit; text-align: left; }
+.pop-opt:hover:not(:disabled), .pop-opt:focus-visible { background: var(--bg-hover); outline: none; }
+.pop-opt:disabled { opacity: 0.5; cursor: default; }
+.pop-opt-tall { align-items: flex-start; padding-top: 6px; padding-bottom: 6px; white-space: normal; }
+.pop-opt-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pop-opt-text .pop-help { margin: 0; font-weight: 400; }
+.pop-opt-tall .sel-check { margin-top: 3px; }
+.pop-tag {
+  margin-left: 6px; padding: 0 5px; border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text-2); font-size: 10.5px; font-weight: 400;
+}
+.pop-input { display: block; width: calc(100% - 4px); margin: 0 2px 4px; box-sizing: border-box; }
+.pop-status { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 6px 8px; color: var(--text-2); font-size: 12px; white-space: normal; }
+.pop-err { color: var(--err); }
+.pop-link {
+  margin: 0 8px; padding: 0; border: 0; background: none; color: var(--accent-text);
+  font: inherit; font-size: 12px; cursor: pointer;
+}
+.pop-status .pop-link { margin: 0; }
+.pop-link:hover { text-decoration: underline; }
+.pop-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; border-radius: 2px; }
+.pop-switch { display: flex; align-items: center; gap: 8px; margin: 0 8px 6px; font-size: 12.5px; cursor: pointer; }
+.pop-switch input { accent-color: var(--accent); margin: 0; }

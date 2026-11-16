@@ -259,3 +259,26 @@ button.chat-pill:hover:not(:disabled), .chat-pill-select:hover { background: var
 }
 .chat-suggest-foot { padding: 4px 8px; font-size: 11px; color: var(--text-faint); }
 
+
+/* Barra numa linha só: as pílulas não quebram; a de agente e modelo encolhe. */
+.chat-bar { container-type: inline-size; align-items: center; }
+.chat-pills { flex-wrap: nowrap; overflow: hidden; }
+.chat-pills > * { flex: none; }
+.chat-pills > .am-pill { flex: 0 1 auto; min-width: 60px; max-width: 280px; }
+.chat-pills > .sel-pill { min-width: 0; flex: 0 1 auto; max-width: 160px; }
+.chat-pills-gap { flex: 1 1 0; min-width: 0; }
+.am-model { color: var(--text); }
+.opt-btn { position: relative; }
+.opt-btn.on { color: var(--accent-text); }
+.opt-btn.open { background: var(--bg-hover); color: var(--text); }
+.opt-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.opt-count {
+  position: absolute; top: -2px; right: -3px; min-width: 14px; height: 14px; padding: 0 3px; box-sizing: border-box;
+  border-radius: 7px; background: var(--accent); color: var(--on-accent);
+  font-size: 9.5px; font-weight: 600; line-height: 14px; text-align: center;
+}
+/* Estreita: a pílula mostra só o modelo (o provedor fica na dica e no menu). */
+@container (max-width: 440px) {
+  .am-prov { display: none; }
+  .chat-pills > .sel-pill { max-width: 110px; }
+}

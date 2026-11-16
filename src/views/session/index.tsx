@@ -31,7 +31,7 @@ import {
 import { Icon } from "@/shell/icons";
 import { useApp, useLayout, useWorkbench } from "@/store";
 import { useProviders } from "@/views/agents";
-import { AutoWorkBadge, AutoWorkPill } from "@/views/autowork";
+import { AutoWorkBadge } from "@/views/autowork";
 import {
   Composer,
   DropZone,
@@ -60,7 +60,7 @@ import {
   type ChatEntry,
   type SubagentNode,
 } from "./events";
-import { DirectHold, hasGaps, IsolationHold, ModelPill, ModePill, useWorkModeInfo, WORK_MODE_HELP, WORK_MODE_LABEL } from "./pills";
+import { AgentModelPill, ComposerOptions, DirectHold, hasGaps, IsolationHold, useWorkModeInfo, WORK_MODE_LABEL } from "./pills";
 import { Transcript } from "./Transcript";
 import { useTaskEvents } from "./useTaskEvents";
 import "./session.css";
@@ -535,7 +535,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
         return;
       case "modelo": {
         const wanted = args.trim();
-        const pill = () => document.querySelector<HTMLButtonElement>(`[data-chat-tab="${tabId}"] .sel-btn[aria-label="Modelo"]`);
+        const pill = () => document.querySelector<HTMLButtonElement>(`[data-chat-tab="${tabId}"] [data-model-pill]`);
         if (!wanted) {
           // Sem nome: abre a lista da pílula de modelo.
           window.setTimeout(() => pill()?.click(), 0);
@@ -603,93 +603,72 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
     return toolCallAsText(parts.join("\n"));
   }, [busy, current, entries, taskId]);
 
-  const projectName = project ? baseName(project) : null;
   const providerName = (id: string) => providers.find((p) => p.id === id)?.display_name ?? id;
 
+  const providerChoices = providers.map((p) => ({ id: p.id, name: p.display_name }));
   const pills = (
     <>
+      {taskId == null && (
+        <Select
+          variant="pill"
+          ariaLabel="Projeto"
+          title="Projeto em que a conversa vai acontecer"
+          icon={<Icon name="folder" size={12} />}
+          placeholder="nenhum projeto"
+          value={newProject ?? ""}
+          options={projects.map((p) => ({ value: p.path, label: p.name }))}
+          onChange={(v) => useWorkbench.getState().setChatProject(tabId, v || null)}
+        />
+      )}
       {taskId == null ? (
-        <>
-          <Select
-            variant="pill"
-            ariaLabel="Projeto"
-            title="Projeto em que a conversa vai acontecer"
-            icon={<Icon name="folder" size={12} />}
-            placeholder="nenhum projeto"
-            value={newProject ?? ""}
-            options={projects.map((p) => ({ value: p.path, label: p.name }))}
-            onChange={(v) => useWorkbench.getState().setChatProject(tabId, v || null)}
-          />
-          <Select
-            variant="pill"
-            ariaLabel="Provedor"
-            title="Agente que vai atender (a CLI oficial, com o seu login)"
-            icon={<Icon name="bot" size={12} />}
-            placeholder={providerId}
-            value={providerId}
-            options={providers.map((p) => ({ value: p.id, label: p.display_name }))}
-            onChange={(v) => void changeProvider(v)}
-          />
-          <ModelPill provider={providerId} value={newModel} onChange={(v) => void changeModel(v)} />
-          {newProject && <ModePill value={newMode} isGit={isGit} onChange={setModeChoice} />}
-        </>
+        <AgentModelPill
+          providers={providerChoices.length ? providerChoices : [{ id: providerId, name: providerName(providerId) }]}
+          provider={providerId}
+          onProvider={(v) => void changeProvider(v)}
+          providerHint="Agente que vai atender (a CLI oficial, com o seu login)."
+          model={newModel}
+          onModel={(v) => void changeModel(v)}
+        />
       ) : (
         task && (
-          <>
-            <span className="chat-pill static" title={task.workdir ?? task.project}>
-              <Icon name="folder" size={12} />
-              {projectName}
-            </span>
-            <Select
-              variant="pill"
-              ariaLabel="Provedor"
-              title={
-                busy
-                  ? "Aguarde o turno terminar para trocar de agente."
-                  : closed
-                    ? "Esta tarefa foi encerrada."
-                    : "Agente desta conversa. Ao trocar, a tarefa e a pasta continuam as mesmas: o outro agente abre uma sessão nova e recebe um resumo da conversa até aqui."
-              }
-              icon={<Icon name="bot" size={12} />}
-              placeholder={providerName(task.provider)}
-              value={task.provider}
-              disabled={busy || closed}
-              options={providers.map((p) => ({ value: p.id, label: p.display_name }))}
-              onChange={(v) => void changeProvider(v)}
-            />
-            <ModelPill
-              provider={task.provider}
-              value={task.model ?? ""}
-              disabled={closed}
-              warning={
-                task.provider === "claude" && (task.turns > 0 || task.session_id)
-                  ? "Trocar o modelo reprocessa a conversa inteira no próximo turno (fica mais caro)."
-                  : null
-              }
-              title={
-                busy
-                  ? "Modelo dos próximos turnos (o turno em andamento segue com o modelo com que começou)"
-                  : "Modelo dos próximos turnos desta conversa"
-              }
-              onChange={(v) => void changeModel(v)}
-            />
-            <span className="chat-pill static" title={WORK_MODE_HELP[task.mode]}>
-              <Icon name={task.mode === "Isolated" ? "box" : "folderOpen"} size={12} />
-              <span className="chat-pill-label">{task.mode === "Isolated" ? "Isolado" : "Direto na pasta"}</span>
-            </span>
-          </>
+          <AgentModelPill
+            providers={providerChoices.length ? providerChoices : [{ id: task.provider, name: providerName(task.provider) }]}
+            provider={task.provider}
+            onProvider={(v) => void changeProvider(v)}
+            providerDisabled={busy || closed}
+            providerHint={
+              busy
+                ? "Aguarde o turno terminar para trocar de agente."
+                : closed
+                  ? "Esta tarefa foi encerrada."
+                  : "Ao trocar, a tarefa e a pasta continuam as mesmas: o outro agente abre uma sessão nova e recebe um resumo da conversa até aqui."
+            }
+            model={task.model ?? ""}
+            onModel={(v) => void changeModel(v)}
+            disabled={closed}
+            modelHint={
+              busy
+                ? "Vale a partir do próximo turno (o turno em andamento segue com o modelo com que começou)."
+                : "Vale a partir do próximo turno desta conversa."
+            }
+            warning={
+              task.provider === "claude" && (task.turns > 0 || task.session_id)
+                ? "Trocar o modelo reprocessa a conversa inteira no próximo turno (fica mais caro)."
+                : null
+            }
+          />
         )
       )}
-      <button
-        type="button"
-        className="chat-pill"
-        title="Modo de permissão: o agente edita arquivos sem perguntar; o shell só roda os comandos permitidos do projeto. Clique para ver os comandos permitidos."
-        onClick={() => useWorkbench.getState().openPage("settings")}
-      >
-        <Icon name="shield" size={12} />
-        <span className="chat-pill-label">Edições automáticas</span>
-      </button>
-      <AutoWorkPill project={project} taskId={taskId} />
+      <span className="chat-pills-gap" />
+      <ComposerOptions
+        project={project}
+        taskId={taskId}
+        mode={task ? task.mode : newMode}
+        defaultMode={modeInfo?.effective ?? "Isolated"}
+        modeEditable={taskId == null && !!newProject && isGit}
+        noGit={taskId == null && !isGit}
+        onMode={setModeChoice}
+      />
     </>
   );
 

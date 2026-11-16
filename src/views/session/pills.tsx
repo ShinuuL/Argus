@@ -1,85 +1,290 @@
 /**
- * Pílulas e avisos da caixa de composição que dependem da conversa: modelo,
- * modo de trabalho (isolado ou direto na pasta) e o aviso que segura o envio
+ * Pílulas e avisos da caixa de composição que dependem da conversa: a pílula
+ * "provedor · modelo", o botão de opções (modo de trabalho, modo de permissão,
+ * auto-work) e o aviso que segura o envio
  * quando a cópia isolada não teria o que o pedido precisa.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage, type IsolationReport, type ModelInfo, type Path, type TaskId, type WorkMode, type WorkModeInfo } from "@/api";
 import { Icon } from "@/shell/icons";
-import { Select, type SelectOption } from "@/shell/Select";
+import { Popover } from "@/shell/Popover";
+import { useWorkbench } from "@/store";
+import { useAutoWork } from "@/views/autowork";
 
 // ---------------------------------------------------------------------- modelo
 
-/** Lista de modelos por provedor, guardada enquanto o app está aberto. */
+/** Lista de modelos por provedor, guardada enquanto o app está aberto (só listas com modelos). */
 const modelsCache = new Map<string, ModelInfo[]>();
+/** Consulta em andamento por provedor: quem pede durante ela espera a mesma resposta. */
+const modelsInflight = new Map<string, Promise<ModelInfo[]>>();
 
-/** Modelos do provedor, carregados sob demanda (`load`), com cache em memória. */
+function fetchModels(provider: string, refresh: boolean): Promise<ModelInfo[]> {
+  const running = modelsInflight.get(provider);
+  if (running && !refresh) return running;
+  const p = api
+    .agentsModels(provider, refresh)
+    .then((list) => {
+      if (!list.length) throw new Error("A CLI não informou nenhum modelo.");
+      modelsCache.set(provider, list);
+      return list;
+    })
+    .finally(() => {
+      if (modelsInflight.get(provider) === p) modelsInflight.delete(provider);
+    });
+  modelsInflight.set(provider, p);
+  return p;
+}
+
+/**
+ * Modelos do provedor, com cache em memória. A consulta começa assim que a
+ * caixa de composição aparece (a CLI do claude leva de 5 a 20 s para
+ * responder), não só quando a lista abre. Erro nunca vai para o cache.
+ */
 export function useModels(provider: string) {
   const [models, setModels] = useState<ModelInfo[]>(() => modelsCache.get(provider) ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const current = useRef(provider);
+  current.current = provider;
+
+  const load = useCallback(
+    async (refresh = false): Promise<ModelInfo[]> => {
+      if (!provider) return [];
+      const cached = modelsCache.get(provider);
+      if (cached?.length && !refresh) {
+        setModels(cached);
+        setError(null);
+        return cached;
+      }
+      setLoading(true);
+      setError(null);
+      try {
+        const list = await fetchModels(provider, refresh);
+        if (current.current === provider) setModels(list);
+        return list;
+      } catch (e) {
+        if (current.current === provider) setError(errorMessage(e));
+        return [];
+      } finally {
+        if (current.current === provider) setLoading(false);
+      }
+    },
+    [provider],
+  );
 
   useEffect(() => {
     setModels(modelsCache.get(provider) ?? []);
     setError(null);
     setLoading(false);
-  }, [provider]);
-
-  const load = useCallback(async (): Promise<ModelInfo[]> => {
-    const cached = modelsCache.get(provider);
-    if (cached?.length) return cached;
-    if (!provider) return [];
-    setLoading(true);
-    setError(null);
-    try {
-      const list = await api.agentsModels(provider);
-      if (list.length) modelsCache.set(provider, list);
-      setModels(list);
-      return list;
-    } catch (e) {
-      setError(errorMessage(e));
-      return [];
-    } finally {
-      setLoading(false);
-    }
-  }, [provider]);
+    void load();
+  }, [provider, load]);
 
   return { models, loading, error, load };
 }
 
-export interface ModelPillProps {
+/** Mesma regra do backend (`valid_model_name`): nada de espaço nem começo com "-". */
+export function isValidModelName(m: string): boolean {
+  return m.length > 0 && m.length <= 200 && !m.startsWith("-") && /^[A-Za-z0-9._\-/:[\]#@+]+$/.test(m);
+}
+
+export interface ProviderChoice {
+  id: string;
+  name: string;
+}
+
+export interface AgentModelPillProps {
+  providers: ProviderChoice[];
   provider: string;
+  onProvider(id: string): void;
+  /** Troca de provedor bloqueada (turno em andamento, tarefa encerrada). */
+  providerDisabled?: boolean;
+  /** Por que o provedor não pode ser trocado agora (ou o que acontece ao trocar). */
+  providerHint?: string;
   /** Modelo escolhido; "" = padrão da CLI. */
-  value: string;
-  onChange(model: string): void;
+  model: string;
+  onModel(model: string): void;
   disabled?: boolean;
-  title?: string;
-  /** Aviso no fim da lista (ex.: custo de trocar o modelo de uma conversa com histórico). */
+  /** Dica do modelo (ex.: vale a partir do próximo turno). */
+  modelHint?: string;
+  /** Aviso no fim do menu (ex.: custo de trocar o modelo de uma conversa com histórico). */
   warning?: string | null;
 }
 
-/** Pílula de modelo: "Padrão da CLI" mais os modelos que a CLI do provedor informa. */
-export function ModelPill({ provider, value, onChange, disabled, title, warning }: ModelPillProps) {
+/**
+ * Pílula única "provedor · modelo": abre um menu com o agente (provedor) e o
+ * modelo. Os modelos vêm da CLI; enquanto ela não responde aparece
+ * "Carregando modelos…", em erro a mensagem e "Tentar de novo", e sempre dá
+ * para digitar o nome de um modelo. `/modelo` abre este menu
+ * (`[data-model-pill]`).
+ */
+export function AgentModelPill(props: AgentModelPillProps) {
+  const { providers, provider, onProvider, providerDisabled, providerHint, model, onModel, disabled, modelHint, warning } = props;
   const { models, loading, error, load } = useModels(provider);
-  const options: SelectOption[] = [{ value: "", label: "Padrão da CLI", hint: "o modelo que a CLI escolher" }];
-  for (const m of models) options.push({ value: m.value, label: m.label, hint: m.hint || undefined });
-  // O modelo em uso aparece mesmo antes de a lista ser consultada.
-  if (value && !models.some((m) => m.value === value)) options.push({ value, label: value });
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const btn = useRef<HTMLButtonElement>(null);
+  const close = useCallback((focus: boolean) => {
+    setOpen(false);
+    setTyped("");
+    if (focus) btn.current?.focus();
+  }, []);
+
+  const providerName = providers.find((p) => p.id === provider)?.name ?? provider;
+  const modelLabel = model || "padrão";
+  const typedName = typed.trim();
+  const typedOk = isValidModelName(typedName);
+  const q = typedName.toLowerCase();
+  const shown = q ? models.filter((m) => `${m.value} ${m.hint}`.toLowerCase().includes(q)) : models;
+  const exact = models.some((m) => m.value.toLowerCase() === q);
+
+  const pickModel = (m: string) => {
+    if (m !== model) onModel(m);
+    close(true);
+  };
+  const pickProvider = (id: string) => {
+    if (id !== provider) onProvider(id);
+  };
+
   return (
-    <Select
-      variant="pill"
-      ariaLabel="Modelo"
-      title={title ?? "Modelo que o agente usa (vale a partir do próximo turno)"}
-      icon={<Icon name="box" size={12} />}
-      value={value}
-      options={options}
-      disabled={disabled}
-      popWidth={340}
-      onOpen={() => void load()}
-      warning={warning}
-      note={loading ? "Consultando os modelos na CLI…" : error ? `Não foi possível listar os modelos: ${error}` : null}
-      onChange={onChange}
-    />
+    <>
+      <button
+        ref={btn}
+        type="button"
+        className={`sel-btn sel-pill am-pill${open ? " open" : ""}`}
+        data-model-pill=""
+        aria-label={`Agente e modelo: ${providerName}, ${model || "padrão da CLI"}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title={open ? undefined : `${providerName} · ${model || "Padrão da CLI"}\nClique para trocar o agente ou o modelo.`}
+        disabled={disabled}
+        onClick={() => (open ? close(true) : (setOpen(true), void load()))}
+      >
+        <Icon name="bot" size={12} />
+        <span className="sel-label">
+          <span className="am-prov">{providerName} · </span>
+          <span className="am-model">{modelLabel}</span>
+        </span>
+        <svg className="sel-chev" width="10" height="10" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      <Popover anchor={btn} open={open} onClose={close} ariaLabel="Agente e modelo" width={340} className="am-pop">
+        <div className="pop-sec">
+          <div className="pop-title">Agente</div>
+          {providerHint && <p className="pop-help">{providerHint}</p>}
+          <div className="pop-list" role="radiogroup" aria-label="Agente">
+            {providers.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                role="radio"
+                aria-checked={p.id === provider}
+                className={`sel-opt pop-opt${p.id === provider ? " cur" : ""}`}
+                disabled={providerDisabled && p.id !== provider}
+                onClick={() => pickProvider(p.id)}
+              >
+                <span className="sel-opt-label">{p.name}</span>
+                {p.id === provider && <Check />}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="pop-sec">
+          <div className="pop-title">Modelo</div>
+          {modelHint && <p className="pop-help">{modelHint}</p>}
+          <input
+            className="sel-search pop-input"
+            placeholder="Filtrar ou digitar um modelo…"
+            aria-label="Filtrar ou digitar o nome de um modelo"
+            value={typed}
+            data-autofocus=""
+            onChange={(e) => setTyped(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              const hit = models.find((m) => m.value.toLowerCase() === q) ?? (shown.length === 1 ? shown[0] : undefined);
+              if (hit) pickModel(hit.value);
+              else if (typedOk) pickModel(typedName);
+            }}
+          />
+          <div className="pop-list" role="radiogroup" aria-label="Modelo">
+            {!q && (
+              <button
+                type="button"
+                role="radio"
+                aria-checked={model === ""}
+                className={`sel-opt pop-opt${model === "" ? " cur" : ""}`}
+                onClick={() => pickModel("")}
+              >
+                <span className="sel-opt-label">Padrão da CLI</span>
+                <span className="sel-opt-hint">o modelo que a CLI escolher</span>
+                {model === "" && <Check />}
+              </button>
+            )}
+            {shown.map((m) => (
+              <button
+                key={m.value}
+                type="button"
+                role="radio"
+                aria-checked={m.value === model}
+                className={`sel-opt pop-opt${m.value === model ? " cur" : ""}`}
+                onClick={() => pickModel(m.value)}
+              >
+                <span className="sel-opt-label">{m.label}</span>
+                {m.hint && <span className="sel-opt-hint">{m.hint}</span>}
+                {m.value === model && <Check />}
+              </button>
+            ))}
+            {/* O modelo em uso aparece mesmo fora da lista da CLI. */}
+            {!q && model && !models.some((m) => m.value === model) && (
+              <button type="button" role="radio" aria-checked className="sel-opt pop-opt cur" onClick={() => close(true)}>
+                <span className="sel-opt-label">{model}</span>
+                <span className="sel-opt-hint">em uso</span>
+                <Check />
+              </button>
+            )}
+            {q && !exact && (
+              <button
+                type="button"
+                className="sel-opt pop-opt"
+                disabled={!typedOk}
+                title={typedOk ? undefined : "Nome inválido: sem espaços, sem começar com \"-\"."}
+                onClick={() => pickModel(typedName)}
+              >
+                <span className="sel-opt-label">Usar “{typedName}”</span>
+                <span className="sel-opt-hint">{typedOk ? "nome digitado" : "nome inválido"}</span>
+              </button>
+            )}
+            {loading && (
+              <div className="pop-status" role="status">
+                Carregando modelos…
+              </div>
+            )}
+            {!loading && error && (
+              <div className="pop-status pop-err" role="alert">
+                <span>Não foi possível listar os modelos: {error}</span>
+                <button type="button" className="pop-link" onClick={() => void load(true)}>
+                  Tentar de novo
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+        {warning && (
+          <div className="sel-note sel-warn" role="note">
+            {warning}
+          </div>
+        )}
+      </Popover>
+    </>
+  );
+}
+
+function Check() {
+  return (
+    <svg className="sel-check" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 12l5 5 9-10" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -115,26 +320,143 @@ export function useWorkModeInfo(project: Path | null, rev: unknown): WorkModeInf
   return info;
 }
 
-/** Pílula do modo de trabalho da conversa nova. Sem git, só existe "Direto na pasta". */
-export function ModePill(props: { value: WorkMode; isGit: boolean; onChange(mode: WorkMode): void }) {
-  const { value, isGit, onChange } = props;
-  const options: SelectOption[] = isGit
-    ? [
-        { value: "Isolated", label: WORK_MODE_LABEL.Isolated, hint: "revisa e aplica depois" },
-        { value: "Direct", label: WORK_MODE_LABEL.Direct, hint: "vale na hora" },
-      ]
-    : [{ value: "Direct", label: WORK_MODE_LABEL.Direct, hint: "vale na hora" }];
+// ------------------------------------------------------------ opções da conversa
+
+export interface ComposerOptionsProps {
+  project: Path | null;
+  taskId: TaskId | null;
+  /** Modo de trabalho em vigor (o da tarefa, ou o escolhido para a conversa nova). */
+  mode: WorkMode;
+  /** Padrão do projeto para conversas novas (para marcar o que foge dele). */
+  defaultMode: WorkMode;
+  /** Conversa nova num repositório git: o modo pode ser escolhido. Fora disso, é fixo. */
+  modeEditable: boolean;
+  /** Projeto sem git (só existe "Direto na pasta"). */
+  noGit?: boolean;
+  onMode(mode: WorkMode): void;
+}
+
+/**
+ * Botão de opções da conversa (ícone de ajustes): modo de trabalho, modo de
+ * permissão e auto-work, cada um com rótulo e explicação. O botão mostra
+ * quantas opções fogem do padrão.
+ */
+export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditable, noGit, onMode }: ComposerOptionsProps) {
+  const [open, setOpen] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null);
+  const aw = useAutoWork(project, taskId);
+  const close = useCallback((focus: boolean) => {
+    setOpen(false);
+    if (focus) btn.current?.focus();
+  }, []);
+
+  const offMode = taskId == null && mode !== defaultMode;
+  const changed = (offMode ? 1 : 0) + (aw.on ? 1 : 0);
+  const summary = [
+    mode === "Isolated" ? "isolado" : "direto na pasta",
+    "edições automáticas",
+    aw.on ? `auto-work${aw.progress || " ligado"}` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
   return (
-    <Select
-      variant="pill"
-      ariaLabel="Modo de trabalho"
-      title={isGit ? WORK_MODE_HELP[value] : "Este projeto não é um repositório git: só dá para trabalhar direto na pasta."}
-      icon={<Icon name={value === "Isolated" ? "box" : "folderOpen"} size={12} />}
-      value={value}
-      options={options}
-      popWidth={330}
-      onChange={(v) => onChange(v as WorkMode)}
-    />
+    <>
+      <button
+        ref={btn}
+        type="button"
+        className={`chat-ibtn opt-btn${changed ? " on" : ""}${open ? " open" : ""}`}
+        aria-label={`Opções da conversa: ${summary}${changed ? ` (${changed} fora do padrão)` : ""}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        title={open ? undefined : `Opções da conversa: ${summary}`}
+        onClick={() => (open ? close(true) : setOpen(true))}
+      >
+        <Icon name="sliders" size={15} />
+        {changed > 0 && <span className="opt-count">{changed}</span>}
+      </button>
+      <Popover anchor={btn} open={open} onClose={close} ariaLabel="Opções da conversa" width={360} className="opt-pop">
+        <div className="pop-sec">
+          <div className="pop-title">Modo de trabalho</div>
+          {modeEditable ? (
+            <div className="pop-list" role="radiogroup" aria-label="Modo de trabalho">
+              {(["Isolated", "Direct"] as WorkMode[]).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  role="radio"
+                  aria-checked={m === mode}
+                  className={`sel-opt pop-opt pop-opt-tall${m === mode ? " cur" : ""}`}
+                  onClick={() => onMode(m)}
+                >
+                  <span className="pop-opt-text">
+                    <span className="sel-opt-label">
+                      {WORK_MODE_LABEL[m]}
+                      {m === defaultMode && <span className="pop-tag">padrão</span>}
+                    </span>
+                    <span className="pop-help">{WORK_MODE_HELP[m].replace(/^[^:]+: /, "")}</span>
+                  </span>
+                  {m === mode && <Check />}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="pop-help">
+              <b>{WORK_MODE_LABEL[mode]}</b>
+              {" — "}
+              {noGit
+                ? "este projeto não é um repositório git, então o agente trabalha direto na pasta."
+                : taskId == null
+                  ? "escolha um projeto para definir o modo de trabalho."
+                  : "fixo nesta conversa (escolhido ao criá-la). " + WORK_MODE_HELP[mode].replace(/^[^:]+: /, "")}
+            </p>
+          )}
+        </div>
+        <div className="pop-sec">
+          <div className="pop-title">Modo de permissão</div>
+          <p className="pop-help">
+            <b>Edições automáticas</b> — o agente edita arquivos sem perguntar; o shell só roda os comandos permitidos do projeto.
+          </p>
+          <button
+            type="button"
+            className="pop-link"
+            onClick={() => {
+              close(false);
+              useWorkbench.getState().openPage("settings");
+            }}
+          >
+            Ver comandos permitidos
+          </button>
+        </div>
+        <div className="pop-sec">
+          <div className="pop-title">Auto-work</div>
+          {project ? (
+            <>
+              <label className="pop-switch">
+                <input type="checkbox" checked={aw.on} disabled={!aw.ready || aw.busy} onChange={() => void aw.toggle()} />
+                <span>{aw.on ? `Ligado neste projeto${aw.progress ? ` (${aw.progress.trim()})` : ""}` : "Desligado neste projeto"}</span>
+              </label>
+              <p className="pop-help">
+                Ao fim de cada turno, o Argus verifica as pendências e dispara novos turnos sozinho, dentro dos limites.
+                {aw.detail ? ` ${aw.detail}` : ""}
+              </p>
+              <button
+                type="button"
+                className="pop-link"
+                onClick={() => {
+                  close(false);
+                  useWorkbench.getState().openPage("settings");
+                }}
+              >
+                Limites do auto-work
+              </button>
+            </>
+          ) : (
+            <p className="pop-help">Escolha um projeto para usar o auto-work.</p>
+          )}
+        </div>
+      </Popover>
+    </>
   );
 }
 
