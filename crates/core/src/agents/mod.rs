@@ -3,6 +3,7 @@ pub mod codex;
 pub mod context;
 pub mod gemini;
 pub mod handoff;
+pub mod loop_guard;
 pub mod opencode;
 pub mod orchestrator;
 pub mod provider;

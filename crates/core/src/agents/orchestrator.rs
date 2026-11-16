@@ -825,7 +825,11 @@ impl Orchestrator {
         let tracker = Arc::new(std::sync::Mutex::new(prov.turn_tracker()));
         let tracker_out = tracker.clone();
         let model_out = turn_model.clone();
+        // Loop (mesma ferramenta 3x seguidas): para o turno pelo core.
+        let looped = Arc::new(Notify::new());
+        let looped_out = looped.clone();
         let out_task = tokio::spawn(async move {
+            let mut guard = super::loop_guard::RepeatGuard::new();
             let mut lines = BufReader::new(stdout).lines();
             while let Ok(Some(l)) = lines.next_line().await {
                 let evs = prov.parse_line(&l);
@@ -835,7 +839,13 @@ impl Orchestrator {
                     tr.transform(evs)
                 };
                 for ev in evs {
+                    let stop = guard.observe(&ev);
                     this.record_turn_event(id, &t, turn, ev, model_out.as_deref(), &used);
+                    if let Some(msg) = stop {
+                        this.record_turn_event(id, &t, turn, AgentEvent::Result { ok: false, summary: msg, cost: None }, model_out.as_deref(), &used);
+                        looped_out.notify_one();
+                        return;
+                    }
                 }
             }
         });
@@ -858,7 +868,7 @@ impl Orchestrator {
                 (if s.success() { TaskState::Completed } else { TaskState::Failed(format!("código de saída {:?}", s.code())) },
                  TurnEnd::Exited { ok: s.success() })
             }
-            _ = cancel.notified() => {
+            _ = async { tokio::select! { _ = cancel.notified() => {}, _ = looped.notified() => {} } } => {
                 kill_tree(&mut child).await;
                 out_task.abort();
                 err_task.abort();
