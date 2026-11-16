@@ -72,8 +72,8 @@ pub fn default_shell() -> CommandSpec {
 /// deixam três lado a lado (`opencode`, um script de shell sem extensão;
 /// `opencode.cmd`; às vezes um `.exe` em outra pasta), e o primeiro não é um
 /// executável do Windows ("não é um aplicativo Win32 válido", erro 193). Por
-/// isso o nome é resolvido antes (`.exe` > `.cmd`/`.bat`), e um `.cmd`/`.bat`
-/// roda por `cmd /c`.
+/// isso o nome é resolvido antes (ordem do PATH e, em cada pasta, da PATHEXT;
+/// ver `which_bin`), e um `.cmd`/`.bat` roda por `cmd /c`.
 pub fn launch_target(program: &str, args: &[String]) -> (String, Vec<String>) {
     let resolved = crate::agents::orchestrator::resolve_program(program);
     wrap_script(&resolved.to_string_lossy(), args)

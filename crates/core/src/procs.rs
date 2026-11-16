@@ -131,6 +131,60 @@ pub fn descendants(root: u32, rows: &[ProcRow]) -> HashSet<u32> {
     out
 }
 
+/// Caminho normalizado para comparação: sem `\\?\`, barras `/`, minúsculas,
+/// sem barra final.
+fn norm_path(s: &str) -> String {
+    let s = s.strip_prefix(r"\\?\").unwrap_or(s);
+    s.replace('\\', "/").to_lowercase().trim_end_matches('/').to_string()
+}
+
+/// `path` é `dir` ou está dentro dele (ambos normalizados).
+fn inside(path: &str, dir: &str) -> bool {
+    path == dir || path.strip_prefix(dir).is_some_and(|r| r.starts_with('/'))
+}
+
+/// A linha de comando (normalizada) cita `dir` ou algo dentro dele.
+fn cmdline_mentions(cmd: &str, dir: &str) -> bool {
+    let mut from = 0;
+    while let Some(i) = cmd[from..].find(dir) {
+        let end = from + i + dir.len();
+        match cmd[end..].chars().next() {
+            None | Some('/') | Some('"') | Some('\'') | Some(' ') | Some('\t') => return true,
+            _ => from = end,
+        }
+    }
+    false
+}
+
+/// Processos que prendem o worktree `dir` e podem ser encerrados:
+/// - PIDs já vinculados ao dono (`owned`, a árvore do processo da tarefa), exceto
+///   os que sabidamente rodam fora de `dir` (cwd conhecido e fora dele);
+/// - qualquer processo cujo cwd está dentro de `dir`;
+/// - qualquer processo cuja linha de comando cita `dir` (ou caminho dentro dele).
+///
+/// `exclude` (o próprio Argus) nunca entra. Caminho curto demais (raiz) não casa nada.
+pub fn worktree_pids(rows: &[ProcRow], owned: &HashSet<u32>, dir: &Path, exclude: u32) -> Vec<u32> {
+    let d = norm_path(&dir.to_string_lossy());
+    let depth = d.split('/').filter(|c| !c.is_empty()).count();
+    if depth < 2 {
+        return Vec::new();
+    }
+    let mut out: Vec<u32> = rows
+        .iter()
+        .filter(|r| r.pid != exclude && r.pid != 0)
+        .filter(|r| {
+            let cwd = r.cwd.as_ref().map(|c| norm_path(&c.to_string_lossy())).filter(|c| !c.is_empty());
+            let cwd_in = cwd.as_deref().is_some_and(|c| inside(c, &d));
+            let by_owner = owned.contains(&r.pid) && cwd.as_deref().map_or(true, |c| inside(c, &d));
+            cwd_in || by_owner || cmdline_mentions(&norm_path(&r.cmdline), &d)
+        })
+        .map(|r| r.pid)
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 // ---------------------------------------------------------------- fonte real
 
 /// Fonte real: `sysinfo` + netstat/lsof.
@@ -305,6 +359,24 @@ impl ProcTracker {
     pub fn stop_all(&self, owner: Owner) -> usize {
         let pids: HashSet<u32> = self.servers_of(owner).into_iter().map(|s| s.pid).collect();
         pids.iter().filter(|p| self.kill(**p).is_ok()).count()
+    }
+
+    /// Encerra os processos que prendem o worktree `dir` da sessão `owner`
+    /// (critério em `worktree_pids`). Devolve os PIDs encerrados.
+    pub fn kill_in_dir(&self, owner: Owner, dir: &Path) -> Vec<u32> {
+        self.poll();
+        let rows = self.src.processes();
+        let owned: HashSet<u32> =
+            self.lock().known.iter().filter(|(_, (o, _))| *o == owner).map(|(p, _)| *p).collect();
+        let pids = worktree_pids(&rows, &owned, dir, std::process::id());
+        // Um `taskkill /T` no pai já leva os filhos: o erro dos seguintes é esperado.
+        let killed: Vec<u32> = pids.into_iter().filter(|p| kill_tree(*p).is_ok()).collect();
+        if !killed.is_empty() {
+            let mut g = self.lock();
+            g.servers.retain(|s| !killed.contains(&s.pid));
+            g.rev += 1;
+        }
+        killed
     }
 
     /// Esquece um dono (ex.: terminal fechado).
@@ -571,6 +643,35 @@ Conexões ativas
     fn kill_refuses_untracked() {
         let t = ProcTracker::new(Arc::new(Fake { rows: Mutex::new(vec![]), listen: Mutex::new(vec![]) }));
         assert!(t.kill(4).is_err());
+    }
+
+    #[test]
+    fn worktree_pids_selects_only_worktree_processes() {
+        let wt = Path::new(r"C:\Proj\.argus-worktrees\app-7");
+        let mk = |pid: u32, cmd: &str, cwd: Option<&str>| ProcRow {
+            pid,
+            parent: None,
+            name: format!("p{pid}"),
+            cmdline: cmd.into(),
+            started_at: 0,
+            cwd: cwd.map(PathBuf::from),
+        };
+        let rows = vec![
+            mk(1, "opencode serve", Some(r"C:\Proj\.argus-worktrees\app-7")), // cwd = worktree
+            mk(2, "node x.js", Some(r"c:\proj\.argus-worktrees\APP-7\src\")), // cwd dentro (outra caixa)
+            mk(3, r#"node "C:\Proj\.argus-worktrees\app-7\srv.js""#, Some(r"C:\")), // linha de comando cita
+            mk(4, "node y.js", Some(r"C:\Proj\.argus-worktrees\app-70")), // prefixo parecido: fora
+            mk(5, r"code C:\Proj\.argus-worktrees\app-70\a", None), // idem na linha de comando
+            mk(6, "filho", None), // da sessão, cwd desconhecido
+            mk(7, "filho", Some(r"C:\Outro")), // da sessão, mas roda fora
+            mk(8, "explorer", Some(r"C:\Users")), // alheio
+            mk(9, "argus", Some(r"C:\Proj\.argus-worktrees\app-7")), // o próprio Argus
+            mk(10, r"\\?\C:\Proj\.argus-worktrees\app-7\bin\x.exe", None), // prefixo \\?\
+        ];
+        let owned: HashSet<u32> = [6, 7].into_iter().collect();
+        assert_eq!(worktree_pids(&rows, &owned, wt, 9), vec![1, 2, 3, 6, 10]);
+        // Raiz de disco nunca casa nada.
+        assert!(worktree_pids(&rows, &owned, Path::new(r"C:\"), 9).is_empty());
     }
 
     #[test]

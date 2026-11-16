@@ -253,25 +253,63 @@ pub trait AgentProvider: Send + Sync {
     fn begin_turn(&self, _session: Option<&str>) {}
 }
 
-/// Localiza um executável no PATH, preferindo `.exe` real a wrappers
-/// `.cmd`/`.bat`/`.ps1` quando houver mais de um candidato.
+/// Localiza um executável no PATH, como o shell faria: percorre o PATH em
+/// ordem e, em cada diretório, tenta as extensões na ordem de PATHEXT. O
+/// primeiro achado vence, então um `.cmd` numa pasta anterior do PATH ganha de
+/// um `.exe` numa pasta posterior.
 pub fn which_bin(name: &str) -> Option<PathBuf> {
-    let all: Vec<PathBuf> = which::which_all(name).map(|i| i.collect()).unwrap_or_default();
-    pick_executable(&all).or_else(|| which::which(name).ok())
+    let path = std::env::var_os("PATH")?;
+    let pathext = std::env::var("PATHEXT").ok();
+    which_in(name, &path, pathext.as_deref())
 }
 
-/// Escolhe o melhor candidato: `.exe` > sem extensão em unix > `.cmd`/`.bat`.
-pub(crate) fn pick_executable(cands: &[PathBuf]) -> Option<PathBuf> {
-    let ext = |p: &PathBuf| p.extension().map(|e| e.to_string_lossy().to_ascii_lowercase());
-    if cfg!(windows) {
-        cands
-            .iter()
-            .find(|p| ext(p).as_deref() == Some("exe"))
-            .or_else(|| cands.iter().find(|p| matches!(ext(p).as_deref(), Some("cmd") | Some("bat"))))
-            .cloned()
-    } else {
-        cands.first().cloned()
+/// Extensões que o Windows consegue executar (o resto da PATHEXT, como `.ps1`
+/// ou `.vbs`, não roda por `CreateProcess` nem por `cmd /c` de forma útil).
+const RUNNABLE_EXTS: [&str; 4] = ["com", "exe", "bat", "cmd"];
+
+/// Núcleo de `which_bin`, com PATH e PATHEXT por parâmetro (para testes).
+/// `pathext` = None usa o padrão do Windows. Fora do Windows, a PATHEXT é
+/// ignorada e vale o primeiro arquivo com o nome exato.
+pub(crate) fn which_in(name: &str, path: &std::ffi::OsStr, pathext: Option<&str>) -> Option<PathBuf> {
+    if name.is_empty() {
+        return None;
     }
+    let exts: Vec<String> = pathext
+        .unwrap_or(".COM;.EXE;.BAT;.CMD")
+        .split(';')
+        .map(|e| e.trim().trim_start_matches('.').to_ascii_lowercase())
+        .filter(|e| RUNNABLE_EXTS.contains(&e.as_str()))
+        .collect();
+    // Nome que já traz uma extensão executável (`git.exe`) é procurado como veio.
+    let has_ext = Path::new(name)
+        .extension()
+        .is_some_and(|e| RUNNABLE_EXTS.contains(&e.to_string_lossy().to_ascii_lowercase().as_str()));
+    for dir in std::env::split_paths(path) {
+        if dir.as_os_str().is_empty() {
+            continue;
+        }
+        if cfg!(windows) {
+            if has_ext {
+                let c = dir.join(name);
+                if c.is_file() {
+                    return Some(c);
+                }
+                continue;
+            }
+            for e in &exts {
+                let c = dir.join(format!("{name}.{e}"));
+                if c.is_file() {
+                    return Some(c);
+                }
+            }
+        } else {
+            let c = dir.join(name);
+            if c.is_file() {
+                return Some(c);
+            }
+        }
+    }
+    None
 }
 
 /// Executa um comando curto e devolve (sucesso, stdout+stderr). Sem janela de console no Windows.
@@ -328,16 +366,63 @@ pub fn strip_ansi(s: &str) -> String {
 mod tests {
     use super::*;
 
+    /// Cria `dir/arquivo` vazio.
+    fn touch(dir: &Path, file: &str) -> PathBuf {
+        let p = dir.join(file);
+        std::fs::write(&p, b"").unwrap();
+        p
+    }
+
+    fn join(dirs: &[&Path]) -> std::ffi::OsString {
+        std::env::join_paths(dirs).unwrap()
+    }
+
+    #[cfg(windows)]
     #[test]
-    fn picks_exe_over_cmd() {
-        let c = vec![PathBuf::from(r"C:\npm\opencode.cmd"), PathBuf::from(r"C:\bun\opencode.exe")];
-        let p = pick_executable(&c).unwrap();
-        if cfg!(windows) {
-            assert!(p.ends_with("opencode.exe"));
-        } else {
-            assert_eq!(p, c[0]);
-        }
-        assert_eq!(pick_executable(&[]), None);
+    fn which_respects_path_order_over_exe() {
+        let npm = tempfile::tempdir().unwrap();
+        let bun = tempfile::tempdir().unwrap();
+        touch(npm.path(), "opencode"); // script de shell sem extensão: ignorado
+        let cmd = touch(npm.path(), "opencode.cmd");
+        let exe = touch(bun.path(), "opencode.exe");
+        let ext = Some(".COM;.EXE;.BAT;.CMD");
+        assert_eq!(which_in("opencode", &join(&[npm.path(), bun.path()]), ext), Some(cmd.clone()));
+        assert_eq!(which_in("opencode", &join(&[bun.path(), npm.path()]), ext), Some(exe));
+        assert_eq!(which_in("nada", &join(&[npm.path(), bun.path()]), ext), None);
+        // Só o script sem extensão: não é executável no Windows.
+        let so = tempfile::tempdir().unwrap();
+        touch(so.path(), "opencode");
+        assert_eq!(which_in("opencode", &join(&[so.path()]), ext), None);
+        let _ = cmd;
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn which_follows_pathext_order_within_dir() {
+        let d = tempfile::tempdir().unwrap();
+        let exe = touch(d.path(), "tool.exe");
+        let cmd = touch(d.path(), "tool.cmd");
+        touch(d.path(), "tool.ps1");
+        let p = join(&[d.path()]);
+        assert_eq!(which_in("tool", &p, Some(".COM;.EXE;.BAT;.CMD")), Some(exe.clone()));
+        assert_eq!(which_in("tool", &p, Some(".cmd;.exe")), Some(cmd.clone()));
+        // `.ps1` na PATHEXT não conta: não roda direto.
+        assert_eq!(which_in("tool", &p, Some(".PS1;.CMD")), Some(cmd));
+        // Sem PATHEXT: padrão do Windows (.EXE antes de .CMD).
+        assert_eq!(which_in("tool", &p, None), Some(exe.clone()));
+        // Nome com extensão é procurado como veio.
+        assert_eq!(which_in("tool.exe", &p, Some(".CMD")), Some(exe));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn which_takes_first_in_path_unix() {
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        let fb = touch(b.path(), "tool");
+        assert_eq!(which_in("tool", &join(&[a.path(), b.path()]), None), Some(fb));
+        let fa = touch(a.path(), "tool");
+        assert_eq!(which_in("tool", &join(&[a.path(), b.path()]), Some(".EXE")), Some(fa));
     }
 
     #[test]

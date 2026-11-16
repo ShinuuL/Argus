@@ -819,14 +819,20 @@ impl Orchestrator {
     pub async fn apply(&self, id: TaskId) -> Result<(), OrchestratorError> {
         let wt = self.worktree_of(id)?;
         let t = self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
-        git(&wt, &["add", "-A"]).await?;
-        if !git(&wt, &["status", "--porcelain"]).await?.trim().is_empty() {
+        // Pasta já removida numa tentativa anterior: só faltam o merge e a branch.
+        if wt.exists() {
+            git(&wt, &["add", "-A"]).await?;
+        }
+        if wt.exists() && !git(&wt, &["status", "--porcelain"]).await?.trim().is_empty() {
             let msg = format!("argus: tarefa {id}");
             git(&wt, &["commit", "-m", &msg]).await?;
         }
         let branch = branch_name(id);
+        // O merge já feito se repete sem efeito ("Already up to date"): se a
+        // remoção abaixo falhar, Aplicar pode ser chamado de novo; a tarefa só
+        // vira Aplicada quando o worktree e a branch saíram.
         git(&t.project, &["merge", "--no-ff", "--no-edit", &branch]).await?;
-        remove_worktree(&t.project, &wt, &branch).await?;
+        remove_worktree(&t.project, &wt, &branch, id).await?;
         self.set_state(id, TaskState::Applied);
         Ok(())
     }
@@ -835,7 +841,7 @@ impl Orchestrator {
     pub async fn discard(&self, id: TaskId) -> Result<(), OrchestratorError> {
         let wt = self.worktree_of(id)?;
         let t = self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
-        remove_worktree(&t.project, &wt, &branch_name(id)).await?;
+        remove_worktree(&t.project, &wt, &branch_name(id), id).await?;
         self.set_state(id, TaskState::Discarded);
         Ok(())
     }
@@ -888,9 +894,59 @@ async fn create_worktree(project: &Path, id: TaskId) -> Result<PathBuf, Orchestr
     Ok(wt)
 }
 
-async fn remove_worktree(project: &Path, wt: &Path, branch: &str) -> Result<(), OrchestratorError> {
+/// Encerra os processos que prendem o worktree (a árvore da sessão e os que
+/// rodam dentro dele; ver `procs::worktree_pids`). Devolve quantos.
+async fn release_worktree(id: TaskId, wt: &Path) -> usize {
+    let wt = wt.to_path_buf();
+    tokio::task::spawn_blocking(move || crate::procs::tracker().kill_in_dir(crate::procs::Owner::Session(id), &wt).len())
+        .await
+        .unwrap_or(0)
+}
+
+/// Remove o worktree e, só se ele saiu, a branch. Um processo da sessão (o
+/// serviço em segundo plano do opencode, um servidor) pode manter a pasta
+/// aberta: encerra esses processos e tenta de novo algumas vezes; por fim,
+/// `--force --force` + `prune`. Se ainda assim a pasta ficar, devolve erro e
+/// mantém a branch, para que a operação possa ser repetida.
+async fn remove_worktree(project: &Path, wt: &Path, branch: &str, id: TaskId) -> Result<(), OrchestratorError> {
+    const TRIES: u32 = 4;
     let wt_s = wt.to_string_lossy().into_owned();
-    git(project, &["worktree", "remove", "--force", &wt_s]).await?;
+    let mut last = String::new();
+    if !wt.exists() {
+        let _ = git(project, &["worktree", "prune"]).await;
+        git(project, &["branch", "-D", branch]).await?;
+        return Ok(());
+    }
+    for i in 0..TRIES {
+        if i > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(400 * i as u64)).await;
+        }
+        release_worktree(id, wt).await;
+        match git(project, &["worktree", "remove", "--force", &wt_s]).await {
+            Ok(_) => {
+                last.clear();
+                break;
+            }
+            Err(e) => last = e.to_string(),
+        }
+    }
+    if !last.is_empty() {
+        // Último recurso: força dupla (também para worktree travado) e limpeza do registro.
+        if let Err(e) = git(project, &["worktree", "remove", "--force", "--force", &wt_s]).await {
+            last = e.to_string();
+            if wt.exists() {
+                let _ = tokio::fs::remove_dir_all(wt).await;
+            }
+        }
+        let _ = git(project, &["worktree", "prune"]).await;
+        if wt.exists() {
+            return Err(OrchestratorError::Git(format!(
+                "não foi possível remover o worktree {wt_s}: a pasta continua em uso por outro processo. \
+                 Feche programas abertos nessa pasta e tente de novo. A branch {branch} foi mantida. ({})",
+                last.trim()
+            )));
+        }
+    }
     git(project, &["branch", "-D", branch]).await?;
     Ok(())
 }
@@ -976,7 +1032,7 @@ pub fn build_command(spec: &CommandSpec, default_cwd: Option<&Path>) -> tokio::p
     cmd
 }
 
-/// Caminho real do programa (`.exe` > `.cmd`), ou o nome como veio.
+/// Caminho real do programa (ordem do PATH/PATHEXT, ver `which_bin`), ou o nome como veio.
 pub fn resolve_program(program: &str) -> PathBuf {
     let p = Path::new(program);
     if p.components().count() > 1 || p.is_absolute() {
