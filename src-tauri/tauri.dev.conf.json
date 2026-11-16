@@ -13,5 +13,12 @@
         "dragDropEnabled": false
       }
     ]
+  },
+  "bundle": {
+    "icon": [
+      "icons/dev/32x32.png",
+      "icons/dev/icon.png",
+      "icons/dev/icon.ico"
+    ]
   }
 }
