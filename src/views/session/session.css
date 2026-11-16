@@ -17,7 +17,7 @@
 .cv-state.muted { color: var(--text-2); }
 .cv-agent { flex: 0 2 auto; min-width: 96px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--text-2); cursor: default; }
 @container (max-width: 680px) { .cv-agent { display: none; } }
-.cv-ctx { position: relative; flex: none; display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 4px; border-radius: 4px; font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; cursor: default; outline: none; }
+.cv-ctx { position: relative; flex: none; display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 4px; border-radius: var(--radius-sm); font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; cursor: default; outline: none; }
 .cv-ctx:focus-visible { box-shadow: 0 0 0 2px var(--focus); }
 .cv-ctx-bar { width: 44px; height: 3px; border-radius: 2px; background: var(--border); overflow: hidden; }
 .cv-ctx-fill { display: block; height: 100%; background: var(--accent); }
@@ -25,12 +25,12 @@
 .cv-ctx.err .cv-ctx-fill { background: var(--err); }
 .cv-ctx.warn .cv-ctx-pct { color: var(--warn); }
 .cv-ctx.err .cv-ctx-pct { color: var(--err); }
-.cv-ctx-tip { display: none; position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; min-width: 230px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 6px; box-shadow: 0 6px 18px var(--shadow); color: var(--text); white-space: normal; }
+.cv-ctx-tip { display: none; position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; min-width: 230px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius); box-shadow: 0 6px 18px var(--shadow); color: var(--text); white-space: normal; }
 .cv-ctx:hover .cv-ctx-tip, .cv-ctx:focus-visible .cv-ctx-tip { display: block; }
 .cv-ctx-tip dl { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; margin: 6px 0 0; }
 .cv-ctx-tip dt { color: var(--text-2); }
 .cv-ctx-tip dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
-.cv-ctx-alert { display: block; margin-top: 6px; padding: 3px 6px; border-radius: 4px; }
+.cv-ctx-alert { display: block; margin-top: 6px; padding: 3px 6px; border-radius: var(--radius-sm); }
 .cv-ctx-alert.warn { background: var(--warn-bg); color: var(--warn); }
 .cv-ctx-alert.err { background: var(--err-bg); color: var(--err); }
 .cv-total { flex: none; white-space: nowrap; font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; cursor: default; }
@@ -70,7 +70,7 @@
 .cv-denied { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border: 1px solid var(--warn); border-radius: var(--radius-lg); background: var(--surface); font-size: 12.5px; }
 .cv-denied > .ic { flex: none; margin-top: 2px; color: var(--warn); }
 .cv-denied-text { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
-.cv-denied code { font: var(--font-mono); font-size: 12px; padding: 1px 6px; border-radius: 4px; background: var(--bg); border: 1px solid var(--border); overflow-wrap: anywhere; }
+.cv-denied code { font: var(--font-mono); font-size: 12px; padding: 1px 6px; border-radius: var(--radius-sm); background: var(--bg); border: 1px solid var(--border); overflow-wrap: anywhere; }
 .cv-denied-why { flex-basis: 100%; color: var(--text-2); font-size: 12px; }
 .cv-denied > button { flex: none; align-self: center; padding: 3px 10px; font-size: 12px; }
 
@@ -83,7 +83,7 @@
 .cv-hold-x:hover { background: var(--bg-hover); color: var(--text); }
 .cv-hold p { margin: 0; color: var(--text-2); line-height: 1.45; }
 .cv-hold p b { color: var(--text); }
-.cv-hold code { font: var(--font-mono); font-size: 12px; padding: 1px 6px; border-radius: 4px; background: var(--bg); border: 1px solid var(--border); overflow-wrap: anywhere; }
+.cv-hold code { font: var(--font-mono); font-size: 12px; padding: 1px 6px; border-radius: var(--radius-sm); background: var(--bg); border: 1px solid var(--border); overflow-wrap: anywhere; }
 .cv-hold-cited { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; padding: 6px 8px; border-radius: var(--radius); background: var(--bg); border-left: 3px solid var(--warn); }
 .cv-hold-cited code { border-color: var(--warn); font-weight: 600; }
 .cv-hold-group { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
@@ -95,7 +95,7 @@
 @container (max-width: 560px) { .cv-hold-group { flex-direction: column; gap: 3px; } .cv-hold-label { width: auto; } }
 
 /* Fala do usuário em caixa; resposta em Markdown corrido, sem balão. */
-.cv .chat-msg.user { align-self: stretch; max-width: none; padding: 10px 13px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); color: var(--text); }
+.cv .chat-msg.user { align-self: stretch; max-width: none; padding: 10px 13px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--border); color: var(--text); }
 .cv .chat-msg.agent { padding: 0; }
 .cv .chat-md { line-height: 1.62; font-size: 13.5px; }
 
@@ -140,7 +140,7 @@
 /* Árvore de subagentes (painel direito) */
 .ses-tree { display: flex; flex-direction: column; }
 .ses-tree-title { display: flex; justify-content: space-between; gap: 8px; padding: 0 2px 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
-.ses-tree-row { display: flex; align-items: center; gap: 7px; width: 100%; padding: 5px 8px; background: none; border: 0; border-radius: 4px; text-align: left; min-width: 0; }
+.ses-tree-row { display: flex; align-items: center; gap: 7px; width: 100%; padding: 5px 8px; background: none; border: 0; border-radius: var(--radius-sm); text-align: left; min-width: 0; }
 .ses-tree-row:hover { background: var(--bg-hover); }
 .ses-tree-row.sel { background: var(--selection); }
 .ses-tree-row:focus-visible, .ses-sub-card:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
@@ -160,7 +160,7 @@
 .ses-readonly { flex: none; font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border-strong); color: var(--text-2); white-space: nowrap; }
 .ses-sub-block { display: flex; flex-direction: column; gap: 5px; }
 .ses-sub-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
-.ses-sub-box { padding: 10px 13px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; max-height: 320px; overflow: auto; }
+.ses-sub-box { padding: 10px 13px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; max-height: 320px; overflow: auto; }
 
 /* Conversa estreita (split): a barra continua numa linha só (ver chat.css); só a coluna perde folga. */
 .chat-pills + * { margin-left: auto; }

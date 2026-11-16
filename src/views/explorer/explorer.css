@@ -11,7 +11,7 @@
 .tree .node { display: flex; align-items: center; gap: 4px; border-radius: 3px; }
 .tree .node .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tree .node .arrow { width: 10px; flex: none; opacity: .7; font-size: 10px; }
-.tree .node .badge { flex: none; font: 600 10px Consolas, monospace; padding-right: 4px; }
+.tree .node .badge { flex: none; font: 600 10px var(--font-mono-family); padding-right: 4px; }
 .tree .node.current { background: var(--bg-selected); }
 .tree .node:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 .tree .st-mod .label, .tree .st-mod .badge { color: var(--warn); }

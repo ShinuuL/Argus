@@ -10,7 +10,7 @@ body { -webkit-font-smoothing: antialiased; font: var(--font-ui); }
 button:disabled { opacity: 0.5; cursor: default; }
 ::selection { background: var(--selection); color: var(--text); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: var(--bg-control); border-radius: 5px; }
+::-webkit-scrollbar-thumb { background: var(--bg-control); border-radius: var(--radius); }
 ::-webkit-scrollbar-thumb:hover { background: var(--bg-control-hover); }
 ::-webkit-scrollbar-corner { background: transparent; }
 input[type="checkbox"], input[type="radio"], input[type="range"], progress { accent-color: var(--accent); }
@@ -83,7 +83,7 @@ input::placeholder, textarea::placeholder { color: var(--text-2); opacity: 0.8; 
 
 /* Diff */
 .df-files { display: flex; flex-direction: column; gap: 1px; }
-.df-file { display: flex; align-items: center; gap: 8px; width: 100%; padding: 3px 6px; background: none; border: 0; border-radius: 4px; text-align: left; font: var(--font-mono); min-width: 0; }
+.df-file { display: flex; align-items: center; gap: 8px; width: 100%; padding: 3px 6px; background: none; border: 0; border-radius: var(--radius-sm); text-align: left; font: var(--font-mono); min-width: 0; }
 button.df-file:hover { background: var(--bg-hover); }
 .df-file .ellipsis { flex: 1; }
 .df-letter { flex: none; width: 12px; color: var(--warn); font-weight: 600; }

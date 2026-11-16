@@ -5,7 +5,7 @@
 }
 .argo-worried { --argo-body: var(--text-2); --argo-foot: var(--border-strong); }
 .argo-sweating { --argo-body: var(--warn); --argo-foot: color-mix(in srgb, var(--warn) 65%, var(--bg)); }
-.argo-btn { display: inline-flex; align-items: center; padding: 0 2px; height: 100%; background: none; border: 0; border-radius: 6px; cursor: pointer; }
+.argo-btn { display: inline-flex; align-items: center; padding: 0 2px; height: 100%; background: none; border: 0; border-radius: var(--radius); cursor: pointer; }
 .argo-btn:hover { background: var(--bg-hover); }
 .argo-svg { display: block; overflow: visible; }
 .argo-fill, .argo-lid { fill: var(--argo-body); }
@@ -47,7 +47,7 @@
 .argo-bubble {
   position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 60; min-width: 250px; padding: 8px 10px;
   display: flex; flex-direction: column; gap: 3px; font-size: 12px; line-height: 1.5; white-space: nowrap;
-  background: var(--bg-panel); color: var(--text); border: 1px solid var(--border-control); border-radius: 8px;
+  background: var(--bg-panel); color: var(--text); border: 1px solid var(--border-control); border-radius: var(--radius-lg);
   box-shadow: 0 4px 14px var(--shadow);
 }
 .argo-bubble::after { content: ""; position: absolute; top: 100%; right: 8px; border: 6px solid transparent; border-top-color: var(--border-control); }

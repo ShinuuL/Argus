@@ -112,11 +112,26 @@
   --text-on-status: var(--on-status);
   --accent-soft: color-mix(in srgb, var(--accent) 22%, transparent);
 
-  /* Tipografia e medidas */
-  --font-ui: 13px system-ui, sans-serif;
-  --font-mono: 12px "Cascadia Mono", Consolas, monospace;
-  --radius: 5px;
-  --radius-lg: 8px;
+  /* Tipografia: Geist (OFL-1.1, empacotada por @fontsource-variable/geist, sem CDN); mono do sistema. */
+  --font-sans: "Geist Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono-family: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+  --font-ui: 13px/1.35 var(--font-sans);
+  --font-mono: 12px var(--font-mono-family);
+
+  /* Espaçamento: passo de 4 px. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* Raios: controles pequenos, controles, cartões e a caixa de composição. */
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+
   --sidebar-width: 272px;
   --right-width: 320px;
   --top-height: 32px;
