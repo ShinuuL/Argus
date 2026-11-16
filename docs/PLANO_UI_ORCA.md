@@ -1,6 +1,6 @@
 # Plano: aproximar a UI do Argus da Orca e trocar os ícones
 
-_2026-11-16. Pesquisa e plano; nada foi implementado. Base: PROXIMOS_PASSOS.md (Layout, Temas e Decisões fixas), `src/styles/*.css`, `src/shell/icons.tsx` e os prints de validação._
+_2026-11-16. Pesquisa e plano. **Fases 1, 2 e 3 feitas em 2026-11-16** (ver a tabela da seção 5); as demais seguem pendentes. Base: PROXIMOS_PASSOS.md (Layout, Temas e Decisões fixas), `src/styles/*.css`, `src/shell/icons.tsx` e os prints de validação._
 
 ## 1. A Orca (referência)
 
@@ -87,9 +87,9 @@ Regras: textos em português do Brasil, Windows primeiro, sem marca e toda cor p
 
 | Fase | Entregável visível | Arquivos | Riscos | Como validar |
 |---|---|---|---|---|
-| 1. Tipografia e escala | Fonte Geist embutida (woff2 local, OFL), corpo de 13 px, mono Cascadia; escala de espaçamento `--space-1..6` (passo de 4 px); raios `--radius: 6px` e `--radius-lg: 10px` | `src/styles/tokens.css`, `src/styles/index.css`, `src/assets/fonts/` | A largura dos textos muda (truncamentos, aba estreita) | Prints antes e depois; aba estreita (print 07) |
-| 2. Tokens de superfície | Bordas mais suaves (`--border` com ~7–10% do texto sobre a superfície), status bar neutra, barra lateral com tom próprio, cartões no lugar de linhas | `tokens.css`, `shell.css`, `components.css`, `crates/core/assets/remote/style.css` | Contraste AA nos temas Brasa e Nebulosa; erro não pode depender só da cor | Medir contraste; prints dos 3 temas |
-| 3. Ícones Lucide | Todos os ícones trocados, com a mesma API | `package.json`, `src/shell/icons.tsx` | Ícone faltando no mapa (o TS acusa); diferença de peso do traço | Conferir os `name=` usados contra o mapa; prints |
+| 1. Tipografia e escala ✓ feita | Fonte Geist embutida (woff2 local, OFL), corpo de 13 px, mono Cascadia; escala de espaçamento `--space-1..6` (passo de 4 px); raios `--radius: 6px` e `--radius-lg: 10px` | `src/styles/tokens.css`, `src/styles/index.css`, `src/assets/fonts/` | A largura dos textos muda (truncamentos, aba estreita) | Prints antes e depois; aba estreita (print 07) |
+| 2. Tokens de superfície ✓ feita | Bordas mais suaves (`--border` com ~7–10% do texto sobre a superfície), status bar neutra, barra lateral com tom próprio, cartões no lugar de linhas | `tokens.css`, `shell.css`, `components.css`, `crates/core/assets/remote/style.css` | Contraste AA nos temas Brasa e Nebulosa; erro não pode depender só da cor | Medir contraste; prints dos 3 temas |
+| 3. Ícones Lucide ✓ feita | Todos os ícones trocados, com a mesma API | `package.json`, `src/shell/icons.tsx` | Ícone faltando no mapa (o TS acusa); diferença de peso do traço | Conferir os `name=` usados contra o mapa; prints |
 | 4. Estados do agente | Componente de estado (spinner, check, pergunta, alerta, ponto) na barra lateral, nas abas e no cabeçalho, com tooltip em pt-BR | `src/views/projects/*`, `src/views/workbench/*`, `icons.tsx` | Mapear os estados do core para os novos rótulos | Sessão rodando, concluída, com erro e com comando negado |
 | 5. Ícone do app | Novo ícone em todos os tamanhos e na web app | `src-tauri/icons/*`, `crates/core/assets/remote/icon.svg`, geração do manifest | Cache de ícones do Windows (reinstalar ou limpar o cache) | Instalador NSIS, barra de tarefas e celular |
 | 6. Barra esquerda no estilo da Orca | Busca no topo; sessão com modelo e idade à direita; sessão selecionada em cartão; rodapé só com ícones e tooltip | `src/views/projects/*`, `shell.css` | Perder os rótulos do rodapé (compensar com tooltip e aria-label) | Prints 01, 18 e 36 |

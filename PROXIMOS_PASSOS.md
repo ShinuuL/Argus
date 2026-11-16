@@ -50,9 +50,9 @@ package.json, vite.config.ts, index.html     front-end (vite)
 src/                                         interface em React 18 + TypeScript + zustand
   api/        uma função tipada por comando Tauri, eventos e tipos que espelham o serde
   store/      useApp, useLayout, useWorkbench, useTerminals, useTheme, bootstrap (liga eventos ao estado)
-  shell/      Shell (layout), TopBar, RightPanel, BottomPanel, StatusBar, ContextMenu, icons (SVG inline),
+  shell/      Shell (layout), TopBar, RightPanel, BottomPanel, StatusBar, ContextMenu, icons (Lucide, mesma API Icon/IconName/toolIcon),
               useActiveContext (sessão e projeto da aba em foco), useGlobalShortcuts
-  styles/     tokens.css (TODAS as cores, por tema), components.css (classes portadas), shell.css (layout)
+  styles/     tokens.css (TODAS as cores por tema, mais fonte, espaçamento --space-1..6 e raios --radius-sm/--radius/--radius-lg/--radius-xl), components.css (classes portadas), shell.css (layout)
   views/
     projects/   barra esquerda: projetos, sessões e o rodapé que abre as telas de apoio
     session/    a conversa (aba principal): index (ChatTab), Transcript, panels (Alterações e Subagentes
@@ -101,6 +101,8 @@ Atalhos novos: Ctrl+N (nova conversa), Ctrl+B (barra esquerda), Ctrl+J (terminal
 ### Temas
 
 Três temas, escolhidos em Configurações e lembrados no localStorage (`argus.tema`): **Oceano** (padrão), **Nebulosa** e **Brasa**. Toda cor vem de `src/styles/tokens.css`: cada tema define os tokens de base (`--bg`, `--surface`, `--surface-2`, `--border`, `--border-strong`, `--text`, `--text-2`, `--accent`, `--accent-hover`, `--on-accent`, `--accent-text`, `--selection`, `--focus`, `--status-bg`, `--on-status`) só com cores da própria paleta; os demais são derivados. As cores de estado (`--ok`, `--warn`, `--err`, `--run`) são iguais nos três. Nenhum componente usa hex direto. O Monaco (`views/workbench/monaco.ts`) e o xterm (`views/terminal/session.ts`) montam o tema a partir dos tokens e trocam junto.
+
+Desde 2026-11-16 (fases 1 a 3 de `docs/PLANO_UI_ORCA.md`): fonte **Geist** variável (OFL-1.1) embutida pelo pacote npm `@fontsource-variable/geist`, sem CDN, em `--font-sans`; mono Cascadia em `--font-mono-family`. A hierarquia vem do tom das superfícies: `--border` é só ~7–10% do texto sobre a superfície (a `--border-strong` continua com a cor da paleta, nos controles e na caixa de composição) e a status bar é neutra (`--status-bg` = fundo do app, `--on-status` = texto secundário, com uma borda no topo). Ícones: `lucide-react` (ISC) com versão fixada; `src/shell/icons.tsx` mapeia os nomes antigos para os componentes Lucide (traço 1,75).
 
 A web app do celular (`crates/core/assets/remote/style.css`) repete os mesmos tokens e os mesmos três temas; o seletor fica na tela Ajustes dela e a escolha é guardada no aparelho (mesma chave `argus.tema`). O `theme-color`, o manifest e o ícone acompanham o tema (`/manifest.webmanifest?tema=...`).
 
