@@ -1,5 +1,7 @@
 //! Estado global do backend, registrado com `app.manage` e lido pelos comandos.
 use argus_core::agents::claude::ClaudeProvider;
+use argus_core::agents::codex::CodexProvider;
+use argus_core::agents::gemini::GeminiProvider;
 use argus_core::agents::opencode::OpencodeProvider;
 use argus_core::agents::orchestrator::Orchestrator;
 use argus_core::agents::provider::AgentProvider;
@@ -66,7 +68,12 @@ impl AppCtx {
             Some(model) => OpencodeProvider::with_model(model),
             None => OpencodeProvider::new(),
         };
-        let providers: Vec<Arc<dyn AgentProvider>> = vec![Arc::new(ClaudeProvider::new()), Arc::new(opencode)];
+        let providers: Vec<Arc<dyn AgentProvider>> = vec![
+            Arc::new(ClaudeProvider::new()),
+            Arc::new(opencode),
+            Arc::new(CodexProvider::new()),
+            Arc::new(GeminiProvider::new()),
+        ];
         let (db, db_path) = match open_db() {
             Some((db, p)) => (Some(db), Some(p)),
             None => (None, None),

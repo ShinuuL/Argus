@@ -2,7 +2,7 @@
 
 _Atualizado em 2026-11-16. Base: 2026-11-14, depois da migração da interface de Dioxus para Tauri 2, do redesenho do layout (chat no centro, temas) e de uma rodada de validação na janela com tarefas reais._
 
-O Argus é uma IDE desktop que gerencia vários projetos de uma pasta raiz e orquestra agentes de IA (Claude Code e OpenCode). A lógica fica em Rust (`argus-core`); a interface é React + TypeScript dentro de uma janela Tauri 2. Os agentes usam o login das próprias CLIs oficiais; a IDE nunca lê nem guarda tokens.
+O Argus é uma IDE desktop que gerencia vários projetos de uma pasta raiz e orquestra agentes de IA (Claude Code, OpenCode, Codex e Gemini). A lógica fica em Rust (`argus-core`); a interface é React + TypeScript dentro de uma janela Tauri 2. Os agentes usam o login das próprias CLIs oficiais; a IDE nunca lê nem guarda tokens.
 
 **Estado em uma frase:** tudo compila, os testes passam e quase tudo foi exercitado na janela em 2026-11-14 com tarefas reais do claude e do opencode (conversa nova, fila, anexos, diff, aplicar, descartar, auto-work, servidores, terminais, arrasto de abas). A coluna "Estado" da tabela abaixo diz o que foi conferido de verdade e o que ainda falta.
 
@@ -26,7 +26,7 @@ Testes e verificações:
 
 ```powershell
 npx tsc --noEmit            # tipos da interface
-cargo test --workspace      # 110 testes do core + 16 do desktop
+cargo test --workspace      # 141 testes do core + 18 do desktop
 node --check crates/core/assets/remote/app.js   # sintaxe da web app do celular
 ```
 
@@ -70,7 +70,7 @@ src-tauri/    crate argus-desktop (Tauri 2, identificador dev.argus.app)
   src/events.rs  repassa os eventos do orquestrador e dos servidores para a interface
 crates/core   (argus-core): workspace, monitor, pty, procs, deps, metrics, db, remote, autowork,
               isolation (o que a cópia isolada não teria), permissions (comandos liberados ao agente),
-              agents/{provider, claude, opencode, orchestrator, handoff (resumo na troca de agente)}
+              agents/{provider, claude, opencode, codex, gemini, orchestrator, handoff (resumo na troca de agente)}
               assets/remote (web app do celular: index.html, app.js, style.css, unauthorized.html,
               manifest.webmanifest, icon.svg; embutidos no executável por include_str)
 ```
@@ -303,6 +303,29 @@ Em aberto:
 - [ ] Edição de arquivos pelo OpenCode v2 não conferida: sem `--auto`, o `run` pode negar a permissão de escrita.
 - [ ] Um turno retomado gravou um evento de resultado vazio (ok, custo 0) logo no começo. **2026-11-16:** `result` de sucesso sem texto, sem uso novo e custo 0 não vira mais evento. Causa deduzida (não reproduzida): `result` de zero turnos do processo retomado ou repetido com o mesmo acumulado.
 - [ ] Pareamento pelo celular dava "Não autorizado" ao abrir o link do QR (visto pelo Tailscale). Causa provável: cookie `SameSite=Strict`, que o navegador do celular não envia quando o link vem da câmera ou de outro app. Corrigido no código (cookie `Lax` e página de pareamento que segue sozinha para a tela inicial); **falta confirmar num aparelho**.
+
+## Codex e Gemini (2026-11-16)
+
+**Estado: compila e os testes do parser passam; não exercitado na janela** (nenhuma das duas CLIs estava instalada na máquina de desenvolvimento).
+
+| | Codex (`@openai/codex`, `codex`) | Gemini (`@google/gemini-cli`, `gemini`) |
+|---|---|---|
+| Código | `crates/core/src/agents/codex.rs` | `crates/core/src/agents/gemini.rs` |
+| Login | `codex login` (conta ChatGPT); status por `codex login status` | `gemini` interativo ("Login with Google" ou `/auth`); sem comando de status: lê só o tipo escolhido em `~/.gemini/settings.json` e a existência de `oauth_creds.json`/`GEMINI_API_KEY`, nunca o conteúdo |
+| Turno | `codex exec --json --sandbox workspace-write -c approval_policy=never --skip-git-repo-check -C <pasta> [-m modelo] [resume <thread_id>] -` | `gemini --output-format stream-json --approval-mode auto_edit --skip-trust [-m modelo] [--resume <session_id>]` |
+| Pedido | entrada padrão (`-`) | entrada padrão (modo sem interface porque a entrada não é terminal) |
+| Sem aprovação | edição e comandos de shell DENTRO do sandbox (escrita só na pasta de trabalho, sem rede); o que o sandbox barra falha (vira `Denied`) | só edição de arquivos na pasta de trabalho; shell e o resto que pediria aprovação é negado pela CLI |
+| Modelos | lista fixa (gpt-6.1-sol, gpt-6.1-terra, gpt-6-astra, gpt-6-luna) + digitação | `gemini --list-models --output-format json`; se falhar, lista fixa |
+| Contexto | só em turno sem ferramentas (o `usage` é soma dos pedidos); janela conhecida só do gpt-6.1-sol (500 mil) | idem; janela de 1 milhão |
+| Custo | tabela oficial da OpenAI; o codex não informa o modelo, então "Padrão da CLI" cai no fallback | tabela oficial do AI Studio, uma linha de uso por modelo |
+
+Isolado: os dois recebem o aviso da cópia na frente do primeiro pedido (como o opencode). Anexos do chat ficam fora da pasta de trabalho e não são liberados para eles (`--add-dir` é só do claude).
+
+Falta:
+- instalar (botão "Instalar..." em Provedores, que usa o fluxo de Dependências), fazer login e rodar uma conversa de cada na janela: conferir o stream real, retomada, troca de agente e custo;
+- conferir as suposições: total acumulado do `turn.completed` do codex numa retomada (o Argus desconta o último total visto da thread; depois de reiniciar o app, o primeiro turno retomado pode contar o total inteiro), raciocínio dentro de `output_tokens`, `--skip-trust` aceito pela versão instalada do gemini, `gemini` sem `-p` entrando no modo sem interface;
+- sandbox do codex no Windows (é experimental na CLI): verificar se `workspace-write` realmente bloqueia escrita fora da pasta;
+- "Liberar este comando neste projeto" não vale para o codex (a lista de comandos permitidos é do claude).
 
 ## Próximos passos (em ordem)
 

@@ -30,7 +30,8 @@ impl ContextUsage {
 
 /// Tamanho da janela de contexto de um modelo, pelo nome. Modelos com o sufixo
 /// `[1m]` (ou `-1m`) têm 1.000.000 tokens; os do claude (nomes `claude-*` e os
-/// apelidos `opus`, `sonnet`, `haiku`, `default`), 200.000. Desconhecido = None.
+/// apelidos `opus`, `sonnet`, `haiku`, `default`), 200.000; gemini, 1.000.000;
+/// `gpt-6.1-sol` (codex), 500.000. Desconhecido = None.
 pub fn window_for_model(model: &str) -> Option<u64> {
     let m = model.trim().to_ascii_lowercase();
     if m.is_empty() {
@@ -46,6 +47,14 @@ pub fn window_for_model(model: &str) -> Option<u64> {
         || ["opus", "sonnet", "haiku", "default", "opusplan"].iter().any(|a| name == *a || name.starts_with(&format!("{a}-")));
     if claude {
         return Some(200_000);
+    }
+    // gemini: os modelos e apelidos da Gemini CLI têm 1.000.000 de tokens de entrada.
+    if name.starts_with("gemini") || ["auto", "pro", "flash", "flash-lite"].contains(&name) {
+        return Some(1_000_000);
+    }
+    // codex: só o que a página de modelos do Codex informa (GPT-6.1 Sol, 500 mil).
+    if name.starts_with("gpt-6.1-sol") {
+        return Some(500_000);
     }
     None
 }
@@ -77,6 +86,10 @@ mod tests {
         assert_eq!(window_for_model("opus"), Some(200_000));
         assert_eq!(window_for_model("anthropic/claude-sonnet-4-5"), Some(200_000));
         assert_eq!(window_for_model("openai/gpt-x"), None);
+        assert_eq!(window_for_model("gemini-3.8-flash"), Some(1_000_000));
+        assert_eq!(window_for_model("flash"), Some(1_000_000));
+        assert_eq!(window_for_model("gpt-6.1-sol"), Some(500_000));
+        assert_eq!(window_for_model("gpt-6-luna"), None);
         assert_eq!(window_for_model(""), None);
     }
 

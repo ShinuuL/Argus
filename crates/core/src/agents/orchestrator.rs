@@ -805,7 +805,11 @@ impl Orchestrator {
             let mut lines = BufReader::new(stdout).lines();
             while let Ok(Some(l)) = lines.next_line().await {
                 let evs = prov.parse_line(&l);
-                tracker_out.lock().unwrap_or_else(|e| e.into_inner()).observe(&l, &evs);
+                let evs = {
+                    let mut tr = tracker_out.lock().unwrap_or_else(|e| e.into_inner());
+                    tr.observe(&l, &evs);
+                    tr.transform(evs)
+                };
                 for ev in evs {
                     this.record_turn_event(id, &t, turn, ev, model_out.as_deref(), &used);
                 }

@@ -6,13 +6,13 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { api, errorMessage, loginStatusLabel, onAnyPtyExit, type LoginStatus, type ProviderInfo } from "@/api";
-import { defaultCwd, useTerminals } from "@/store";
+import { defaultCwd, useApp, useTerminals } from "@/store";
 import { Icon } from "@/shell/icons";
 import "./agents.css";
 
 let providersCache: Promise<ProviderInfo[]> | null = null;
 
-/** Provedores disponíveis (Claude Code, OpenCode): uma consulta por execução do app. */
+/** Provedores disponíveis (Claude Code, OpenCode, Codex, Gemini): uma consulta por execução do app. */
 export function useProviders(): ProviderInfo[] {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   useEffect(() => {
@@ -37,6 +37,26 @@ export default function ProvidersView() {
   const [login, setLogin] = useState<Record<string, LoginStatus | undefined>>({});
   const [error, setError] = useState<string | null>(null);
   const openTerminal = useTerminals((s) => s.open);
+  const requestInstall = useApp((s) => s.requestInstall);
+
+  /** "Instalar...": só abre a confirmação do fluxo de Dependências (comando exato, terminal). */
+  const doInstall = async (p: ProviderInfo) => {
+    try {
+      const plan = await api.depsInstallPlan(p.id);
+      if (!plan) {
+        setError(`Não há instalação conhecida para a CLI ${p.id}.`);
+        return;
+      }
+      requestInstall({
+        title: `Instalar ${p.display_name}?`,
+        reason: `A CLI ${p.id} não foi encontrada no PATH. Depois de instalar, faça o login por aqui e atualize o status.`,
+        plan,
+      });
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
 
   const refresh = useCallback(() => {
     setLogin({});
@@ -87,7 +107,9 @@ export default function ProvidersView() {
                 {label}
               </span>
               {st === "NotInstalled" ? (
-                <span className="small muted ag-card-note">Instale a CLI {p.id} e atualize o status.</span>
+                <button title="Mostra o comando de instalação e pede confirmação antes de executar" onClick={() => void doInstall(p)}>
+                  Instalar...
+                </button>
               ) : st === "LoggedIn" ? (
                 <button className="ag-relogin" title={`Abre o login da CLI ${p.id} num terminal para trocar de conta`} onClick={() => void doLogin(p)}>
                   Trocar de conta

@@ -12,7 +12,7 @@ import { errorMessage, isTauri, type Path, type TaskId } from "@/api";
 export interface ChatAgent {
   name: string;
   description: string;
-  /** "claude" ou "opencode". */
+  /** "claude", "opencode", "codex" ou "gemini". */
   provider: string;
   /** "projeto" ou "usuario". */
   scope: string;

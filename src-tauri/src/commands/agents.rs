@@ -178,7 +178,7 @@ pub async fn isolation_check(project: PathBuf, prompt: Option<String>) -> Result
     .await
 }
 
-/// Provedores disponíveis (claude, opencode).
+/// Provedores disponíveis (claude, opencode, codex, gemini).
 #[tauri::command]
 pub async fn agents_providers(ctx: State<'_, AppCtx>) -> Result<Vec<ProviderInfo>, String> {
     Ok(ctx

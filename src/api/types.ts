@@ -131,7 +131,7 @@ export interface CommandSpec {
 }
 
 export interface ProviderInfo {
-  /** "claude" ou "opencode". */
+  /** "claude", "opencode", "codex" ou "gemini". */
   id: string;
   display_name: string;
   /** Modelo inicial das conversas novas (null = padrão da CLI). */

@@ -25,6 +25,10 @@ impl ModelPrice {
     pub const fn standard(input: f64, output: f64) -> Self {
         Self { input, output, cache_read: input * 0.1, cache_write: input * 1.25 }
     }
+    /// Preço com cache lido explícito e sem escrita em cache (OpenAI, Gemini).
+    pub const fn cached(input: f64, output: f64, cache_read: f64) -> Self {
+        Self { input, output, cache_read, cache_write: 0.0 }
+    }
 }
 
 /// Tabela de preços. As chaves são trechos do nome do modelo; vence a chave
@@ -52,6 +56,21 @@ impl Default for Pricing {
         m.insert("haiku".into(), ModelPrice::standard(1.0, 5.0));
         m.insert("haiku-3-5".into(), ModelPrice::standard(0.8, 4.0));
         m.insert("3-5-haiku".into(), ModelPrice::standard(0.8, 4.0));
+        // OpenAI (codex), tabela oficial "Standard, short context", 2026-11-16
+        // (developers.openai.com/api/docs/pricing). Sem cobrança de escrita em cache.
+        m.insert("gpt-6.1-sol".into(), ModelPrice::cached(2.0, 10.0, 0.10));
+        m.insert("gpt-6.1-terra".into(), ModelPrice::cached(1.0, 5.0, 0.05));
+        m.insert("gpt-6-astra".into(), ModelPrice::cached(10.0, 50.0, 1.0));
+        m.insert("gpt-6-luna".into(), ModelPrice::cached(0.10, 0.50, 0.01));
+        m.insert("gpt-5.3-codex".into(), ModelPrice::cached(1.75, 14.0, 0.175));
+        // Gemini, tabela oficial do AI Studio (pago, Standard, até 200 mil tokens),
+        // 2026-11-16 (aistudio.google.com/docs/pricing). O 3.8 Flash muda em 2027-01-01.
+        m.insert("gemini-2.5-pro".into(), ModelPrice::cached(1.25, 10.0, 0.125));
+        m.insert("gemini-2.5-flash".into(), ModelPrice::cached(0.30, 2.50, 0.03));
+        m.insert("gemini-3.1-pro".into(), ModelPrice::cached(2.0, 12.0, 0.20));
+        m.insert("gemini-3.8-flash".into(), ModelPrice::cached(0.75, 3.75, 0.075));
+        m.insert("gemini-3.5-flash-lite".into(), ModelPrice::cached(0.30, 2.50, 0.03));
+        m.insert("gemini-3.1-flash-lite".into(), ModelPrice::cached(0.25, 1.50, 0.025));
         Self { models: m, fallback: ModelPrice::standard(3.0, 15.0), prefer_reported: true }
     }
 }
@@ -264,6 +283,9 @@ mod tests {
         assert_eq!(p.price_for(Some("claude-haiku-4-5-20251001")).input, 1.0);
         assert_eq!(p.price_for(Some("claude-3-5-haiku-20241022")).input, 0.8);
         assert_eq!(p.price_for(Some("openai/gpt-x")), p.fallback);
+        assert_eq!(p.price_for(Some("gpt-6.1-sol")).cache_read, 0.10);
+        assert_eq!(p.price_for(Some("gemini-3.1-pro-preview")).output, 12.0);
+        assert_eq!(p.price_for(Some("gemini-3.1-flash-lite")).input, 0.25);
         assert_eq!(p.price_for(None), p.fallback);
     }
 
@@ -293,7 +315,7 @@ mod tests {
         )
         .unwrap();
         let p = Pricing::load(&f);
-        assert_eq!(p.price_for(Some("openai/gpt-6-luna")).output, 8.0);
+        assert_eq!(p.price_for(Some("openai/gpt-6-nova")).output, 8.0);
         assert_eq!(p.price_for(Some("desconhecido")).input, 1.0);
         assert!(p.price_for(Some("sonnet")).input == 3.0); // padrões preservados
         assert_eq!(p.cost(&usage(Some("x"), 1_000_000, 0, 0, 0, Some(9.0))), 1.0);

@@ -283,6 +283,12 @@ pub enum TurnEnd {
 pub trait TurnTracker: Send {
     /// Linha crua da CLI e os eventos que o parser tirou dela.
     fn observe(&mut self, line: &str, events: &[AgentEvent]);
+    /// Ajusta os eventos de uma linha antes de gravar (chamado depois de
+    /// `observe`): juntar pedaços de texto (gemini), trocar totais acumulados por
+    /// diferenças (codex). Padrão: não mexe.
+    fn transform(&mut self, events: Vec<AgentEvent>) -> Vec<AgentEvent> {
+        events
+    }
     /// Eventos a gravar no fim do processo.
     fn finish(&mut self, end: TurnEnd) -> Vec<AgentEvent>;
 }
