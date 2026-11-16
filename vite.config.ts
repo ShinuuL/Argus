@@ -10,7 +10,9 @@ export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   clearScreen: false,
   server: {
-    port: 1420,
+    // ARGUS_VITE_PORT troca a porta (ex.: duas instâncias de dev ao mesmo
+    // tempo); passe o mesmo valor em `devUrl` com `tauri dev --config`.
+    port: Number(process.env.ARGUS_VITE_PORT) || 1420,
     strictPort: true,
     host: "127.0.0.1",
     watch: { ignored: ["**/src-tauri/**", "**/crates/**", "**/target/**"] },

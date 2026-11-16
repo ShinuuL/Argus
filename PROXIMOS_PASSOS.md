@@ -229,15 +229,15 @@ Tudo em `src/views/chat`, com os comandos Rust em `src-tauri/src/commands/extra_
 Ficou pendente do Digitama:
 
 - **1.9 Conexões e cartão do repositório:** não feito (é o passo 9 abaixo).
-- **Imagens anexadas com o claude:** resolvido. Os anexos ficam em `%APPDATA%\argus\anexos\<tarefa>\` (ou `novo\`, antes de a tarefa existir), fora da pasta de trabalho do agente; o core passa `--add-dir` com a pasta da tarefa e com as pastas dos anexos citados no pedido (`crates/core/src/attachments.rs`). Conferido numa tarefa real: o claude leu a imagem colada. Resta: `novo\` é uma pasta só para todas as conversas novas, então o agente de uma conversa enxerga os anexos recentes das outras.
+- **Imagens anexadas com o claude:** resolvido. Os anexos ficam em `%APPDATA%\argus\anexos\<tarefa>\` (ou `novo\`, antes de a tarefa existir), fora da pasta de trabalho do agente; o core passa `--add-dir` com a pasta da tarefa e com as pastas dos anexos citados no pedido (`crates/core/src/attachments.rs`). Conferido numa tarefa real: o claude leu a imagem colada. Conversas novas usam `novo\<rascunho>\`, uma subpasta por aba, e o `--add-dir` libera só ela (conferido no código em 2026-11-16).
 - **Comandos de barra da CLI:** na primeira vez que você digita `/` numa pasta, o Argus sobe um `claude -p --no-session-persistence`, manda `/context`, lê a linha de inicialização e mata o processo. Conferido contra a CLI real (claude 2.1.220), deixando o comando terminar: a resposta vem da própria CLI, com 0 tokens e custo 0. Para desligar mesmo assim, tire `chat_agent_capabilities` do `invoke_handler` em `src-tauri/src/main.rs`.
 - **Comando de barra que o Argus não conhece** (por exemplo `/context`) continua indo para a CLI como mensagem, e a resposta aparece na conversa. Os que a CLI resolve sozinha (nenhum modelo chamado, tudo zerado) não geram linha de uso: não entram nas métricas nem na contagem de turnos da tarefa. Conferido com `/context` numa tarefa real.
 - **"Turnos" nas métricas:** resolvido. Cada linha de uso leva o turno que a gerou (coluna `turn`), e as métricas contam turnos distintos.
 - **`/modelo`:** resolvido. Abre a pílula de modelo; `/modelo nome` troca direto se a CLI informar esse nome.
 - **`@agente`** vai como texto; os agentes embutidos de cada CLI não entram na lista.
 - **Fila e anexos** vivem só na memória da janela: não sobrevivem a reinício nem aparecem no remoto.
-- **Realce de sintaxe** nos blocos de código do chat.
-- **Detecção de loop no core** (item 2.4 definitivo), para valer com a aba fechada e no remoto.
+- **Realce de sintaxe:** feito (2026-11-16, `src/views/chat/highlight.ts`, sem dependência nova; cores das variáveis existentes). A função foi conferida dentro da janela; um bloco de código numa conversa real ainda não foi visto.
+- **Detecção de loop no core:** feita (2026-11-16, `crates/core/src/agents/loop_guard.rs`): 3 chamadas iguais seguidas (nome + entrada) encerram o turno com "Parei: o agente repetiu X 3 vezes seguidas", com a aba fechada e no remoto. Só testes unitários. **Pendente:** o `RepeatDetector` do frontend (`src/views/chat/toolcall.ts`, usado em `src/views/session`) continua ligado e pode dar aviso duplicado; tirar a parte de "seguidas" dele.
 - **Ctrl+C no Explorer + Ctrl+V** anexando pelo caminho real.
 - **Licença:** a lógica de menções e fila veio da versão reescrita do Digitama, que cita um projeto MIT de terceiros. Conferir antes de distribuir.
 
@@ -290,8 +290,9 @@ Corrigidos (`[x]` = visto funcionando; `[ ]` = corrigido no código, falta ver):
 
 Em aberto:
 
-- [ ] (2026-11-16) Formatos misturados: o cabeçalho da conversa e as Métricas usam "147.7k tokens · $0.16" e a status bar "147,7 mil tokens · US$ 0,16"; a dica do total mostra "cache lido 73869" sem separador.
-- [ ] (2026-11-16) Modelo gratuito do OpenCode (`opencode/deepseek-v4.1-flash-free`) aparece com custo "equivalente em API" de US$ 0,04 (fallback da tabela de preços), o que confunde.
+- [ ] (2026-11-16) Formatos misturados. **Corrigido fora da conversa:** `formatIntPt`, `formatTokensPt` e `formatUsdPt` em `src/api/util.ts`, usados nas Métricas (vistas na janela em pt-BR), mapa de agentes, auto-work, pet e chat. **Falta em `src/views/session`:** `index.tsx` (tooltip do total com números crus e `formatTokens`/`formatUsd`), `Transcript.tsx` e `ContextMeter.tsx`; trocar pelas versões `Pt`.
+- [ ] (2026-11-16) Modelo gratuito do OpenCode aparecia com custo "equivalente em API". Corrigido: nomes terminados em `-free`, `:free` ou `/free` custam 0 (`metrics.rs`, com teste). Falta ver com o opencode real.
+- [ ] (2026-11-16) Web app do celular passou a usar Geist, embutida no binário e servida em `/geist.woff2` (atrás da mesma autenticação). A escala tipográfica não mudou (não há escala nos tokens além de `--font-ui`). Não vista num aparelho.
 - [ ] (2026-11-16) A primeira tarefa haiku de um projeto gravou 73 mil tokens de cache (US$ 0,16 equivalentes para listar 3 arquivos); as seguintes leram o cache. Custo da CLI, não do Argus, mas vale avisar na pílula de modelo.
 - [ ] Trocar o modelo de uma sessão do claude regrava o cache da conversa inteira no modelo novo: o primeiro turno depois da troca sai caro (visto: US$ 0,64 equivalentes em API). **2026-11-16:** a lista de modelos de uma sessão do claude com histórico mostra o aviso; falta ver na janela.
 - [ ] `cd <pasta>; git status` escrito pelo agente no PowerShell foi negado numa tarefa real (o `cd` não estava liberado). `cd` e `Set-Location` entraram no padrão, mas a correção não foi vista funcionando: no teste seguinte o agente se recusou sozinho a encadear o `cd`.
@@ -358,10 +359,12 @@ Falta:
 6. **Empacotamento:** `npm run tauri build` gera o instalador. O Tauri avisa que o identificador `dev.argus.app` termina em `.app`, o que conflita com bundles do macOS; no Windows não afeta.
 7. ~~Apagar `crates/app`~~: feito (commit `14d5fa6`).
 8. **Uso de CPU e GPU por sessão.**
+   - Feito no core e no painel Servidores (2026-11-16): `crates/core/src/usage.rs` (sysinfo + WMI `GPUPerformanceCounters_GPUEngine`, sem janela), comando `owners_usage`, componente `src/views/servers/SessionUsage.tsx`. Comando conferido na janela (lista vazia sem sessão rodando); números com uma sessão real não vistos. **Pendente:** pôr `<SessionUsage>` no cabeçalho da sessão (`src/views/session`); o painel só mostra donos que têm servidor.
    - Mostrar, em cada sessão, o consumo de CPU, memória e GPU dos processos dela (agente, subprocessos e servidores vinculados).
    - A árvore de processos por sessão já existe em `crates/core/src/procs.rs`; a CPU e a memória vêm do `sysinfo`.
    - GPU por processo no Windows: contadores de desempenho "GPU Engine" (PDH) ou `nvidia-smi` quando houver placa NVIDIA.
 9. **Conexões com serviços de desenvolvimento.**
+   - Feito (2026-11-16): `crates/core/src/connections.rs` (gh, gcloud, firebase, vercel: instalada e logada perguntando à própria CLI; linhas com "token" descartadas), comandos `connections_status` e `connections_repo`, tela `src/views/connections/` com "Fazer login" no terminal embutido e `RepoCard.tsx`. Botão "Conexões" no rodapé da barra esquerda; tela vista na janela (GitHub conectado, gcloud e firebase não instalados, Vercel com "Fazer login") e `connections_repo` conferido com o próprio repositório. **Pendente:** clicar em "Fazer login" (não foi clicado) e pôr o `RepoCard` no chat (`src/views/session`).
    - GitHub, Google Cloud, Firebase, Vercel e outros.
    - Seguir a mesma regra dos agentes: usar a CLI oficial de cada serviço (`gh`, `gcloud`, `firebase`, `vercel`), que faz o próprio login. A IDE não lê nem guarda tokens.
    - Tela "Conexões": detectar a CLI, mostrar o status de login, botão "Fazer login" no terminal embutido e ações por projeto (PRs e issues, deploys, logs).

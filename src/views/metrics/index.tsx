@@ -3,8 +3,8 @@ import {
   api,
   baseName,
   errorMessage,
-  formatTokens,
-  formatUsd,
+  formatTokensPt,
+  formatUsdPt,
   totalTokens,
   type CostLine,
   type MetricsReport,
@@ -30,8 +30,8 @@ export function MetricsSidebar() {
     <div className="side-pad">
       <div className="mx-side-kpi">
         <span className="small muted">Hoje, custo equivalente em API</span>
-        <b>{formatUsd(cost)}</b>
-        <span className="small">{formatTokens(tokens)} tokens</span>
+        <b>{formatUsdPt(cost)}</b>
+        <span className="small">{formatTokensPt(tokens)} tokens</span>
       </div>
       <button onClick={openMetrics}>Abrir métricas de tokens e custo</button>
       <button onClick={openDashboard}>Abrir painel de projetos</button>
@@ -60,7 +60,7 @@ function BarList({ lines, project = false }: { lines: CostLine[]; project?: bool
     <div className="m-bars">
       {lines.map((l) => {
         const pct = Math.max(1, share(l) * 100);
-        const tip = `${l.key}\nCusto equivalente: ${formatUsd(l.api_cost_usd)}\nTokens: ${formatTokens(totalTokens(l))} (entrada ${formatTokens(l.input_tokens)}, saída ${formatTokens(l.output_tokens)})\nTurnos: ${l.turns}`;
+        const tip = `${l.key}\nCusto equivalente: ${formatUsdPt(l.api_cost_usd)}\nTokens: ${formatTokensPt(totalTokens(l))} (entrada ${formatTokensPt(l.input_tokens)}, saída ${formatTokensPt(l.output_tokens)})\nTurnos: ${l.turns}`;
         return (
           <div key={l.key} className="m-bar-row" title={tip}>
             <div className="m-bar-label ellipsis">{project ? baseName(l.key) : l.key || "(desconhecido)"}</div>
@@ -68,8 +68,8 @@ function BarList({ lines, project = false }: { lines: CostLine[]; project?: bool
               <rect className="mx-track" x="0" y="0" width="100" height="10" />
               <rect className="mx-fill" x="0" y="0" width={pct} height="10" />
             </svg>
-            <div className="m-bar-val">{formatUsd(l.api_cost_usd)}</div>
-            <div className="m-bar-val muted">{formatTokens(totalTokens(l))}</div>
+            <div className="m-bar-val">{formatUsdPt(l.api_cost_usd)}</div>
+            <div className="m-bar-val muted">{formatTokensPt(totalTokens(l))}</div>
           </div>
         );
       })}
@@ -138,15 +138,15 @@ export default function MetricsView() {
       {report && total && (
         <>
           <div className="m-kpis">
-            <Kpi label="Custo equivalente em API" value={formatUsd(total.api_cost_usd)} />
-            <Kpi label="Tokens" value={formatTokens(totalTokens(total))} />
+            <Kpi label="Custo equivalente em API" value={formatUsdPt(total.api_cost_usd)} />
+            <Kpi label="Tokens" value={formatTokensPt(totalTokens(total))} />
             <Kpi
               label="Entrada / saída"
-              value={`${formatTokens(total.input_tokens)} / ${formatTokens(total.output_tokens)}`}
+              value={`${formatTokensPt(total.input_tokens)} / ${formatTokensPt(total.output_tokens)}`}
             />
             <Kpi
               label="Cache (leitura / escrita)"
-              value={`${formatTokens(total.cache_read)} / ${formatTokens(total.cache_write)}`}
+              value={`${formatTokensPt(total.cache_read)} / ${formatTokensPt(total.cache_write)}`}
             />
             <Kpi label="Turnos" value={String(total.turns)} />
           </div>
@@ -188,8 +188,8 @@ export default function MetricsView() {
                   {[...report.days].reverse().map((d) => (
                     <tr key={d.day}>
                       <td>{shortDay(d.day)}</td>
-                      <td>{formatUsd(d.line.api_cost_usd)}</td>
-                      <td>{formatTokens(totalTokens(d.line))}</td>
+                      <td>{formatUsdPt(d.line.api_cost_usd)}</td>
+                      <td>{formatTokensPt(totalTokens(d.line))}</td>
                       <td>{d.line.turns}</td>
                     </tr>
                   ))}

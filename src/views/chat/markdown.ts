@@ -5,6 +5,8 @@
  * por isso o resultado pode ir em `dangerouslySetInnerHTML`.
  */
 
+import { highlightCode } from "./highlight";
+
 export function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
@@ -150,7 +152,7 @@ function codeBlock(part: string): string {
   return (
     `<div class="chat-code"><div class="chat-code-head"><span class="chat-code-lang">${esc(lang)}</span>` +
     `<button type="button" class="chat-copy" data-copy="code" title="Copiar o código">Copiar</button></div>` +
-    `<pre><code>${esc(code.replace(/\n$/, ""))}</code></pre></div>`
+    `<pre><code>${highlightCode(code.replace(/\n$/, ""), lang)}</code></pre></div>`
   );
 }
 

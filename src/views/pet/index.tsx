@@ -5,7 +5,7 @@
  * balão com os números. As animações param com `prefers-reduced-motion`.
  */
 import { useEffect, useState, type ReactNode } from "react";
-import { formatTokens, formatUsd, isTaskActive } from "@/api";
+import { formatTokensPt, formatUsdPt, isTaskActive } from "@/api";
 import { useApp } from "@/store";
 import { MOOD_LABEL, moodOf, nextExpiry, type PetMood, type PetSnapshot } from "./mood";
 import "./pet.css";
@@ -123,7 +123,7 @@ export default function PetView() {
 
   const label = MOOD_LABEL[mood];
   const cpuPct = Math.min(100, Math.max(0, cpu));
-  const summary = `${label} Agentes rodando: ${runningAgents}. Tokens hoje: ${formatTokens(tokensToday)}. Custo de hoje, equivalente em API: ${formatUsd(costToday)}. CPU: ${Math.round(cpu)}%.`;
+  const summary = `${label} Agentes rodando: ${runningAgents}. Tokens hoje: ${formatTokensPt(tokensToday)}. Custo de hoje, equivalente em API: ${formatUsdPt(costToday)}. CPU: ${Math.round(cpu)}%.`;
 
   const toggle = () => {
     // Clicar conta como "visto": o feliz/preocupado dá lugar ao estado real.
@@ -150,11 +150,11 @@ export default function PetView() {
           </div>
           <div className="argo-row">
             <span>Tokens hoje</span>
-            <b>{formatTokens(tokensToday)}</b>
+            <b>{formatTokensPt(tokensToday)}</b>
           </div>
           <div className="argo-row">
             <span>Custo hoje (equivalente em API)</span>
-            <b>{formatUsd(costToday)}</b>
+            <b>{formatUsdPt(costToday)}</b>
           </div>
           <div className="argo-row">
             <span>CPU</span>

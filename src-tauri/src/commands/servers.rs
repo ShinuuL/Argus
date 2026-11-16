@@ -59,3 +59,9 @@ pub async fn allowed_commands_set(project: PathBuf, commands: Vec<String>) -> Re
     })
     .await
 }
+
+/// Uso de CPU/memória/GPU por dono (árvore do agente, filhos e servidores).
+#[tauri::command]
+pub async fn owners_usage(gpu: bool) -> Result<Vec<argus_core::usage::OwnerUsage>, String> {
+    blocking(move || Ok(argus_core::usage::usage_all(gpu))).await
+}

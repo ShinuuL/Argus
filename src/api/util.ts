@@ -195,3 +195,27 @@ export function languageFor(path: Path): string {
   if (map[ext]) return map[ext];
   return name === "Dockerfile" ? "dockerfile" : "plaintext";
 }
+
+/* Formatação única em português (pt-BR). Use estas no lugar de formatTokens/formatUsd. */
+const NF_INT = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
+const NF_1 = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
+
+/** Inteiro com separador de milhar: 73.869. */
+export function formatIntPt(n: number): string {
+  return NF_INT.format(n || 0);
+}
+
+/** 950 · 12,3 mil · 1,2 mi · 1,5 bi. */
+export function formatTokensPt(n: number): string {
+  if (n >= 1e9) return `${NF_1.format(n / 1e9)} bi`;
+  if (n >= 1e6) return `${NF_1.format(n / 1e6)} mi`;
+  if (n >= 1e3) return `${NF_1.format(n / 1e3)} mil`;
+  return formatIntPt(Math.round(n));
+}
+
+/** US$ 0,16; abaixo de um centavo, 4 casas (US$ 0,0042). */
+export function formatUsdPt(v: number): string {
+  v = v || 0; // -0 e NaN viram 0
+  const d = v > 0 && v < 0.01 ? 4 : 2;
+  return `US$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d })}`;
+}

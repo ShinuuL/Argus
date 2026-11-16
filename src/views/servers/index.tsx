@@ -18,8 +18,10 @@ import {
 import { useApp, useLayout, useWorkbench } from "@/store";
 import { Icon } from "@/shell/icons";
 import { DevServersSection } from "./devservers";
+import { UsageLabel, useOwnersUsage } from "./SessionUsage";
 import "./servers.css";
 
+export { SessionUsage, UsageLabel, useOwnersUsage } from "./SessionUsage";
 export { askStopSession, stopSessionServers, type StopAction, type StopChoice } from "./stopSession";
 
 export interface SessionServersBadgeProps {
@@ -125,6 +127,7 @@ function ServersList({ filter }: { filter: Owner | null }) {
   const [stopping, setStopping] = useState<Owner | null>(null);
 
   const items = useMemo(() => servers.filter((s) => !filter || sameOwner(s.owner, filter)), [servers, filter]);
+  const usage = useOwnersUsage();
   const owners = useMemo(() => {
     const list: Owner[] = [];
     for (const s of items) if (!list.some((o) => sameOwner(o, s.owner))) list.push(s.owner);
@@ -164,6 +167,7 @@ function ServersList({ filter }: { filter: Owner | null }) {
           <div key={`${owner.kind}-${owner.id}`} className="srv-group">
             <div className="srv-group-head">
               <b>{ownerLabel(owner)}</b>
+              <UsageLabel usage={usage.find((u) => sameOwner(u.owner, owner))} />
               <button className="srv-danger" disabled={busy} onClick={() => void stopAll(owner)}>
                 {busy ? "Derrubando…" : "Derrubar todos"}
               </button>

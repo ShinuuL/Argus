@@ -15,6 +15,7 @@ import {
   type WbTab,
 } from "@/store";
 import BuildsView from "@/views/builds";
+import ConnectionsView from "@/views/connections";
 import DepsView from "@/views/deps";
 import MetricsView from "@/views/metrics";
 import RemoteView from "@/views/remote";
@@ -58,6 +59,7 @@ const FILE_ICONS: Record<string, string> = {
 const PAGE_ICONS: Record<PageId, IconName> = {
   deps: "box",
   builds: "hammer",
+  connections: "globe",
   metrics: "chart",
   remote: "phone",
   settings: "gear",
@@ -241,6 +243,7 @@ function Page({ page: raw }: { page: PageId }) {
         </h2>
         {page === "deps" && <DepsView />}
         {page === "builds" && <BuildsView />}
+        {page === "connections" && <ConnectionsView />}
         {page === "remote" && <RemoteView />}
         {page === "settings" && <SettingsView />}
       </div>

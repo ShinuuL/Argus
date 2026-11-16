@@ -126,6 +126,9 @@ impl Pricing {
 
     pub fn price_for(&self, model: Option<&str>) -> ModelPrice {
         let Some(m) = model.map(str::to_ascii_lowercase) else { return self.fallback };
+        if is_free_model(&m) {
+            return ModelPrice { input: 0.0, output: 0.0, cache_read: 0.0, cache_write: 0.0 };
+        }
         self.models
             .iter()
             .filter(|(k, _)| m.contains(&k.to_ascii_lowercase()))
@@ -151,6 +154,12 @@ impl Pricing {
             _ => self.table_cost(u),
         }
     }
+}
+
+/// Modelo gratuito (OpenCode `...-free`, OpenRouter `...:free`): custo zero,
+/// nunca o fallback da tabela. `m` já em minúsculas.
+fn is_free_model(m: &str) -> bool {
+    m.ends_with("-free") || m.ends_with(":free") || m.ends_with("/free")
 }
 
 /// Custo com a tabela padrão.
@@ -287,6 +296,16 @@ mod tests {
         assert_eq!(p.price_for(Some("gemini-3.1-pro-preview")).output, 12.0);
         assert_eq!(p.price_for(Some("gemini-3.1-flash-lite")).input, 0.25);
         assert_eq!(p.price_for(None), p.fallback);
+    }
+
+    #[test]
+    fn free_models_cost_nothing() {
+        let p = Pricing::default();
+        for m in ["opencode/deepseek-v4.1-flash-free", "openrouter/qwen/qwen3-coder:FREE"] {
+            let u = usage(Some(m), 1_000_000, 1_000_000, 0, 0, None);
+            assert_eq!(p.cost(&u), 0.0, "{m}");
+        }
+        assert_ne!(p.price_for(Some("free-tier-x/gpt")), ModelPrice { input: 0.0, output: 0.0, cache_read: 0.0, cache_write: 0.0 });
     }
 
     #[test]

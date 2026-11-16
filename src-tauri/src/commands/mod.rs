@@ -2,6 +2,7 @@
 //! o erro chega à interface como a mensagem (em português) da exceção rejeitada.
 pub mod agents;
 pub mod autowork;
+pub mod connections;
 pub mod deps;
 pub mod extra_agents;
 pub mod extra_chat;

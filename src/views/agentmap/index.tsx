@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   api,
-  formatTokens,
+  formatTokensPt,
   isTaskActive,
   totalTokens,
   type OwnedProc,
@@ -145,7 +145,7 @@ export default function AgentMap({ taskId, active }: AgentMapProps) {
               {providerName} · {task.model ?? "modelo padrão"}
             </span>
             <span className="am-node-l2 ellipsis">
-              {totals.turns > 0 ? `${formatTokens(tokens)} tokens na sessão` : "sem consumo registrado"}
+              {totals.turns > 0 ? `${formatTokensPt(tokens)} tokens na sessão` : "sem consumo registrado"}
             </span>
           </button>
           {nodes.map((n) => (
@@ -238,7 +238,7 @@ function SubagentNodeView({ node, left, top, onOpen }: { node: MapNode; left: nu
           {duration ?? subagentStatusLabel(node.status)}
           {duration && !node.durationExact && node.status !== "running" ? " ≈" : ""}
         </span>
-        <span>{node.tokens != null ? `${formatTokens(node.tokens)} tokens` : "— tokens"}</span>
+        <span>{node.tokens != null ? `${formatTokensPt(node.tokens)} tokens` : "— tokens"}</span>
       </span>
     </button>
   );
