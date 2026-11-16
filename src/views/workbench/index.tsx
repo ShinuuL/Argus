@@ -266,7 +266,18 @@ function TabBody({ tab, active }: { tab: WbTab; active: boolean }) {
 
 // --------------------------------------------------------------------- grupo
 
-function EditorGroup({ group, focused, canSplit }: { group: Group; focused: boolean; canSplit: boolean }) {
+/** `titleRow`: a faixa de abas está na linha de título da janela (a sobra dela arrasta a janela). */
+function EditorGroup({
+  group,
+  focused,
+  canSplit,
+  titleRow,
+}: {
+  group: Group;
+  focused: boolean;
+  canSplit: boolean;
+  titleRow: boolean;
+}) {
   const dirty = useWorkbench((s) => s.dirty);
   const tasks = useApp((s) => s.tasks);
   const taskOf = (kind: TabKind) => (kind.type === "chat" && kind.task != null ? tasks.find((t) => t.id === kind.task) : undefined);
@@ -408,7 +419,7 @@ function EditorGroup({ group, focused, canSplit }: { group: Group; focused: bool
             </div>
           );
         })}
-        <div className="wb-tabs-fill" />
+        <div className="wb-tabs-fill" data-tauri-drag-region={titleRow || undefined} />
         <div className="wb-tab-actions">
             <button
               className="wb-sbtn"
@@ -551,8 +562,14 @@ export default function WorkbenchView() {
 
   return (
     <div className={split === "horizontal" ? "wb-groups wb-row" : "wb-groups wb-col"}>
-      {groups.map((g) => (
-        <EditorGroup key={g.id} group={g} focused={g.id === focusedGid} canSplit={groups.length < MAX_GROUPS} />
+      {groups.map((g, i) => (
+        <EditorGroup
+          key={g.id}
+          group={g}
+          focused={g.id === focusedGid}
+          canSplit={groups.length < MAX_GROUPS}
+          titleRow={split === "horizontal" || i === 0}
+        />
       ))}
     </div>
   );

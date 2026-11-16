@@ -1,7 +1,7 @@
 /**
  * Layout da IDE:
  *
- *   barra superior fina
+ *   (sem barra superior: as abas ocupam a linha de título; ver TopBar.tsx)
  *   barra esquerda (projetos e sessões) | centro (grupos de abas + terminais) | painel direito
  *   status bar
  *
@@ -18,7 +18,7 @@ import { BottomPanel } from "./BottomPanel";
 import { Icon } from "./icons";
 import { RightPanel } from "./RightPanel";
 import { StatusBar } from "./StatusBar";
-import { TopBar } from "./TopBar";
+import { TitleControls, TitleLead } from "./TopBar";
 import { useSyncActiveProject } from "./useActiveContext";
 import { useGlobalShortcuts } from "./useGlobalShortcuts";
 
@@ -52,8 +52,9 @@ export function Shell() {
           </button>
         </div>
       )}
-      <TopBar ctx={ctx} />
-      <div className="sh-main">
+      <div className={["sh-main", !leftOpen && "no-left", rightOpen && "rp-open"].filter(Boolean).join(" ")}>
+        <TitleLead />
+        <TitleControls />
         {leftOpen && <ProjectsView />}
         <main className="wb-center">
           <div className="wb-area">

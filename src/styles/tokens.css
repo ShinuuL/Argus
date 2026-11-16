@@ -136,7 +136,11 @@
 
   --sidebar-width: 272px;
   --right-width: 320px;
-  --top-height: 32px;
+  /* Barra de título: largura dos botões flutuantes nos cantos e o vermelho do Fechar (padrão do Windows). */
+  --title-lead-w: 40px;
+  --title-ctl-w: 212px;
+  --win-close-bg: #c42b1c;
+  --win-close-text: #ffffff;
   --status-height: 24px;
   --tab-height: 34px;
   --chat-width: 820px;

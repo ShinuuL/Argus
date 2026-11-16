@@ -23,6 +23,8 @@ export function RightPanel({ ctx }: { ctx: ActiveContext }) {
 
   return (
     <aside className="rp" aria-label="Painel direito">
+      {/* Linha de título: os botões da janela flutuam por cima (TitleControls). */}
+      <div className="rp-title" data-tauri-drag-region />
       <div className="rp-tabs" role="tablist">
         {RIGHT_TABS.map((t) => (
           <button

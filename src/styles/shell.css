@@ -30,16 +30,29 @@ input::placeholder, textarea::placeholder { color: var(--text-2); opacity: 0.8; 
 .banner > span { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--text); }
 .banner button { background: none; border: 0; padding: 2px 6px; color: inherit; }
 
-/* ---------- Barra superior ---------- */
-.tb { height: var(--top-height); flex: none; display: flex; align-items: center; gap: 4px; padding: 0 6px; background: var(--bg-tabs); border-bottom: 1px solid var(--border); }
-.tb-btn { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 7px; background: none; border: 0; color: var(--text-2); font-size: 12px; }
+/* ---------- Barra de título (sem decorações do sistema) ----------
+   Não há faixa própria: as abas ficam na linha de cima e estes botões flutuam
+   nos cantos dela. O topo do elemento que fica embaixo de cada canto ganha o
+   recuo correspondente (ver as regras de .sh-main abaixo). */
+.tb-lead { position: absolute; top: 0; left: 0; z-index: 20; height: var(--tab-height); display: flex; align-items: center; padding: 0 4px 0 6px; }
+.tb-ctl { position: absolute; top: 0; right: 0; z-index: 20; height: var(--tab-height); display: flex; align-items: center; gap: 2px; }
+.tb-btn { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 7px; background: none; border: 0; border-radius: var(--radius); color: var(--text-2); font-size: 12px; }
 .tb-btn:hover { background: var(--bg-hover); color: var(--text); }
 .tb-btn[aria-pressed="true"] { color: var(--text); background: var(--bg-active); }
-.tb-crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 6px; font-size: 12px; color: var(--text-2); }
-.tb-project { color: var(--text); font-weight: 600; white-space: nowrap; }
+.tb-win { display: flex; align-self: stretch; margin-left: 6px; }
+.tb-wbtn { display: inline-flex; align-items: center; justify-content: center; width: 46px; height: 100%; padding: 0; background: none; border: 0; border-radius: 0; color: var(--text-2); }
+.tb-wbtn:hover { background: var(--bg-hover); color: var(--text); }
+.tb-wbtn.close:hover { background: var(--win-close-bg); color: var(--win-close-text); }
+.tb-wbtn:focus-visible, .tb-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.pj-title { flex: none; display: flex; align-items: center; height: var(--tab-height); padding-left: var(--title-lead-w); }
+.pj-title-name { pointer-events: none; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.rp-title { flex: none; height: var(--tab-height); background: var(--bg-tabs); border-bottom: 1px solid var(--border); }
+.sh-main.no-left .wb-groups > .wb-group:first-child > .wb-tabs { padding-left: var(--title-lead-w); }
+.sh-main:not(.rp-open) .wb-row > .wb-group:last-child > .wb-tabs,
+.sh-main:not(.rp-open) .wb-col > .wb-group:first-child > .wb-tabs { padding-right: var(--title-ctl-w); }
 
 /* ---------- Corpo ---------- */
-.sh-main { flex: 1; min-height: 0; display: flex; }
+.sh-main { flex: 1; min-height: 0; display: flex; position: relative; }
 .wb-area { flex: 1; min-width: 0; min-height: 0; display: flex; position: relative; }
 .wb-area > * { flex: 1; min-width: 0; min-height: 0; }
 .bottom.collapsed { display: none; }

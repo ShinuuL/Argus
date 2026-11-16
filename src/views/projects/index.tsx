@@ -240,6 +240,10 @@ export default function ProjectsView() {
 
   return (
     <aside className="pj" aria-label="Projetos e sessões">
+      {/* Linha de título: o botão de alternar a barra flutua por cima (TitleLead). */}
+      <div className="pj-title" data-tauri-drag-region>
+        <span className="pj-title-name">Argus</span>
+      </div>
       <div className="pj-search">
         <Icon name="search" size={13} />
         <input

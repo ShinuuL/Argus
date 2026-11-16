@@ -34,6 +34,8 @@ import {
   ListFilter,
   ListTree,
   LoaderCircle,
+  Minus,
+  Copy,
   MessageSquare,
   Package,
   PanelLeft,
@@ -104,6 +106,10 @@ const ICONS = {
   play: Play,
   hammer: Hammer,
   palette: Palette,
+  // Botões da janela (barra de título própria)
+  minus: Minus,
+  maximize: Square,
+  restore: Copy,
   // Conversa (linhas de ferramenta, raciocínio e tarefas)
   fileText: FileText,
   folderSearch: FolderSearch,
