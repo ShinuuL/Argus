@@ -1,12 +1,15 @@
 /* Barra esquerda: projetos e sessões. */
 .pj { width: var(--sidebar-width); flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--border); }
-.pj-head { display: flex; align-items: center; gap: 2px; flex: none; height: var(--tab-height); padding: 0 6px 0 12px; }
-.pj-head-title { flex: 1; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-2); }
-.pj-ibtn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; flex: none; background: none; border: 0; color: var(--text-2); }
+/* Cabeçalho da seção (abaixo da busca): título em caixa normal e ações discretas. */
+.pj-head { display: flex; align-items: center; gap: 2px; flex: none; height: 28px; padding: 0 6px 0 12px; }
+.pj-head-title { flex: 1; font-size: 12px; font-weight: 500; color: var(--text-2); }
+.pj-head .pj-ibtn { opacity: .75; }
+.pj-head:hover .pj-ibtn, .pj-head .pj-ibtn:focus-visible, .pj-head .pj-ibtn[aria-pressed="true"] { opacity: 1; }
+.pj-ibtn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; flex: none; background: none; border: 0; border-radius: var(--radius); color: var(--text-2); }
 .pj-ibtn:hover { background: var(--bg-active); color: var(--text); }
 .pj-ibtn[aria-pressed="true"] { background: var(--bg-active); color: var(--accent-text); }
 
-.pj-search { display: flex; align-items: center; gap: 6px; flex: none; margin: 0 8px 6px; padding: 0 4px 0 8px; height: 28px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-2); }
+.pj-search { display: flex; align-items: center; gap: 6px; flex: none; margin: 10px 8px 4px; padding: 0 4px 0 8px; height: 30px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-2); }
 .pj-search:focus-within { border-color: var(--focus); }
 .pj-search input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: none; color: var(--text); font-size: 12px; }
 
@@ -28,22 +31,24 @@
 .pj-project:hover .pj-add, .pj-project:focus-within .pj-add, .pj-add:focus-visible { visibility: visible; }
 
 .pj-sessions { display: flex; flex-direction: column; padding-bottom: 4px; }
-.pj-session { display: flex; align-items: center; gap: 7px; height: 26px; padding: 0 8px 0 27px; cursor: pointer; min-width: 0; color: var(--text-2); font-size: 12.5px; }
+.pj-session { display: flex; align-items: center; gap: 7px; height: 28px; margin: 1px 6px 1px 14px; padding: 0 8px 0 7px; border-radius: var(--radius); cursor: pointer; min-width: 0; color: var(--text-2); font-size: 12.5px; }
 .pj-session:hover { background: var(--bg-hover); color: var(--text); }
-.pj-session.sel { background: var(--selection); color: var(--text); }
+/* Sessão selecionada: cartão neutro (não usa --selection, que no Brasa é vermelho e apaga o ícone de erro). */
+.pj-session.sel { background: var(--bg-active); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
 .pj-session.unread { color: var(--text); font-weight: 700; }
 .pj-session.closed .pj-session-title { text-decoration: line-through; text-decoration-color: var(--border-strong); }
 .pj-session-title { flex: 1; }
-.pj-provider { flex: none; font-size: 10.5px; font-weight: 400; color: var(--text-2); }
+.pj-provider { flex: 0 1 auto; max-width: 40%; font-size: 11px; font-weight: 400; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .pj-tag { flex: none; display: inline-flex; align-items: center; gap: 3px; padding: 0 5px; height: 15px; border-radius: 8px; background: var(--bg-control); color: var(--text); font-size: 10px; font-weight: 400; }
 .pj-tag.run { background: var(--run-bg); color: var(--run); }
 .pj-tag.ok { background: var(--ok-bg); color: var(--ok); }
-.pj-none { display: block; width: 100%; padding: 3px 8px 3px 27px; background: none; border: 0; border-radius: 0; text-align: left; color: var(--text-2); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pj-none { display: block; width: calc(100% - 20px); margin: 0 6px 0 14px; padding: 3px 8px 3px 7px; border-radius: var(--radius); background: none; border: 0; border-radius: 0; text-align: left; color: var(--text-2); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pj-none:hover { background: var(--bg-hover); color: var(--text); }
 
-.pj-foot { flex: none; display: flex; gap: 2px; padding: 4px; border-top: 1px solid var(--border); background: var(--bg-tabs); }
-.pj-nav { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 2px 5px; min-width: 0; background: none; border: 0; color: var(--text-2); font-size: 10px; }
-.pj-nav span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Rodapé: só ícones; o nome vem do tooltip e do aria-label. */
+.pj-foot { flex: none; display: flex; align-items: center; gap: 2px; padding: 6px 8px; border-top: 1px solid var(--border); }
+.pj-nav { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; background: none; border: 0; border-radius: var(--radius); color: var(--text-2); }
+.pj-nav:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .pj-nav:hover { background: var(--bg-hover); color: var(--text); }
 .pj-nav.on { color: var(--text); background: var(--bg-active); }
 .pj-session.sel .pj-provider { color: var(--text); }

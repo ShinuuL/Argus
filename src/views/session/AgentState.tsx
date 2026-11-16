@@ -54,6 +54,11 @@ export function agentStateOf(state: TaskState, denied: string | null | undefined
   }
 }
 
+/** Rótulo curto do estado (ex.: "Concluída", "Precisa de atenção"). */
+export function agentStateLabel(kind: AgentStateKind): string {
+  return INFO[kind].label;
+}
+
 /** Texto do tooltip: rótulo, mais o motivo quando houver. */
 export function agentStateTitle(kind: AgentStateKind, state: TaskState, denied?: string | null): string {
   const base = INFO[kind].label;

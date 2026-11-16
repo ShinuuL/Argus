@@ -1,7 +1,8 @@
 /**
  * Barra esquerda: os projetos da pasta raiz, cada um expandido nas suas
- * sessões (conversas com agentes). No rodapé, os botões que abrem as telas de
- * apoio como abas (Dependências, Métricas, Remoto, Configurações).
+ * sessões (conversas com agentes). Busca no topo; cada sessão mostra o modelo
+ * à direita e a selecionada fica num cartão. No rodapé, só ícones (com tooltip
+ * e aria-label) que abrem as telas de apoio como abas.
  */
 import { useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
 import {
@@ -10,7 +11,6 @@ import {
   errorMessage,
   isTaskActive,
   samePath,
-  taskStateLabel,
   variantOf,
   type Path,
   type Project,
@@ -23,6 +23,7 @@ import { activeTab, PAGES, useApp, useLayout, useWorkbench, type PageId } from "
 import { cancelTask, deleteClosedTasks, deleteTask, discardTask } from "@/views/session/actions";
 import { sessionTitle } from "@/views/session/events";
 import { StateDot } from "@/views/session";
+import { agentStateOf, agentStateTitle } from "@/views/session/AgentState";
 import { devServerMenuItems, ProjectServerButton } from "@/views/servers/devservers";
 import "./projects.css";
 
@@ -63,6 +64,13 @@ function GitInfo({ status, kinds, missing }: { status: ProjectStatus | null | un
   );
 }
 
+/** Modelo da sessão em forma curta ("opus-4.5"); sem modelo fixo, o provedor. */
+function shortModel(task: Task): string {
+  const m = task.model?.trim();
+  if (!m) return task.provider;
+  return m.replace(/^claude-/, "").replace(/-\d{8}$/, "").replace(/(\d+)-(\d+)$/, "$1.$2");
+}
+
 interface SessionRowProps {
   task: Task;
   current: boolean;
@@ -72,6 +80,7 @@ interface SessionRowProps {
 function SessionRow({ task, current, onMenu }: SessionRowProps) {
   const unread = useApp((s) => !!s.unread[task.id]);
   const auto = useApp((s) => s.autowork[task.id]);
+  const denied = useApp((s) => s.attention[task.id]);
   const servers = useApp((s) => s.servers.filter((x) => x.owner.kind === "Session" && x.owner.id === task.id).length);
   const open = () => useWorkbench.getState().openSession(task.id);
   const { kind } = variantOf(task.state);
@@ -84,7 +93,7 @@ function SessionRow({ task, current, onMenu }: SessionRowProps) {
       role="treeitem"
       tabIndex={0}
       aria-current={current}
-      title={`#${task.id} · ${taskStateLabel(task.state).label}\n${task.prompt}`}
+      title={`#${task.id} · ${agentStateTitle(agentStateOf(task.state, denied), task.state, denied)}\n${task.provider}${task.model ? ` · ${task.model}` : ""}\n${task.prompt}`}
       onClick={open}
       onKeyDown={(e) => onActivateKey(e, open)}
       onContextMenu={(e) => onMenu(e, task)}
@@ -105,7 +114,7 @@ function SessionRow({ task, current, onMenu }: SessionRowProps) {
           {servers}
         </span>
       )}
-      <span className="pj-provider">{task.provider}</span>
+      <span className="pj-provider ellipsis">{shortModel(task)}</span>
     </div>
   );
 }
@@ -231,6 +240,21 @@ export default function ProjectsView() {
 
   return (
     <aside className="pj" aria-label="Projetos e sessões">
+      <div className="pj-search">
+        <Icon name="search" size={13} />
+        <input
+          placeholder="Buscar projeto ou sessão…"
+          aria-label="Buscar projeto ou sessão"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {query && (
+          <button className="pj-ibtn" title="Limpar a busca" aria-label="Limpar a busca" onClick={() => setQuery("")}>
+            <Icon name="close" size={12} />
+          </button>
+        )}
+      </div>
+
       <div className="pj-head">
         <span className="pj-head-title">Projetos</span>
         <button className="pj-ibtn" title="Abrir pasta raiz" aria-label="Abrir pasta raiz" onClick={() => void pickRoot()}>
@@ -270,21 +294,6 @@ export default function ProjectsView() {
         >
           <Icon name="collapse" size={15} />
         </button>
-      </div>
-
-      <div className="pj-search">
-        <Icon name="search" size={13} />
-        <input
-          placeholder="Buscar projeto ou sessão…"
-          aria-label="Buscar projeto ou sessão"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        {query && (
-          <button className="pj-ibtn" title="Limpar a busca" aria-label="Limpar a busca" onClick={() => setQuery("")}>
-            <Icon name="close" size={12} />
-          </button>
-        )}
       </div>
 
       <div className="pj-list" role="tree">
@@ -360,10 +369,11 @@ export default function ProjectsView() {
             key={page.id}
             className={currentPage === page.id ? "pj-nav on" : "pj-nav"}
             title={page.title}
+            aria-label={page.label}
+            aria-current={currentPage === page.id ? "page" : undefined}
             onClick={() => useWorkbench.getState().openPage(page.id)}
           >
-            <Icon name={PAGE_ICONS[page.id]} size={17} />
-            <span>{page.short}</span>
+            <Icon name={PAGE_ICONS[page.id]} size={16} />
           </button>
         ))}
       </nav>

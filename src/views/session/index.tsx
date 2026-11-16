@@ -18,7 +18,6 @@ import {
   isTaskActive,
   onTaskEvent,
   samePath,
-  taskStateLabel,
   totalTokens,
   variantOf,
   type Path,
@@ -64,7 +63,7 @@ import { AgentModelPill, ComposerOptions, DirectHold, hasGaps, IsolationHold, us
 import { ContextMeter } from "./ContextMeter";
 import { Transcript } from "./Transcript";
 import { useTaskEvents } from "./useTaskEvents";
-import { AgentState, lastTurnDenied } from "./AgentState";
+import { AgentState, agentStateLabel, agentStateOf, lastTurnDenied } from "./AgentState";
 import "./session.css";
 
 export interface ChatTabProps {
@@ -118,6 +117,7 @@ export { AgentState } from "./AgentState";
 function SessionPicker(props: { current: Task | null; project: Path | null; onNew(): void }) {
   const { current, project, onNew } = props;
   const tasks = useApp((s) => s.tasks);
+  const attention = useApp((s) => s.attention);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
@@ -226,7 +226,7 @@ function SessionPicker(props: { current: Task | null; project: Path | null; onNe
                 <StateDot task={t} />
                 <span className="ellipsis cv-pop-text">{sessionTitle(t.prompt)}</span>
                 <span className="cv-pop-meta">
-                  #{t.id} · {taskStateLabel(t.state).label.split(":")[0]}
+                  #{t.id} · {agentStateLabel(agentStateOf(t.state, attention[t.id]))}
                 </span>
               </button>
             ))}
