@@ -201,6 +201,46 @@ pub fn watch(paths: Vec<PathBuf>) -> Result<(WatchHandle, UnboundedReceiver<Path
     Ok((WatchHandle { _watcher: watcher }, rx))
 }
 
+/// Observa só o primeiro nível de `root` (subpastas criadas, removidas ou
+/// renomeadas) e avisa, com debounce de ~500ms, que a lista de projetos pode ter
+/// mudado. Mudanças dentro dos projetos ficam com `watch`.
+pub fn watch_root(root: PathBuf) -> Result<(WatchHandle, UnboundedReceiver<()>)> {
+    const DEBOUNCE: Duration = Duration::from_millis(500);
+    let (raw_tx, raw_rx) = std_mpsc::channel::<()>();
+    let (tx, rx) = unbounded_channel();
+    let base = root.clone();
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        if let Ok(ev) = res {
+            use notify::EventKind;
+            if matches!(ev.kind, EventKind::Access(_)) {
+                return;
+            }
+            // Só entradas diretas da raiz (a própria raiz conta: pode ter sumido).
+            if ev.paths.iter().any(|p| p == &base || p.parent() == Some(base.as_path())) {
+                let _ = raw_tx.send(());
+            }
+        }
+    })?;
+    watcher.watch(&root, RecursiveMode::NonRecursive)?;
+    std::thread::spawn(move || loop {
+        // Espera o primeiro sinal e depois o silêncio de DEBOUNCE.
+        if raw_rx.recv().is_err() {
+            return;
+        }
+        loop {
+            match raw_rx.recv_timeout(DEBOUNCE) {
+                Ok(()) => continue,
+                Err(std_mpsc::RecvTimeoutError::Timeout) => break,
+                Err(std_mpsc::RecvTimeoutError::Disconnected) => return,
+            }
+        }
+        if tx.send(()).is_err() {
+            return;
+        }
+    });
+    Ok((WatchHandle { _watcher: watcher }, rx))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,5 +295,24 @@ mod tests {
         std::fs::write(root.join("f.txt"), "x").unwrap();
         let got = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await.unwrap().unwrap();
         assert_eq!(got, root);
+    }
+
+    #[tokio::test]
+    async fn watch_root_sees_new_and_removed_subfolders() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().canonicalize().unwrap();
+        std::fs::create_dir(root.join("a")).unwrap();
+        let (_h, mut rx) = watch_root(root.clone()).unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        // Várias mudanças seguidas viram um aviso só.
+        std::fs::create_dir(root.join("b")).unwrap();
+        std::fs::create_dir(root.join("c")).unwrap();
+        std::fs::write(root.join("c").join("Cargo.toml"), "").unwrap();
+        tokio::time::timeout(Duration::from_secs(5), rx.recv()).await.unwrap().unwrap();
+        assert!(tokio::time::timeout(Duration::from_millis(900), rx.recv()).await.is_err(), "debounce");
+        std::fs::rename(root.join("b"), root.join("b2")).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), rx.recv()).await.unwrap().unwrap();
+        std::fs::remove_dir(root.join("a")).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), rx.recv()).await.unwrap().unwrap();
     }
 }

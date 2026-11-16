@@ -867,6 +867,13 @@ function onEvent(e) {
     case "resync":
       refreshAll();
       return;
+    case "removed": {
+      // Sessão excluída no computador: sai da lista e, se estava aberta, volta ao início.
+      const r = parseRoute();
+      if (r.task === e.task) go("");
+      refreshAll();
+      return;
+    }
     case "autowork":
       S.aw.runs[e.task] = e.autowork;
       changed();

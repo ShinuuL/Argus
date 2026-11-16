@@ -17,6 +17,9 @@ pub struct Project {
     pub name: String,
     pub path: PathBuf,
     pub kinds: Vec<ProjectKind>,
+    /// A pasta não existe mais no disco, mas o projeto ainda tem sessões.
+    #[serde(default)]
+    pub missing: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -64,11 +67,43 @@ pub fn scan(root: &Path) -> Result<Vec<Project>, WorkspaceError> {
         }
         let kinds = detect_kinds(&path);
         if !kinds.is_empty() {
-            projects.push(Project { name, path, kinds });
+            projects.push(Project { name, path, kinds, missing: false });
         }
     }
     projects.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     Ok(projects)
+}
+
+/// Forma comparável de um caminho (barras iguais; no Windows, sem caixa).
+fn key(p: &Path) -> String {
+    let s = p.to_string_lossy().replace('\\', "/").trim_end_matches('/').to_string();
+    if cfg!(windows) {
+        s.to_lowercase()
+    } else {
+        s
+    }
+}
+
+/// Junta aos projetos varridos os de `with_sessions` (projetos que têm sessões)
+/// que são filhos diretos de `root` e não apareceram na varredura: a pasta foi
+/// apagada (ou deixou de ser projeto). Eles continuam na lista, marcados como
+/// `missing` quando a pasta não existe, para as sessões não sumirem junto.
+pub fn with_session_projects(root: &Path, mut projects: Vec<Project>, with_sessions: impl IntoIterator<Item = PathBuf>) -> Vec<Project> {
+    let root_key = key(root);
+    let mut seen: std::collections::HashSet<String> = projects.iter().map(|p| key(&p.path)).collect();
+    for path in with_sessions {
+        let k = key(&path);
+        let child_of_root = path.parent().map(|p| key(p) == root_key).unwrap_or(false);
+        if !child_of_root || !seen.insert(k) {
+            continue;
+        }
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let missing = !path.is_dir();
+        let kinds = if missing { Vec::new() } else { detect_kinds(&path) };
+        projects.push(Project { name, path, kinds, missing });
+    }
+    projects.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    projects
 }
 
 #[cfg(test)]
@@ -96,5 +131,21 @@ mod tests {
     #[test]
     fn invalid_root() {
         assert!(scan(Path::new("Z:/nao/existe")).is_err());
+    }
+
+    #[test]
+    fn keeps_projects_with_sessions_when_folder_is_gone() {
+        let root = tempfile::tempdir().unwrap();
+        let r = root.path();
+        fs::create_dir(r.join("web")).unwrap();
+        fs::write(r.join("web/package.json"), "{}").unwrap();
+        let scanned = scan(r).unwrap();
+        let p = with_session_projects(
+            r,
+            scanned,
+            [r.join("web"), r.join("apagado"), Path::new("Z:/fora/da/raiz").to_path_buf()],
+        );
+        let names: Vec<(&str, bool)> = p.iter().map(|p| (p.name.as_str(), p.missing)).collect();
+        assert_eq!(names, [("apagado", true), ("web", false)]);
     }
 }

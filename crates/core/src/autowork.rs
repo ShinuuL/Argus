@@ -542,6 +542,10 @@ impl AutoWork {
                 }
                 _ => {}
             },
+            OrchestratorEvent::Removed { task } => {
+                // Sem evento: a interface já tirou a tarefa (e o progresso dela) das listas.
+                self.inner.runs.lock().unwrap().remove(&task);
+            }
             OrchestratorEvent::Agent { task, event: crate::agents::provider::AgentEvent::Usage(u) } => {
                 let mut runs = self.inner.runs.lock().unwrap();
                 if let Some(r) = runs.get_mut(&task) {

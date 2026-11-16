@@ -139,6 +139,8 @@ pub enum OrchestratorEvent {
     Stderr { task: TaskId, line: String },
     /// Progresso do modo auto-work (ver `crate::autowork`).
     AutoWork(crate::autowork::AutoWorkEvent),
+    /// A tarefa foi excluída (ver `Orchestrator::delete`): some das listas.
+    Removed { task: TaskId },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -245,6 +247,10 @@ impl Orchestrator {
                     }
                 }
                 Err(e) => tracing::warn!("falha ao carregar histórico: {e}"),
+            }
+            // Ids de tarefas excluídas (e o consumo delas) nunca são reaproveitados.
+            if let Ok(m) = db.max_task_id() {
+                next = next.max(m.max(0) as u64 + 1);
             }
         }
         Self {
@@ -864,6 +870,61 @@ impl Orchestrator {
         Ok(())
     }
 
+    /// Exclui a tarefa: cancela o turno em andamento (e espera ele parar), no
+    /// modo isolado remove o worktree e a branch que ainda existirem (as
+    /// alterações não aplicadas se perdem) e apaga a tarefa e seus eventos do
+    /// banco. No modo direto a pasta do projeto nunca é tocada. O consumo fica
+    /// nas métricas (ver `Db::delete_task`). Emite `Removed`.
+    pub async fn delete(&self, id: TaskId) -> Result<(), OrchestratorError> {
+        let t = self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
+        if t.state.is_active() {
+            let _ = self.cancel(id);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+            while self.task(id).is_some_and(|t| t.state.is_active()) {
+                if std::time::Instant::now() >= deadline {
+                    return Err(OrchestratorError::Busy);
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        }
+        let t = self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
+        let closed = matches!(t.state, TaskState::Applied | TaskState::Discarded);
+        if t.mode == WorkMode::Isolated && !closed {
+            if let Some(wt) = t.workdir.as_deref() {
+                if wt.exists() {
+                    remove_worktree(&t.project, wt, &branch_name(id), id).await?;
+                } else if t.project.is_dir() {
+                    // Pasta já removida: só sobra (talvez) a branch.
+                    let _ = git(&t.project, &["worktree", "prune"]).await;
+                    let _ = git(&t.project, &["branch", "-D", &branch_name(id)]).await;
+                }
+            }
+        }
+        if let Some(db) = &self.inner.db {
+            db.delete_task(id as i64)?;
+        }
+        self.inner.tasks.lock().unwrap().remove(&id);
+        self.inner.cancels.lock().unwrap().remove(&id);
+        let _ = self.inner.tx.send(OrchestratorEvent::Removed { task: id });
+        Ok(())
+    }
+
+    /// Exclui as tarefas encerradas (aplicadas ou descartadas) de um projeto.
+    /// Devolve os ids excluídos.
+    pub async fn delete_closed(&self, project: &Path) -> Result<Vec<TaskId>, OrchestratorError> {
+        let key = mode_key(Some(project));
+        let ids: Vec<TaskId> = self
+            .tasks()
+            .into_iter()
+            .filter(|t| matches!(t.state, TaskState::Applied | TaskState::Discarded) && mode_key(Some(&t.project)) == key)
+            .map(|t| t.id)
+            .collect();
+        for id in &ids {
+            self.delete(*id).await?;
+        }
+        Ok(ids)
+    }
+
     /// Worktree da tarefa; no modo direto não há (nada a aplicar nem a descartar).
     fn worktree_of(&self, id: TaskId) -> Result<PathBuf, OrchestratorError> {
         let t = self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
@@ -1293,6 +1354,95 @@ mod tests {
         o.discard(id).await.unwrap();
         assert!(!wt.exists());
         assert_eq!(o.task(id).unwrap().state, TaskState::Discarded);
+    }
+
+    /// Excluir: cancela o turno, remove worktree e branch (isolado), não toca na
+    /// pasta (direto), apaga do banco mantendo o consumo e não reaproveita o id.
+    #[tokio::test]
+    async fn delete_removes_task_worktree_and_keeps_usage() {
+        if which::which("git").is_err() {
+            return;
+        }
+        let root = tempfile::tempdir().unwrap();
+        let proj = root.path().join("proj");
+        std::fs::create_dir(&proj).unwrap();
+        git_repo(&proj).await;
+        let dbp = root.path().join("h.db");
+        let mk = |args: Vec<String>| Orchestrator::with_db(vec![Arc::new(Fake(args))], 2, Some(Db::open(&dbp).unwrap()));
+
+        let o = mk(script_args(&["SESSION:s1", "USAGE"]));
+        let mut rx = o.subscribe();
+        // Isolado, com worktree e branch.
+        let iso = o.submit(&proj, "fake", "isolado").unwrap();
+        assert_eq!(wait_final(&o, iso).await, TaskState::Completed);
+        let wt = o.task(iso).unwrap().workdir.unwrap();
+        assert!(wt.exists());
+        std::fs::write(wt.join("nao-aplicado.txt"), "x").unwrap();
+        // Direto: a pasta do projeto fica como está.
+        let direct = o
+            .submit_with(&proj, "fake", "direto", SubmitOptions { model: None, mode: Some(WorkMode::Direct) })
+            .unwrap();
+        assert_eq!(wait_final(&o, direct).await, TaskState::Completed);
+        std::fs::write(proj.join("local.txt"), "meu").unwrap();
+
+        o.delete(iso).await.unwrap();
+        assert!(o.task(iso).is_none());
+        assert!(!wt.exists(), "o worktree sai");
+        let branches = git(&proj, &["branch", "--list", &branch_name(iso)]).await.unwrap();
+        assert!(branches.trim().is_empty(), "a branch sai: {branches}");
+        o.delete(direct).await.unwrap();
+        assert!(proj.join("local.txt").exists() && proj.join("a.txt").exists(), "modo direto não toca na pasta");
+        assert!(matches!(o.delete(direct).await, Err(OrchestratorError::UnknownTask(_))));
+        let mut removed = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            if let OrchestratorEvent::Removed { task } = ev {
+                removed.push(task);
+            }
+        }
+        assert_eq!(removed, vec![iso, direct]);
+        let db = o.db().unwrap();
+        assert!(db.list_tasks().unwrap().is_empty());
+        assert!(db.list_events(iso as i64).unwrap().is_empty());
+        assert_eq!(db.usage_rows(crate::db::TimeRange::all()).unwrap().len(), 2, "o consumo continua nas métricas");
+        drop(o);
+
+        // Recarregada do disco: nada volta e o id não é reaproveitado.
+        let o = mk(sleep_args());
+        assert!(o.tasks().is_empty());
+        // Turno rodando: é cancelado antes da exclusão.
+        let busy = o
+            .submit_with(&proj, "fake", "longo", SubmitOptions { model: None, mode: Some(WorkMode::Direct) })
+            .unwrap();
+        assert!(busy > direct);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(o.task(busy).unwrap().state.is_active());
+        o.delete(busy).await.unwrap();
+        assert!(o.task(busy).is_none());
+        assert!(o.db().unwrap().get_task(busy as i64).unwrap().is_none());
+    }
+
+    /// "Excluir encerradas" só leva as aplicadas/descartadas do projeto.
+    #[tokio::test]
+    async fn delete_closed_only_takes_closed_of_the_project() {
+        if which::which("git").is_err() {
+            return;
+        }
+        let root = tempfile::tempdir().unwrap();
+        let proj = root.path().join("proj");
+        std::fs::create_dir(&proj).unwrap();
+        git_repo(&proj).await;
+        let o = Orchestrator::new(vec![Arc::new(Fake(echo_args("ok")))], 2);
+        let a = o.submit(&proj, "fake", "a").unwrap();
+        let b = o.submit(&proj, "fake", "b").unwrap();
+        let other = o.submit(root.path(), "fake", "c").unwrap();
+        for id in [a, b, other] {
+            wait_final(&o, id).await;
+        }
+        o.discard(a).await.unwrap();
+        let gone = o.delete_closed(&proj).await.unwrap();
+        assert_eq!(gone, vec![a]);
+        assert!(o.task(a).is_none() && o.task(b).is_some() && o.task(other).is_some());
+        assert!(o.delete_closed(&proj).await.unwrap().is_empty());
     }
 
     #[tokio::test]

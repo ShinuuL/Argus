@@ -527,6 +527,7 @@ pub fn event_json(ev: &OrchestratorEvent) -> Value {
         OrchestratorEvent::Agent { task, event } => json!({ "type": "agent", "task": task, "event": event }),
         OrchestratorEvent::Stderr { task, line } => json!({ "type": "stderr", "task": task, "line": line }),
         OrchestratorEvent::AutoWork(e) => json!({ "type": "autowork", "task": e.task, "autowork": e }),
+        OrchestratorEvent::Removed { task } => json!({ "type": "removed", "task": task }),
     }
 }
 

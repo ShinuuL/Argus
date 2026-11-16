@@ -295,8 +295,36 @@ impl Db {
         Ok(())
     }
 
+    /// Maior id de tarefa já usado: o das tarefas existentes, o das linhas de
+    /// consumo (que sobrevivem à exclusão da tarefa) e o último excluído. Um id
+    /// nunca é reaproveitado: as métricas e a branch `argus/<id>` dependem disso.
     pub fn max_task_id(&self) -> rusqlite::Result<i64> {
-        self.c().query_row("SELECT COALESCE(MAX(id),0) FROM tasks", [], |r| r.get(0))
+        self.c().query_row(
+            "SELECT MAX(COALESCE((SELECT MAX(id) FROM tasks),0),
+                        COALESCE((SELECT MAX(task_id) FROM usage),0),
+                        COALESCE((SELECT CAST(value AS INTEGER) FROM settings WHERE key='last_deleted_task'),0))",
+            [],
+            |r| r.get(0),
+        )
+    }
+
+    /// Exclui a tarefa e tudo o que é dela (eventos de todos os agentes e
+    /// subagentes; sessão, modelo e estado de provedor vivem na própria linha).
+    /// As linhas de consumo (`usage`) ficam, órfãs, com o `task_id` original:
+    /// as métricas agregam por projeto/provedor/modelo/data e contam turnos por
+    /// (tarefa, turno), sem consultar `tasks`. Devolve se a tarefa existia.
+    pub fn delete_task(&self, id: i64) -> rusqlite::Result<bool> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        tx.execute("DELETE FROM events WHERE task_id=?1", [id])?;
+        let n = tx.execute("DELETE FROM tasks WHERE id=?1", [id])?;
+        tx.execute(
+            "INSERT INTO settings(key, value) VALUES ('last_deleted_task', ?1)
+             ON CONFLICT(key) DO UPDATE SET value=MAX(CAST(value AS INTEGER), CAST(excluded.value AS INTEGER))",
+            [id.to_string()],
+        )?;
+        tx.commit()?;
+        Ok(n > 0)
     }
 
     pub fn get_task(&self, id: i64) -> rusqlite::Result<Option<TaskRecord>> {
@@ -538,6 +566,37 @@ mod tests {
         db.set_autowork("/p", "{\"enabled\":true}").unwrap();
         assert_eq!(db.get_autowork("/p").unwrap().as_deref(), Some("{\"enabled\":true}"));
         assert_eq!(db.list_autowork().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn delete_task_keeps_usage_and_never_reuses_id() {
+        let db = Db::open_in_memory().unwrap();
+        db.insert_task(Some(1), "/p", "claude", "a", "Completed").unwrap();
+        db.insert_task(Some(2), "/p", "claude", "b", "Discarded").unwrap();
+        db.set_task_provider(2, "opencode", Some("s"), Some("m"), "{\"claude\":{}}", true).unwrap();
+        db.insert_event(2, "Text", "\"oi\"").unwrap();
+        db.insert_event_sub(2, "Text", "\"sub\"", Some("toolu_1")).unwrap();
+        db.insert_event(1, "Text", "\"fica\"").unwrap();
+        let u = TokenUsage { input_tokens: 10, model: Some("x".into()), ..Default::default() };
+        db.insert_usage_turn(2, "/p", "claude", &u, 5).unwrap();
+
+        assert!(db.delete_task(2).unwrap());
+        assert!(db.get_task(2).unwrap().is_none());
+        assert!(db.list_events(2).unwrap().is_empty());
+        assert!(db.list_subagent_events(2, "toolu_1").unwrap().is_empty());
+        // A outra tarefa fica intacta.
+        assert_eq!(db.list_tasks().unwrap().len(), 1);
+        assert_eq!(db.list_events(1).unwrap().len(), 1);
+        // O consumo continua nas métricas, com o id original.
+        let rows = db.usage_rows(TimeRange::all()).unwrap();
+        assert_eq!((rows.len(), rows[0].task_id, rows[0].usage.input_tokens), (1, 2, 10));
+        assert_eq!(db.usage_by_project(TimeRange::all()).unwrap()[0].turns, 1);
+        // O id 2 não volta a ser usado, nem depois de excluir a 1 e de sumir o consumo.
+        assert_eq!(db.max_task_id().unwrap(), 2);
+        assert!(db.delete_task(1).unwrap());
+        assert!(!db.delete_task(1).unwrap());
+        db.c().execute("DELETE FROM usage", []).unwrap();
+        assert_eq!(db.max_task_id().unwrap(), 2);
     }
 
     #[test]
