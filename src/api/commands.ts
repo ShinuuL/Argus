@@ -66,6 +66,9 @@ export const workspaceCurrent = (): Promise<RootInfo | null> => invoke("workspac
 /** Só varre uma pasta em busca de projetos, sem mudar a raiz atual. */
 export const workspaceScan = (path: Path): Promise<Project[]> => invoke("workspace_scan", { path });
 
+/** Varre de novo a raiz atual e recalcula o status git de todos os projetos; null sem raiz aberta. */
+export const workspaceRefresh = (): Promise<RootInfo | null> => invoke("workspace_refresh");
+
 // -------------------------------------------------------------------- monitor
 
 /** Status git de um projeto (null se não for repositório). */
@@ -230,6 +233,15 @@ export const taskApply = (id: TaskId): Promise<void> => invoke("task_apply", { i
 
 /** Descarta as alterações da tarefa e remove o worktree. */
 export const taskDiscard = (id: TaskId): Promise<void> => invoke("task_discard", { id });
+
+/**
+ * Exclui a sessão: cancela o turno, remove worktree e branch (modo isolado), apaga
+ * a tarefa e o histórico. O consumo continua nas métricas. Chega `Removed` em `onOrch`.
+ */
+export const taskDelete = (id: TaskId): Promise<void> => invoke("task_delete", { id });
+
+/** Exclui as sessões encerradas (aplicadas ou descartadas) do projeto; devolve quantas. */
+export const taskDeleteClosed = (project: Path): Promise<number> => invoke("task_delete_closed", { project });
 
 // ------------------------------------------------------------------ auto-work
 

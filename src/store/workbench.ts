@@ -222,6 +222,8 @@ export interface WorkbenchState {
   isDirty(path: Path): boolean;
   /** Fecha sem perguntar. Prefira `requestCloseTab` na interface. */
   closeTab(gid: number, tab: number): void;
+  /** Fecha todas as abas de conversa da sessão (sessão excluída). */
+  closeSessionTabs(task: TaskId): void;
   /** Fecha a aba; se for o último editor de um arquivo modificado, pede confirmação. false = cancelado. */
   requestCloseTab(gid: number, tab: number): Promise<boolean>;
   closeOthers(gid: number, keep: number): Promise<void>;
@@ -340,6 +342,15 @@ export const useWorkbench = create<WorkbenchState>()((set, get) => {
           : groups[Math.min(Math.max(0, s.groups.findIndex((g) => g.id === gid)), groups.length - 1)].id;
         return { groups, activeGroup };
       }),
+
+    closeSessionTabs: (task) => {
+      const found = get().groups.flatMap((g) =>
+        g.tabs.filter((t) => t.kind.type === "chat" && t.kind.task === task).map((t) => [g.id, t.id] as const),
+      );
+      found.forEach(([gid, tab]) => {
+        if (get().groups.some((g) => g.id === gid)) get().closeTab(gid, tab);
+      });
+    },
 
     requestCloseTab: async (gid, tab) => {
       const s = get();

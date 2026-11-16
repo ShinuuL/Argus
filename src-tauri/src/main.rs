@@ -46,6 +46,7 @@ fn main() {
             workspace::workspace_open_root,
             workspace::workspace_current,
             workspace::workspace_scan,
+            workspace::workspace_refresh,
             // monitor
             monitor::monitor_status,
             monitor::monitor_statuses,
@@ -87,6 +88,8 @@ fn main() {
             agents::task_diff,
             agents::task_apply,
             agents::task_discard,
+            agents::task_delete,
+            agents::task_delete_closed,
             extra_agents::task_subagent_times,
             // chat
             extra_chat::chat_project_files,

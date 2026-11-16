@@ -14,4 +14,4 @@ export * from "./layout";
 export * from "./workbench";
 export * from "./terminals";
 export * from "./theme";
-export { startApp } from "./bootstrap";
+export { forgetSession, startApp } from "./bootstrap";

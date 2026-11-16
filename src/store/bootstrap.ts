@@ -8,6 +8,7 @@ import {
   isTaskActive,
   onOrch,
   onProjectChanged,
+  onWorkspaceChanged,
   onPtyMissingCommand,
   onServersChanged,
   variantOf,
@@ -16,6 +17,7 @@ import {
 } from "@/api";
 import { useApp } from "./app";
 import { activeTab, useWorkbench } from "./workbench";
+import { chatKey, useChat } from "@/views/chat/store";
 
 /** A sessão está à vista (aba ativa de algum grupo)? Se não, a atividade nova a deixa "não lida". */
 function noteActivity(task: number): void {
@@ -53,6 +55,9 @@ function handleOrch(ev: OrchEvent, refreshTasks: () => void, refreshToday: () =>
       refreshToday();
       noteActivity(task);
     }
+  } else if ("Removed" in ev) {
+    // Sessão excluída (aqui, por outra aba ou pelo auto-work): some das listas e das abas.
+    forgetSession(ev.Removed.task);
   } else if ("AutoWork" in ev) {
     const aw = ev.AutoWork;
     const status = variantOf(aw.status);
@@ -68,6 +73,16 @@ function handleOrch(ev: OrchEvent, refreshTasks: () => void, refreshToday: () =>
   }
 }
 
+/** Tira a sessão excluída das listas, fecha as abas dela e esquece rascunho e fila. */
+export function forgetSession(task: number): void {
+  useApp.getState().forgetTask(task);
+  useWorkbench.getState().closeSessionTabs(task);
+  useChat.getState().forget(chatKey(task));
+}
+
+/** Intervalo mínimo entre duas atualizações da lista de projetos pelo foco da janela. */
+const FOCUS_REFRESH_MS = 3000;
+
 export function startApp(): () => void {
   const app = useApp.getState();
   const refreshTasks = debounce(() => void useApp.getState().refreshTasks(), 150);
@@ -76,6 +91,7 @@ export function startApp(): () => void {
   const unlisten: Promise<Unlisten>[] = [
     onOrch((ev) => handleOrch(ev, refreshTasks, refreshToday)),
     onProjectChanged(({ path, status }) => useApp.getState().setStatus(path, status)),
+    onWorkspaceChanged((info) => useApp.getState().setProjects(info)),
     onServersChanged((servers) => useApp.setState({ servers })),
     onPtyMissingCommand(({ command, plan }) =>
       useApp.getState().requestInstall({
@@ -117,7 +133,18 @@ export function startApp(): () => void {
   void pollUsage();
   const usageTimer = setInterval(pollUsage, USAGE_INTERVAL_MS);
 
+  // A janela voltou ao foco: subpastas criadas fora do app, branch trocada no terminal…
+  let lastFocus = 0;
+  const onFocus = () => {
+    const now = Date.now();
+    if (now - lastFocus < FOCUS_REFRESH_MS) return;
+    lastFocus = now;
+    void useApp.getState().refreshRoot();
+  };
+  window.addEventListener("focus", onFocus);
+
   return () => {
+    window.removeEventListener("focus", onFocus);
     clearInterval(usageTimer);
     unlisten.forEach((p) => void p.then((off) => off()));
   };

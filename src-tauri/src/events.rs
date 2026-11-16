@@ -4,6 +4,7 @@
 //! |-----------------------|--------------------------------------------------------|
 //! | `orch`                | `OrchMsg` (enum do orquestrador, serde com tag externa) |
 //! | `project-changed`     | `{ path, status }` (status git recalculado)            |
+//! | `workspace-changed`   | `RootInfo` (a lista de projetos da raiz mudou)         |
 //! | `pty-output`          | `{ id, data }` (bytes em base64)                       |
 //! | `pty-exit`            | `{ id, code }`                                         |
 //! | `pty-missing-command` | `{ id, command, plan }` (sugestão de instalação)       |
@@ -19,6 +20,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 pub const ORCH: &str = "orch";
 pub const PROJECT_CHANGED: &str = "project-changed";
+pub const WORKSPACE_CHANGED: &str = "workspace-changed";
 pub const PTY_OUTPUT: &str = "pty-output";
 pub const PTY_EXIT: &str = "pty-exit";
 pub const PTY_MISSING_COMMAND: &str = "pty-missing-command";
@@ -37,6 +39,8 @@ pub enum OrchMsg<'a> {
     Agent { task: TaskId, event: &'a AgentEvent },
     Stderr { task: TaskId, line: &'a str },
     AutoWork(&'a AutoWorkEvent),
+    /// A tarefa foi excluída.
+    Removed { task: TaskId },
     /// Variante do orquestrador ainda sem espelho aqui: vai no formato do remoto.
     #[allow(dead_code)]
     Other(serde_json::Value),
@@ -49,6 +53,7 @@ pub fn orch_msg(ev: &OrchestratorEvent) -> OrchMsg<'_> {
         OrchestratorEvent::Agent { task, event } => OrchMsg::Agent { task: *task, event },
         OrchestratorEvent::Stderr { task, line } => OrchMsg::Stderr { task: *task, line },
         OrchestratorEvent::AutoWork(e) => OrchMsg::AutoWork(e),
+        OrchestratorEvent::Removed { task } => OrchMsg::Removed { task: *task },
         other => OrchMsg::Other(argus_core::remote::event_json(other)),
     }
 }
@@ -107,6 +112,9 @@ mod tests {
 
         let ev = OrchestratorEvent::StateChanged { task: 1, state: TaskState::Running };
         assert_eq!(serde_json::to_value(orch_msg(&ev)).unwrap(), json!({"StateChanged": {"task": 1, "state": "Running"}}));
+
+        let ev = OrchestratorEvent::Removed { task: 9 };
+        assert_eq!(serde_json::to_value(orch_msg(&ev)).unwrap(), json!({"Removed": {"task": 9}}));
 
         let ev = OrchestratorEvent::Stderr { task: 2, line: "aviso".into() };
         assert_eq!(serde_json::to_value(orch_msg(&ev)).unwrap(), json!({"Stderr": {"task": 2, "line": "aviso"}}));

@@ -66,6 +66,12 @@ export interface AppState {
   pickRoot(): Promise<void>;
   openRoot(path: Path): Promise<void>;
   applyRoot(info: RootInfo): void;
+  /** Troca só a lista de projetos (varredura nova da mesma raiz), sem mexer no erro global. */
+  setProjects(info: RootInfo): void;
+  /** Varre a raiz de novo e recalcula branch/alterados (botão "Atualizar" e foco da janela). */
+  refreshRoot(): Promise<void>;
+  /** Tira a tarefa excluída das listas (não lida, auto-work, subagente aberto). */
+  forgetTask(task: TaskId): void;
   select(path: Path | null): void;
   setStatus(path: Path, status: ProjectStatus | null): void;
   /** Recarrega a lista de tarefas do backend. */
@@ -139,6 +145,44 @@ export const useApp = create<AppState>()((set, get) => ({
       selected: info.projects.some((p) => samePath(p.path, s.selected)) ? s.selected : null,
       error: info.watch_error,
     })),
+
+  setProjects: (info) =>
+    set((s) => {
+      if (!samePath(info.root, s.root)) return s;
+      return {
+        projects: info.projects,
+        statuses: Object.fromEntries(
+          info.projects.filter((p) => p.path in s.statuses).map((p) => [p.path, s.statuses[p.path]]),
+        ),
+        selected: info.projects.some((p) => samePath(p.path, s.selected)) ? s.selected : null,
+      };
+    }),
+
+  refreshRoot: async () => {
+    if (!get().root) return;
+    try {
+      const info = await api.workspaceRefresh();
+      if (info) get().setProjects(info);
+    } catch (e) {
+      set({ error: errorMessage(e) });
+    }
+  },
+
+  forgetTask: (task) =>
+    set((s) => {
+      const drop = <T,>(r: Record<TaskId, T>) => {
+        if (!(task in r)) return r;
+        const out = { ...r };
+        delete out[task];
+        return out;
+      };
+      return {
+        tasks: s.tasks.filter((t) => t.id !== task),
+        unread: drop(s.unread),
+        autowork: drop(s.autowork),
+        subagentOf: drop(s.subagentOf),
+      };
+    }),
 
   select: (selected) => set({ selected }),
 

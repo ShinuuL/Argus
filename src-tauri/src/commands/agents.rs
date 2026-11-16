@@ -287,3 +287,39 @@ pub async fn task_apply(ctx: State<'_, AppCtx>, id: TaskId) -> Result<(), String
 pub async fn task_discard(ctx: State<'_, AppCtx>, id: TaskId) -> Result<(), String> {
     ctx.orch.discard(id).await.map_err(err)
 }
+
+/// Exclui a sessão: cancela o turno, remove worktree e branch (modo isolado),
+/// apaga a tarefa e o histórico (o consumo fica nas métricas) e os anexos dela.
+/// A interface recebe `Removed` no evento `orch`.
+#[tauri::command]
+pub async fn task_delete(app: tauri::AppHandle, ctx: State<'_, AppCtx>, id: TaskId) -> Result<(), String> {
+    let project = ctx.orch.task(id).map(|t| t.project);
+    ctx.orch.delete(id).await.map_err(err)?;
+    after_delete(&app, &[id], project.as_deref());
+    Ok(())
+}
+
+/// Exclui as sessões encerradas (aplicadas ou descartadas) do projeto. Devolve quantas.
+#[tauri::command]
+pub async fn task_delete_closed(app: tauri::AppHandle, ctx: State<'_, AppCtx>, project: PathBuf) -> Result<usize, String> {
+    let ids = ctx.orch.delete_closed(&project).await.map_err(err)?;
+    after_delete(&app, &ids, Some(&project));
+    Ok(ids.len())
+}
+
+/// Limpeza fora do banco: as pastas de anexos das tarefas e, se a pasta do
+/// projeto já não existe, a lista de projetos (o "pasta ausente" some sem sessões).
+fn after_delete(app: &tauri::AppHandle, ids: &[TaskId], project: Option<&std::path::Path>) {
+    let root = argus_core::attachments::root();
+    for id in ids {
+        if let Some(dir) = argus_core::attachments::dir_for(&root, Some(*id), None) {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+    if project.is_some_and(|p| !p.is_dir()) {
+        let app = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let _ = super::workspace::refresh_root(&app, false);
+        });
+    }
+}

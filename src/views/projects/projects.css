@@ -47,3 +47,13 @@
 .pj-nav:hover { background: var(--bg-hover); color: var(--text); }
 .pj-nav.on { color: var(--text); background: var(--bg-active); }
 .pj-session.sel .pj-provider { color: var(--text); }
+
+/* Atualizar a lista de projetos */
+.pj-ibtn:disabled { opacity: .5; cursor: default; }
+.pj-spin { animation: pj-spin .8s linear infinite; }
+@keyframes pj-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pj-spin { animation: none; } }
+
+/* Projeto cuja pasta sumiu do disco, mas que ainda tem sessões */
+.pj-project.missing .pj-name { color: var(--text-2); text-decoration: line-through; }
+.pj-missing { color: var(--warn, var(--text-2)); font-style: italic; }

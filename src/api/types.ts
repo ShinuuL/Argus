@@ -25,6 +25,8 @@ export interface Project {
   name: string;
   path: Path;
   kinds: ProjectKind[];
+  /** A pasta não existe mais no disco, mas o projeto ainda tem sessões. */
+  missing?: boolean;
 }
 
 export interface RootInfo {
@@ -322,6 +324,7 @@ export type OrchEvent =
   | { Agent: { task: TaskId; event: AgentEvent } }
   | { Stderr: { task: TaskId; line: string } }
   | { AutoWork: AutoWorkEvent }
+  | { Removed: { task: TaskId } }
   | { Other: unknown };
 
 // ----------------------------------------------------------------- servidores

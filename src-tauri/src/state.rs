@@ -24,6 +24,8 @@ pub struct AppCtx {
     pub root: Mutex<Option<PathBuf>>,
     pub projects: Mutex<Vec<Project>>,
     pub watch: Mutex<Option<WatchHandle>>,
+    /// Watcher do primeiro nível da pasta raiz (subpastas novas/removidas).
+    pub root_watch: Mutex<Option<WatchHandle>>,
     /// Comandos ausentes já sugeridos a partir do terminal (evita repetir).
     pub suggested: Mutex<HashSet<String>>,
     pub sys: Arc<Mutex<Option<sysinfo::System>>>,
@@ -83,6 +85,7 @@ impl AppCtx {
             root: Mutex::new(None),
             projects: Mutex::new(Vec::new()),
             watch: Mutex::new(None),
+            root_watch: Mutex::new(None),
             suggested: Mutex::new(HashSet::new()),
             sys: Arc::new(Mutex::new(None)),
             audio: OnceLock::new(),

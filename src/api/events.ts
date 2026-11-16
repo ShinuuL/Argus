@@ -22,6 +22,7 @@ import type {
   PtyId,
   PtyMissingCommand,
   PtyOutput,
+  RootInfo,
   ServerInfo,
   TaskId,
   TaskState,
@@ -33,6 +34,7 @@ export type Unlisten = () => void;
 export const EVENTS = {
   orch: "orch",
   projectChanged: "project-changed",
+  workspaceChanged: "workspace-changed",
   ptyOutput: "pty-output",
   ptyExit: "pty-exit",
   ptyMissingCommand: "pty-missing-command",
@@ -76,6 +78,10 @@ export const onAutoWork = (cb: (ev: AutoWorkEvent) => void): Promise<Unlisten> =
 /** Status git recalculado de um projeto (ao abrir a raiz e a cada mudança em disco). */
 export const onProjectChanged = (cb: (ev: ProjectChanged) => void): Promise<Unlisten> =>
   on(EVENTS.projectChanged, cb);
+
+/** A lista de projetos da pasta raiz mudou (subpasta criada, removida ou renomeada). */
+export const onWorkspaceChanged = (cb: (info: RootInfo) => void): Promise<Unlisten> =>
+  on(EVENTS.workspaceChanged, cb);
 
 // ---------------------------------------------------------------- servidores
 

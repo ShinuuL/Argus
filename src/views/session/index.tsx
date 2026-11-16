@@ -47,7 +47,8 @@ import {
   type LocalCommandName,
 } from "@/views/chat";
 import { SessionServersBadge } from "@/views/servers";
-import { applyTask, cancelTask, discardTask } from "./actions";
+import { applyTask, cancelTask, deleteTask, discardTask } from "./actions";
+import { ContextMenu, type MenuItem } from "@/shell/ContextMenu";
 import {
   chatEntries,
   sessionTitle,
@@ -124,15 +125,20 @@ function SessionPicker(props: { current: Task | null; project: Path | null; onNe
   const tasks = useApp((s) => s.tasks);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const root = useRef<HTMLDivElement>(null);
+  const menuOpen = useRef(false);
+  menuOpen.current = menu != null;
 
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
+      // O menu de contexto fica fora da lista: clicar nele não fecha a lista.
+      if (menuOpen.current) return;
       if (!root.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape" && !menuOpen.current) setOpen(false);
     };
     document.addEventListener("mousedown", onDown, true);
     document.addEventListener("keydown", onKey, true);
@@ -202,8 +208,25 @@ function SessionPicker(props: { current: Task | null; project: Path | null; onNe
                 role="option"
                 aria-selected={t.id === current?.id}
                 className={t.id === current?.id ? "cv-pop-item sel" : "cv-pop-item"}
-                title={t.prompt}
+                title={`${t.prompt}\n\nClique direito: excluir`}
                 onClick={() => pick(t.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    items: [
+                      { label: "Abrir", onSelect: () => pick(t.id) },
+                      {
+                        label: "Excluir sessão…",
+                        danger: true,
+                        separator: true,
+                        onSelect: () =>
+                          void deleteTask(t).catch((err) => useApp.getState().setError(errorMessage(err))),
+                      },
+                    ],
+                  });
+                }}
               >
                 <StateDot task={t} />
                 <span className="ellipsis cv-pop-text">{sessionTitle(t.prompt)}</span>
@@ -215,6 +238,7 @@ function SessionPicker(props: { current: Task | null; project: Path | null; onNe
           </div>
         </div>
       )}
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
     </div>
   );
 }
@@ -300,7 +324,9 @@ function Welcome(props: { project: Path | null; hasRoot: boolean; mode: WorkMode
 
 export default function ChatTab({ tabId, taskId, project: tabProject, active }: ChatTabProps) {
   const task = useApp((s) => (taskId == null ? undefined : s.tasks.find((t) => t.id === taskId)));
-  const projects = useApp((s) => s.projects);
+  const allProjects = useApp((s) => s.projects);
+  // Projeto com a pasta apagada não recebe conversa nova.
+  const projects = useMemo(() => allProjects.filter((p) => !p.missing), [allProjects]);
   const root = useApp((s) => s.root);
   const selectedProject = useApp((s) => s.selected);
   const selectedSub = useApp((s) => (taskId == null ? null : (s.subagentOf[taskId] ?? null)));

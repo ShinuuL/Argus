@@ -20,7 +20,7 @@ import {
 import { ContextMenu, type MenuItem } from "@/shell/ContextMenu";
 import { Icon, type IconName } from "@/shell/icons";
 import { activeTab, PAGES, useApp, useLayout, useWorkbench, type PageId } from "@/store";
-import { cancelTask, discardTask } from "@/views/session/actions";
+import { cancelTask, deleteClosedTasks, deleteTask, discardTask } from "@/views/session/actions";
 import { sessionTitle } from "@/views/session/events";
 import { StateDot } from "@/views/session";
 import "./projects.css";
@@ -39,7 +39,13 @@ function onActivateKey(e: KeyboardEvent, action: () => void) {
   }
 }
 
-function GitInfo({ status, kinds }: { status: ProjectStatus | null | undefined; kinds: string[] }) {
+function GitInfo({ status, kinds, missing }: { status: ProjectStatus | null | undefined; kinds: string[]; missing?: boolean }) {
+  if (missing)
+    return (
+      <span className="pj-git pj-missing" title="A pasta foi removida do disco; as sessões continuam aqui até serem excluídas">
+        pasta ausente
+      </span>
+    );
   if (status === undefined) return <span className="pj-git">calculando…</span>;
   if (status === null) return <span className="pj-git">{kinds.join(", ") || "sem git"}</span>;
   const changed = status.changed_files.length;
@@ -175,8 +181,44 @@ export default function ProjectsView() {
               .then((ok) => (ok ? discardTask(task.id) : false))
               .catch(fail),
         },
+        {
+          label: "Excluir sessão…",
+          danger: true,
+          separator: true,
+          onSelect: () => void deleteTask(task).catch(fail),
+        },
       ],
     });
+  };
+
+  const projectMenu = (e: MouseEvent, p: Project) => {
+    e.preventDefault();
+    const closedCount = tasks.filter(
+      (t) => samePath(t.project, p.path) && ["Applied", "Discarded"].includes(variantOf(t.state).kind),
+    ).length;
+    setMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items: [
+        { label: "Nova conversa", disabled: !!p.missing, onSelect: () => newChat(p.path) },
+        {
+          label: closedCount > 0 ? `Excluir encerradas (${closedCount})…` : "Excluir encerradas",
+          danger: true,
+          separator: true,
+          disabled: closedCount === 0,
+          onSelect: () => void deleteClosedTasks(p.path).catch(fail),
+        },
+      ],
+    });
+  };
+
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = () => {
+    setRefreshing(true);
+    void useApp
+      .getState()
+      .refreshRoot()
+      .finally(() => setRefreshing(false));
   };
 
   const newChat = (project: Path) => {
@@ -190,6 +232,15 @@ export default function ProjectsView() {
         <span className="pj-head-title">Projetos</span>
         <button className="pj-ibtn" title="Abrir pasta raiz" aria-label="Abrir pasta raiz" onClick={() => void pickRoot()}>
           <Icon name="folderOpen" size={15} />
+        </button>
+        <button
+          className="pj-ibtn"
+          title="Atualizar a lista de projetos, branches e alterados"
+          aria-label="Atualizar projetos"
+          disabled={!root || refreshing}
+          onClick={refresh}
+        >
+          <Icon name="refresh" size={15} className={refreshing ? "pj-spin" : undefined} />
         </button>
         <button
           className="pj-ibtn"
@@ -256,17 +307,19 @@ export default function ProjectsView() {
           return (
             <div key={p.path} className="pj-group">
               <div
-                className={isSel ? "pj-project sel" : "pj-project"}
+                className={["pj-project", isSel && "sel", p.missing && "missing"].filter(Boolean).join(" ")}
                 role="treeitem"
                 aria-expanded={open}
                 tabIndex={0}
-                title={p.path}
+                title={p.missing ? `${p.path}\n(pasta ausente)` : p.path}
                 onClick={toggle}
+                onContextMenu={(e) => projectMenu(e, p)}
                 onKeyDown={(e) => onActivateKey(e, toggle)}
               >
                 <Icon name={open ? "chevronDown" : "chevronRight"} size={13} className="pj-chev" />
                 <span className="pj-name ellipsis">{p.name || baseName(p.path)}</span>
-                <GitInfo status={statuses[p.path]} kinds={p.kinds} />
+                <GitInfo status={statuses[p.path]} kinds={p.kinds} missing={p.missing} />
+                {!p.missing && (
                 <button
                   className="pj-ibtn pj-add"
                   title={`Nova conversa em ${p.name}`}
@@ -278,13 +331,14 @@ export default function ProjectsView() {
                 >
                   <Icon name="plus" size={14} />
                 </button>
+                )}
               </div>
               {open && (
                 <div className="pj-sessions" role="group">
                   {sessions.map((t) => (
                     <SessionRow key={t.id} task={t} current={t.id === currentTask} onMenu={sessionMenu} />
                   ))}
-                  {sessions.length === 0 && (
+                  {sessions.length === 0 && !p.missing && (
                     <button className="pj-none" onClick={() => newChat(p.path)}>
                       {total > 0 ? "Nenhuma sessão neste filtro" : "Nenhuma sessão ainda · começar uma conversa"}
                     </button>

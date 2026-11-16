@@ -10,7 +10,7 @@
  */
 import { create } from "zustand";
 import { api, errorMessage, isTaskActive, isTauri, onTaskState, variantOf, type TaskId, type TaskState } from "@/api";
-import { buildPrompt, type ChatAttachment } from "./attachments";
+import { buildPrompt, discard, type ChatAttachment } from "./attachments";
 
 /**
  * Chave de conversa: o id da tarefa ou, na conversa ainda não criada, `new:<rascunho>`
@@ -48,6 +48,8 @@ interface ChatState {
   /** Tira um item da fila e o devolve (para editar ou enviar). */
   takeQueued(key: ChatKey, id?: string): QueueItem | null;
   setPaused(key: ChatKey, reason: string | null): void;
+  /** Esquece rascunho, anexos, fila e pausa da conversa (sessão excluída). */
+  forget(key: ChatKey): void;
 }
 
 const EMPTY_ATTACHMENTS: ChatAttachment[] = [];
@@ -100,6 +102,18 @@ export const useChat = create<ChatState>()((set, get) => ({
       if (reason) paused[key] = reason;
       else delete paused[key];
       return { paused };
+    }),
+
+  forget: (key) =>
+    set((s) => {
+      if (!(key in s.drafts || key in s.attachments || key in s.queue || key in s.paused)) return s;
+      const drop = <T,>(r: Record<ChatKey, T>) => {
+        const out = { ...r };
+        delete out[key];
+        return out;
+      };
+      (s.attachments[key] ?? []).forEach(discard);
+      return { drafts: drop(s.drafts), attachments: drop(s.attachments), queue: drop(s.queue), paused: drop(s.paused) };
     }),
 }));
 
