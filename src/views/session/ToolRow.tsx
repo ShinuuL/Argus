@@ -3,7 +3,7 @@
  * ferramenta (nome em negrito + resumo em mono, recolhida; abre IN/OUT ou
  * diff), raciocínio recolhido e a lista de tarefas (TodoWrite) como checklist.
  */
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { Icon, toolIcon } from "@/shell/icons";
 
 type Input = Record<string, unknown>;
@@ -86,9 +86,11 @@ export function TimelineItem({ dot, children, className }: { dot: ReactNode; chi
   );
 }
 
-interface DiffLine {
+export interface DiffLine {
   sign: "+" | "-" | " ";
   text: string;
+  /** Número da linha (no arquivo novo; no antigo para as removidas). Só no painel de diff. */
+  no?: number;
 }
 
 /** Diff simples: linhas comuns no começo e no fim viram contexto; o meio, − e +. */
@@ -112,14 +114,42 @@ function diffLines(before: string, after: string): DiffLine[] {
   return out;
 }
 
-function Diff({ lines }: { lines: DiffLine[] }) {
+/**
+ * Linhas de diff (+/−/contexto). No chat, só as linhas; o painel de diff passa
+ * `numbered` (coluna com o número da linha), `onLine` (clique no número para
+ * comentar) e `after` (o que aparece embaixo de uma linha, como o comentário).
+ */
+export function Diff({
+  lines,
+  numbered = false,
+  onLine,
+  after,
+  className,
+}: {
+  lines: DiffLine[];
+  numbered?: boolean;
+  onLine?: (i: number) => void;
+  after?: (i: number) => ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="tl-diff" role="figure" aria-label="Alterações">
+    <div className={`tl-diff${numbered ? " numbered" : ""}${className ? ` ${className}` : ""}`} role="figure" aria-label="Alterações">
       {lines.map((l, i) => (
-        <div key={i} className={`tl-diff-line ${l.sign === "+" ? "add" : l.sign === "-" ? "del" : "ctx"}`}>
-          <span className="tl-diff-sign">{l.sign}</span>
-          <span className="tl-diff-text">{l.text || " "}</span>
-        </div>
+        <Fragment key={i}>
+          <div className={`tl-diff-line ${l.sign === "+" ? "add" : l.sign === "-" ? "del" : "ctx"}`}>
+            {numbered &&
+              (onLine && l.no != null ? (
+                <button className="tl-diff-no" title="Comentar esta linha" aria-label={`Comentar a linha ${l.no}`} onClick={() => onLine(i)}>
+                  {l.no}
+                </button>
+              ) : (
+                <span className="tl-diff-no">{l.no ?? ""}</span>
+              ))}
+            <span className="tl-diff-sign">{l.sign}</span>
+            <span className="tl-diff-text">{l.text || " "}</span>
+          </div>
+          {after?.(i)}
+        </Fragment>
       ))}
     </div>
   );

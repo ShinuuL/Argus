@@ -151,3 +151,10 @@ button.df-file:hover { background: var(--bg-hover); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ---------- Divisor entre grupos do workbench (redimensionar) ---------- */
+.wb-sash { flex: none; position: relative; z-index: 5; background: transparent; transition: background-color .12s; }
+.wb-row > .wb-sash { width: 5px; margin: 0 -2px; cursor: col-resize; }
+.wb-col > .wb-sash { height: 5px; margin: -2px 0; cursor: row-resize; }
+.wb-sash:hover, .wb-sash.active { background: var(--focus); }
+.rp-head-actions { display: inline-flex; gap: 2px; flex: none; }

@@ -19,6 +19,8 @@ export type TabKind =
   | { type: "dashboard" }
   /** Mapa de agentes de uma sessão (subagentes e tarefas em segundo plano). */
   | { type: "agentmap"; task: TaskId }
+  /** Diff de uma sessão num painel do workbench (com comentário por linha). */
+  | { type: "diff"; task: TaskId }
   /** Telas que abrem como aba pelo rodapé da barra esquerda. */
   | { type: "page"; page: PageId };
 
@@ -75,6 +77,7 @@ export function sameKind(a: TabKind, b: TabKind): boolean {
   if (a.type === "file" && b.type === "file") return samePath(a.path, b.path);
   if (a.type === "chat" && b.type === "chat") return a.task === b.task;
   if (a.type === "agentmap" && b.type === "agentmap") return a.task === b.task;
+  if (a.type === "diff" && b.type === "diff") return a.task === b.task;
   if (a.type === "page" && b.type === "page") return a.page === b.page;
   if (a.type === "terminal" || b.type === "terminal") return false;
   return a.type === b.type;
@@ -92,6 +95,8 @@ export function tabTitle(kind: TabKind): string {
       return "Painel";
     case "agentmap":
       return `Mapa de agentes #${kind.task}`;
+    case "diff":
+      return `Alterações #${kind.task}`;
     case "page":
       return PAGES.find((p) => p.id === (normalizeKind(kind) as typeof kind).page)?.label ?? kind.page;
   }
@@ -191,6 +196,8 @@ export interface WorkbenchState {
   groups: Group[];
   activeGroup: number;
   split: SplitDir;
+  /** Peso (flex-grow) de cada grupo, por id; quem não está aqui pesa 1. */
+  sizes: Record<number, number>;
   /** Arquivos com alterações não salvas. */
   dirty: Path[];
   /** Aba sendo arrastada (drag-and-drop entre grupos). */
@@ -204,6 +211,8 @@ export interface WorkbenchState {
   openSession(task: TaskId): void;
   /** Abre (ou foca) a aba "Mapa de agentes" de uma tarefa. */
   openAgentMap(task: TaskId): void;
+  /** Abre (ou foca) o diff da sessão como aba. */
+  openDiff(task: TaskId): void;
   /** Abre uma conversa nova (reaproveita a aba de conversa vazia do grupo, se houver). */
   openNewChat(project?: Path | null): void;
   /** A conversa nova da aba `tab` virou a tarefa `task` (a aba continua a mesma). */
@@ -243,6 +252,8 @@ export interface WorkbenchState {
   /** Move uma aba para outro grupo (antes de `before`, ou no fim). */
   moveTab(tab: number, toGid: number, before?: number | null): void;
   toggleSplitDir(): void;
+  /** Novos pesos dos grupos (arrastar o divisor entre eles). */
+  setSizes(sizes: Record<number, number>): void;
   setDrag(tab: number | null): void;
 }
 
@@ -256,6 +267,7 @@ export const useWorkbench = create<WorkbenchState>()((set, get) => {
     groups: [{ id: 0, tabs: [], active: null }],
     activeGroup: 0,
     split: "horizontal",
+    sizes: {},
     dirty: [],
     drag: null,
     nextId: 1,
@@ -277,6 +289,7 @@ export const useWorkbench = create<WorkbenchState>()((set, get) => {
       s.open({ type: "chat", task, project: null });
     },
     openAgentMap: (task) => get().open({ type: "agentmap", task }),
+    openDiff: (task) => get().open({ type: "diff", task }),
     openNewChat: (project = null) => {
       const s = get();
       const g = s.groups[activeIndex()];
@@ -355,7 +368,7 @@ export const useWorkbench = create<WorkbenchState>()((set, get) => {
     closeSessionTabs: (task) => {
       const found = get().groups.flatMap((g) =>
         g.tabs
-          .filter((t) => (t.kind.type === "chat" || t.kind.type === "agentmap") && t.kind.task === task).map((t) => [g.id, t.id] as const),
+          .filter((t) => (t.kind.type === "chat" || t.kind.type === "agentmap" || t.kind.type === "diff") && t.kind.task === task).map((t) => [g.id, t.id] as const),
       );
       found.forEach(([gid, tab]) => {
         if (get().groups.some((g) => g.id === gid)) get().closeTab(gid, tab);
@@ -424,6 +437,7 @@ export const useWorkbench = create<WorkbenchState>()((set, get) => {
       }),
 
     toggleSplitDir: () => set((s) => ({ split: s.split === "horizontal" ? "vertical" : "horizontal" })),
+    setSizes: (sizes) => set((s) => ({ sizes: { ...s.sizes, ...sizes } })),
     setDrag: (drag) => set({ drag }),
   };
 });

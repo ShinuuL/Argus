@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent, type PointerEvent } from "react";
 import { languageFor, onProjectChanged, samePath, type Path, type Task } from "@/api";
 import { Icon, type IconName } from "@/shell/icons";
 import {
@@ -22,6 +22,7 @@ import ChatTab from "@/views/session";
 import AgentMap from "@/views/agentmap";
 import { sessionTitle } from "@/views/session/events";
 import { AgentState } from "@/views/session/AgentState";
+import DiffTab from "@/views/session/DiffTab";
 import SettingsView from "@/views/settings";
 import { Terminal } from "@/views/terminal";
 import { Dashboard } from "./Dashboard";
@@ -78,6 +79,8 @@ function TabIcon({ kind, task }: { kind: TabKind; task: Task | undefined }) {
       return <Icon name="grid" size={14} className="wb-ic-svg" />;
     case "agentmap":
       return <Icon name="tree" size={14} className="wb-ic-svg" />;
+    case "diff":
+      return <Icon name="diff" size={14} className="wb-ic-svg" />;
     case "page":
       return <Icon name={PAGE_ICONS[kind.page] ?? "gear"} size={14} className="wb-ic-svg" />;
   }
@@ -259,6 +262,8 @@ function TabBody({ tab, active }: { tab: WbTab; active: boolean }) {
       return <Dashboard />;
     case "agentmap":
       return <AgentMap taskId={kind.task} active={active} />;
+    case "diff":
+      return <DiffTab taskId={kind.task} />;
     case "file":
       return null;
   }
@@ -272,11 +277,16 @@ function EditorGroup({
   focused,
   canSplit,
   titleRow,
+  multi,
+  style,
 }: {
   group: Group;
   focused: boolean;
   canSplit: boolean;
   titleRow: boolean;
+  /** Há mais de um grupo (mostra o botão de trocar a direção da divisão). */
+  multi: boolean;
+  style?: CSSProperties;
 }) {
   const dirty = useWorkbench((s) => s.dirty);
   const tasks = useApp((s) => s.tasks);
@@ -352,7 +362,7 @@ function EditorGroup({
   };
 
   return (
-    <div className={focused ? "wb-group focused" : "wb-group"} onMouseDownCapture={() => wb().focusGroup(gid)}>
+    <div className={focused ? "wb-group focused" : "wb-group"} style={style} onMouseDownCapture={() => wb().focusGroup(gid)}>
       <div
         ref={strip}
         className={over === "end" ? "wb-tabs drop-end" : "wb-tabs"}
@@ -445,6 +455,16 @@ function EditorGroup({
               <Icon name="splitH" size={14} />
             </button>
           )}
+          {multi && (
+            <button
+              className="wb-sbtn"
+              title={split === "horizontal" ? "Empilhar os grupos" : "Pôr os grupos lado a lado"}
+              aria-label={split === "horizontal" ? "Empilhar os grupos" : "Pôr os grupos lado a lado"}
+              onClick={() => wb().toggleSplitDir()}
+            >
+              <Icon name={split === "horizontal" ? "splitV" : "splitH"} size={14} />
+            </button>
+          )}
           {active && group.tabs.length > 1 && (
             <button
               className="wb-sbtn"
@@ -529,6 +549,7 @@ export default function WorkbenchView() {
   const groups = useWorkbench((s) => s.groups);
   const activeGroup = useWorkbench((s) => s.activeGroup);
   const split = useWorkbench((s) => s.split);
+  const sizes = useWorkbench((s) => s.sizes);
 
   // Descarta os modelos dos arquivos que não estão mais em nenhuma aba.
   useEffect(() => {
@@ -559,17 +580,66 @@ export default function WorkbenchView() {
   }, []);
 
   const focusedGid = groups.some((g) => g.id === activeGroup) ? activeGroup : groups[0]?.id;
+  const container = useRef<HTMLDivElement>(null);
+  const weight = (gid: number) => sizes[gid] ?? 1;
+
+  /** Arrasta o divisor entre os grupos `i` e `i + 1`: troca peso entre os dois (mínimo de 12% da área). */
+  const startResize = (i: number) => (e: PointerEvent<HTMLDivElement>) => {
+    const box = container.current;
+    if (!box || e.button !== 0) return;
+    e.preventDefault();
+    const horiz = split === "horizontal";
+    const total = horiz ? box.clientWidth : box.clientHeight;
+    const a = groups[i].id;
+    const b = groups[i + 1].id;
+    const sum = groups.reduce((n, g) => n + weight(g.id), 0);
+    const pair = weight(a) + weight(b);
+    const startA = weight(a);
+    const start = horiz ? e.clientX : e.clientY;
+    const min = sum * 0.12;
+    const sash = e.currentTarget;
+    sash.setPointerCapture(e.pointerId);
+    sash.classList.add("active");
+    const move = (ev: globalThis.PointerEvent) => {
+      const delta = (((horiz ? ev.clientX : ev.clientY) - start) / Math.max(1, total)) * sum;
+      const na = Math.min(pair - min, Math.max(min, startA + delta));
+      useWorkbench.getState().setSizes({ [a]: na, [b]: pair - na });
+    };
+    const up = () => {
+      sash.classList.remove("active");
+      sash.removeEventListener("pointermove", move);
+      sash.removeEventListener("pointerup", up);
+      sash.removeEventListener("pointercancel", up);
+    };
+    sash.addEventListener("pointermove", move);
+    sash.addEventListener("pointerup", up);
+    sash.addEventListener("pointercancel", up);
+  };
 
   return (
-    <div className={split === "horizontal" ? "wb-groups wb-row" : "wb-groups wb-col"}>
+    <div ref={container} className={split === "horizontal" ? "wb-groups wb-row" : "wb-groups wb-col"}>
       {groups.map((g, i) => (
-        <EditorGroup
-          key={g.id}
-          group={g}
-          focused={g.id === focusedGid}
-          canSplit={groups.length < MAX_GROUPS}
-          titleRow={split === "horizontal" || i === 0}
-        />
+        <Fragment key={g.id}>
+          {i > 0 && (
+            <div
+              className="wb-sash"
+              role="separator"
+              aria-orientation={split === "horizontal" ? "vertical" : "horizontal"}
+              aria-label="Redimensionar os grupos"
+              title="Arraste para redimensionar · duplo clique iguala"
+              onPointerDown={startResize(i - 1)}
+              onDoubleClick={() => useWorkbench.getState().setSizes(Object.fromEntries(groups.map((x) => [x.id, 1])))}
+            />
+          )}
+          <EditorGroup
+            group={g}
+            focused={g.id === focusedGid}
+            canSplit={groups.length < MAX_GROUPS}
+            titleRow={split === "horizontal" || i === 0}
+            multi={groups.length > 1}
+            style={{ flexGrow: weight(g.id) }}
+          />
+        </Fragment>
       ))}
     </div>
   );

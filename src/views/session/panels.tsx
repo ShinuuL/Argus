@@ -115,9 +115,19 @@ export function ChangesPanel({ taskId, project }: { taskId: TaskId | null; proje
       <div className="rp-body">
         <div className="rp-head">
           <b className="ellipsis">Sessão #{taskId} · direto na pasta</b>
-          <button className="wb-sbtn" title="Recarregar o diff" aria-label="Recarregar o diff" onClick={() => setReload((n) => n + 1)}>
-            <Icon name="refresh" size={14} />
-          </button>
+          <span className="rp-head-actions">
+            <button
+              className="wb-sbtn"
+              title="Abrir o diff num painel (pode ficar ao lado do chat e ser comentado por linha)"
+              aria-label="Abrir o diff num painel"
+              onClick={() => useWorkbench.getState().openDiff(taskId)}
+            >
+              <Icon name="splitH" size={14} />
+            </button>
+            <button className="wb-sbtn" title="Recarregar o diff" aria-label="Recarregar o diff" onClick={() => setReload((n) => n + 1)}>
+              <Icon name="refresh" size={14} />
+            </button>
+          </span>
         </div>
         <div className="rp-direct" role="note">
           <Icon name="folderOpen" size={14} />
@@ -160,9 +170,19 @@ export function ChangesPanel({ taskId, project }: { taskId: TaskId | null; proje
     <div className="rp-body">
       <div className="rp-head">
         <b className="ellipsis">Sessão #{taskId}</b>
-        <button className="wb-sbtn" title="Recarregar o diff" aria-label="Recarregar o diff" onClick={() => setReload((n) => n + 1)}>
-          <Icon name="refresh" size={14} />
-        </button>
+        <span className="rp-head-actions">
+          <button
+            className="wb-sbtn"
+            title="Abrir o diff num painel (pode ficar ao lado do chat e ser comentado por linha)"
+            aria-label="Abrir o diff num painel"
+            onClick={() => useWorkbench.getState().openDiff(taskId)}
+          >
+            <Icon name="splitH" size={14} />
+          </button>
+          <button className="wb-sbtn" title="Recarregar o diff" aria-label="Recarregar o diff" onClick={() => setReload((n) => n + 1)}>
+            <Icon name="refresh" size={14} />
+          </button>
+        </span>
       </div>
       <div className="rp-actions">
         <button

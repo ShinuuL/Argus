@@ -253,3 +253,25 @@
 .tl-plain > .tl-mark { padding-top: 0; }
 .tl-text .chat-msg-actions { height: 20px; margin-top: 0; }
 @container (max-width: 520px) { .cv-denied { flex-wrap: wrap; } .cv-denied > button { flex-basis: 100%; } }
+
+/* ---------- Painel de diff (aba "Alterações #n" no workbench) ---------- */
+.tl-diff.numbered .tl-diff-line { grid-template-columns: 52px 22px minmax(0, 1fr); }
+.tl-diff-no { display: block; padding: 0 8px 0 0; background: none; border: 0; border-radius: 0; text-align: right; font: inherit; color: var(--text-2); opacity: .7; user-select: none; }
+button.tl-diff-no { cursor: pointer; }
+button.tl-diff-no:hover, button.tl-diff-no:focus-visible { opacity: 1; color: var(--accent-text); background: var(--bg-hover); }
+.dt { height: 100%; overflow: auto; background: var(--bg); container-type: inline-size; }
+@container (max-width: 640px) { .dt-hint { display: none; } .dt-head b { flex: 1; } .dt-note, .dt-sent { margin-left: 12px; } }
+.dt-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px 0 16px; background: var(--bg); border-bottom: 1px solid var(--border); font-size: 12.5px; color: var(--text); }
+.dt-head .wb-sbtn { display: inline-flex; align-items: center; height: 24px; }
+.dt-sum { display: inline-flex; gap: 6px; color: var(--text-2); font-size: 12px; white-space: nowrap; }
+.dt-hint { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 11.5px; text-align: right; }
+.dt-msg { margin: 12px 16px; }
+.dt-file { margin: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); overflow: hidden; }
+.dt-file-head { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); font-family: var(--font-mono-family); font-size: 12px; color: var(--text); }
+.dt-file-head .ellipsis { flex: 1; min-width: 0; }
+.tl-diff.dt-diff { max-height: none; overflow: visible; }
+.dt-note { display: flex; flex-direction: column; gap: 6px; margin: 4px 12px 8px 74px; padding: 8px; border: 1px solid var(--border-control); border-radius: var(--radius); background: var(--bg); font-family: var(--font-sans); }
+.dt-note textarea { width: 100%; resize: vertical; min-height: 44px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); font: 12.5px/1.45 var(--font-sans); }
+.dt-note textarea:focus { outline: 0; border-color: var(--focus); }
+.dt-note-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.dt-sent { display: flex; align-items: center; gap: 5px; margin: 2px 12px 6px 74px; color: var(--ok); font-size: 11.5px; }
