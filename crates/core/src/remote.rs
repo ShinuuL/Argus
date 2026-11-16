@@ -34,6 +34,8 @@ const APP_JS: &str = include_str!("../assets/remote/app.js");
 const STYLE_CSS: &str = include_str!("../assets/remote/style.css");
 const MANIFEST: &str = include_str!("../assets/remote/manifest.webmanifest");
 const ICON_SVG: &str = include_str!("../assets/remote/icon.svg");
+/// Geist (OFL-1.1, subconjunto latino de @fontsource-variable/geist), servida localmente.
+const GEIST_WOFF2: &[u8] = include_bytes!("../assets/remote/geist.woff2");
 const UNAUTHORIZED_HTML: &str = include_str!("../assets/remote/unauthorized.html");
 
 /// Política de conteúdo das páginas: só arquivos do próprio servidor, sem script inline.
@@ -318,6 +320,19 @@ fn asset(ct: &'static str, body: impl Into<String>) -> Response {
         .into_response()
 }
 
+/// A fonte Geist (binária, muda só com o app: cache longo).
+fn font_asset() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "font/woff2"),
+            (header::CACHE_CONTROL, "max-age=604800"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        GEIST_WOFF2,
+    )
+        .into_response()
+}
+
 #[derive(Deserialize)]
 struct ThemeQuery {
     tema: Option<String>,
@@ -598,6 +613,7 @@ fn router(st: AppState) -> Router {
         .route("/", get(|| async { asset("text/html; charset=utf-8", INDEX_HTML) }))
         .route("/app.js", get(|| async { asset("application/javascript; charset=utf-8", APP_JS) }))
         .route("/style.css", get(|| async { asset("text/css; charset=utf-8", STYLE_CSS) }))
+        .route("/geist.woff2", get(|| async { font_asset() }))
         .route("/manifest.webmanifest", get(manifest))
         .route("/icon.svg", get(icon))
         .route("/api/tasks", get(list_tasks).post(create_task))

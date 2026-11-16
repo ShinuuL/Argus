@@ -1,3 +1,12 @@
+/* Geist (OFL-1.1), servida pelo próprio servidor remoto, sem CDN. */
+@font-face {
+  font-family: "Geist Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("/geist.woff2") format("woff2");
+}
+
 /*
  * Argus pelo celular. Os tokens de cor são os mesmos do desktop
  * (src/styles/tokens.css): três temas, cores de estado iguais nos três.
@@ -87,6 +96,7 @@
   --bg-active: color-mix(in srgb, var(--surface) 45%, var(--border));
   --accent-soft: color-mix(in srgb, var(--accent) 22%, transparent);
 
+  --sans: "Geist Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: "Cascadia Mono", "Roboto Mono", "SF Mono", Menlo, Consolas, monospace;
   --pad: 14px;
   --touch: 44px;
@@ -98,7 +108,7 @@ html { height: 100%; background: var(--bg); -webkit-text-size-adjust: 100%; text
 body {
   margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none;
   background: var(--bg); color: var(--text);
-  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 15px/1.45 var(--sans);
 }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
