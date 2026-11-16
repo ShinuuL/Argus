@@ -18,6 +18,7 @@ import DepsView from "@/views/deps";
 import MetricsView from "@/views/metrics";
 import RemoteView from "@/views/remote";
 import ChatTab from "@/views/session";
+import AgentMap from "@/views/agentmap";
 import { sessionTitle } from "@/views/session/events";
 import SettingsView from "@/views/settings";
 import { Terminal } from "@/views/terminal";
@@ -76,6 +77,8 @@ function TabIcon({ kind, task }: { kind: TabKind; task: Task | undefined }) {
       return <Icon name="terminal" size={14} className="wb-ic-svg" />;
     case "dashboard":
       return <Icon name="grid" size={14} className="wb-ic-svg" />;
+    case "agentmap":
+      return <Icon name="tree" size={14} className="wb-ic-svg" />;
     case "page":
       return <Icon name={PAGE_ICONS[kind.page] ?? "gear"} size={14} className="wb-ic-svg" />;
   }
@@ -254,6 +257,8 @@ function TabBody({ tab, active }: { tab: WbTab; active: boolean }) {
       return <Terminal cwd={kind.cwd} command={kind.command} active={active} persistKey={`wb-${tab.id}`} />;
     case "dashboard":
       return <Dashboard />;
+    case "agentmap":
+      return <AgentMap taskId={kind.task} active={active} />;
     case "file":
       return null;
   }

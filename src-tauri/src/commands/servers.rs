@@ -1,7 +1,7 @@
 //! Servidores vinculados às sessões e terminais, e os "Comandos permitidos ao agente".
 //! A lista atualizada chega no evento `servers-changed`.
 use super::{blocking, err};
-use argus_core::procs::{self, Owner, ServerInfo};
+use argus_core::procs::{self, OwnedProc, Owner, ServerInfo};
 use std::path::PathBuf;
 
 /// Servidores em execução rastreados (de sessões e terminais).
@@ -14,6 +14,12 @@ pub async fn servers_list() -> Result<Vec<ServerInfo>, String> {
 #[tauri::command]
 pub async fn servers_of(owner: Owner) -> Result<Vec<ServerInfo>, String> {
     Ok(procs::tracker().servers_of(owner))
+}
+
+/// Processos vivos de um dono (tarefas em segundo plano da sessão), sem a raiz.
+#[tauri::command]
+pub async fn owner_processes(owner: Owner) -> Result<Vec<OwnedProc>, String> {
+    blocking(move || Ok(procs::tracker().processes_of(owner))).await
 }
 
 /// Derruba um servidor (o processo e os filhos). Devolve a lista atualizada.

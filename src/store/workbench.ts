@@ -17,6 +17,8 @@ export type TabKind =
   | { type: "chat"; task: TaskId | null; project: Path | null }
   | { type: "terminal"; title: string; cwd: Path | null; command: CmdSpec | CommandSpec | null }
   | { type: "dashboard" }
+  /** Mapa de agentes de uma sessão (subagentes e tarefas em segundo plano). */
+  | { type: "agentmap"; task: TaskId }
   /** Telas que abrem como aba pelo rodapé da barra esquerda. */
   | { type: "page"; page: PageId };
 
@@ -71,6 +73,7 @@ export interface Group {
 export function sameKind(a: TabKind, b: TabKind): boolean {
   if (a.type === "file" && b.type === "file") return samePath(a.path, b.path);
   if (a.type === "chat" && b.type === "chat") return a.task === b.task;
+  if (a.type === "agentmap" && b.type === "agentmap") return a.task === b.task;
   if (a.type === "page" && b.type === "page") return a.page === b.page;
   if (a.type === "terminal" || b.type === "terminal") return false;
   return a.type === b.type;
@@ -86,6 +89,8 @@ export function tabTitle(kind: TabKind): string {
       return kind.title;
     case "dashboard":
       return "Painel";
+    case "agentmap":
+      return `Mapa de agentes #${kind.task}`;
     case "page":
       return PAGES.find((p) => p.id === (normalizeKind(kind) as typeof kind).page)?.label ?? kind.page;
   }
@@ -196,6 +201,8 @@ export interface WorkbenchState {
   openFile(path: Path, preview?: boolean): void;
   /** Abre (ou foca) a aba de chat de uma tarefa. */
   openSession(task: TaskId): void;
+  /** Abre (ou foca) a aba "Mapa de agentes" de uma tarefa. */
+  openAgentMap(task: TaskId): void;
   /** Abre uma conversa nova (reaproveita a aba de conversa vazia do grupo, se houver). */
   openNewChat(project?: Path | null): void;
   /** A conversa nova da aba `tab` virou a tarefa `task` (a aba continua a mesma). */
@@ -268,6 +275,7 @@ export const useWorkbench = create<WorkbenchState>()((set, get) => {
       }
       s.open({ type: "chat", task, project: null });
     },
+    openAgentMap: (task) => get().open({ type: "agentmap", task }),
     openNewChat: (project = null) => {
       const s = get();
       const g = s.groups[activeIndex()];
@@ -345,7 +353,8 @@ export const useWorkbench = create<WorkbenchState>()((set, get) => {
 
     closeSessionTabs: (task) => {
       const found = get().groups.flatMap((g) =>
-        g.tabs.filter((t) => t.kind.type === "chat" && t.kind.task === task).map((t) => [g.id, t.id] as const),
+        g.tabs
+          .filter((t) => (t.kind.type === "chat" || t.kind.type === "agentmap") && t.kind.task === task).map((t) => [g.id, t.id] as const),
       );
       found.forEach(([gid, tab]) => {
         if (get().groups.some((g) => g.id === gid)) get().closeTab(gid, tab);

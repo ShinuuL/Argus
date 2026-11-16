@@ -111,6 +111,7 @@ fn main() {
             // servidores
             servers::servers_list,
             servers::servers_of,
+            servers::owner_processes,
             servers::server_kill,
             servers::servers_stop_all,
             servers::server_restart,

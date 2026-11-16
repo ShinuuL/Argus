@@ -85,7 +85,7 @@ export function chatEntries(events: AgentEvent[], owner: string | null): ChatEnt
       else out.push(card);
       continue;
     }
-    if ("SubagentEnd" in event) continue;
+    if ("SubagentEnd" in event || "SubagentStats" in event) continue;
     if (evOwner !== owner) continue;
     if ("Denied" in event) {
       out.push({ type: "denied", ...event.Denied });

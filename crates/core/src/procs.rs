@@ -50,6 +50,19 @@ pub struct ServerInfo {
     pub cwd: Option<PathBuf>,
 }
 
+/// Processo vivo da árvore de um dono (tarefas em segundo plano da sessão).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OwnedProc {
+    pub pid: u32,
+    pub parent: Option<u32>,
+    pub name: String,
+    pub cmdline: String,
+    /// Segundos desde a época Unix.
+    pub started_at: u64,
+    /// Porta TCP em LISTEN, se o processo for um servidor conhecido.
+    pub port: Option<u16>,
+}
+
 /// Uma linha da tabela de processos (independente do `sysinfo`, para testes).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcRow {
@@ -338,6 +351,38 @@ impl ProcTracker {
         self.lock().servers.iter().filter(|s| s.owner == owner).cloned().collect()
     }
 
+    /// Processos vivos de `owner`: descendentes atuais das raízes dele mais os
+    /// órfãos já vinculados (mesmo start_time). As raízes (o próprio processo
+    /// do agente/terminal) ficam de fora. Ordem: início, depois PID.
+    pub fn processes_of(&self, owner: Owner) -> Vec<OwnedProc> {
+        let rows = self.src.processes();
+        let g = self.lock();
+        let roots: HashSet<u32> = g.roots.iter().filter(|(_, o)| **o == owner).map(|(p, _)| *p).collect();
+        let mut pids: HashSet<u32> = HashSet::new();
+        for root in &roots {
+            pids.extend(descendants(*root, &rows));
+        }
+        for r in &rows {
+            if g.known.get(&r.pid).is_some_and(|(o, st)| *o == owner && *st == r.started_at) {
+                pids.insert(r.pid);
+            }
+        }
+        let mut out: Vec<OwnedProc> = rows
+            .iter()
+            .filter(|r| pids.contains(&r.pid) && !roots.contains(&r.pid))
+            .map(|r| OwnedProc {
+                pid: r.pid,
+                parent: r.parent,
+                name: r.name.clone(),
+                cmdline: r.cmdline.clone(),
+                started_at: r.started_at,
+                port: g.servers.iter().find(|s| s.pid == r.pid).map(|s| s.port),
+            })
+            .collect();
+        out.sort_by_key(|p| (p.started_at, p.pid));
+        out
+    }
+
     /// Dono de um PID conhecido.
     pub fn owner_of(&self, pid: u32) -> Option<Owner> {
         self.lock().known.get(&pid).map(|(o, _)| *o)
@@ -601,6 +646,28 @@ Conexões ativas
         fn listening(&self) -> Vec<(u32, u16)> {
             self.listen.lock().unwrap().clone()
         }
+    }
+
+    #[test]
+    fn processes_of_owner() {
+        let fake = Arc::new(Fake {
+            rows: Mutex::new(vec![row(100, None, 1), row(101, Some(100), 3), row(102, Some(101), 2), row(200, None, 4), row(201, Some(200), 5)]),
+            listen: Mutex::new(vec![(102, 5173)]),
+        });
+        let t = ProcTracker::new(fake.clone());
+        t.track(100, Owner::Session(7));
+        t.track(200, Owner::Terminal(1));
+        t.poll();
+        let p = t.processes_of(Owner::Session(7));
+        // Sem a raiz (o próprio agente), ordenado pelo início.
+        assert_eq!(p.iter().map(|x| x.pid).collect::<Vec<_>>(), [102, 101]);
+        assert_eq!(p[0].port, Some(5173));
+        assert_eq!(p[1].port, None);
+        // Órfão continua listado depois que a raiz morre.
+        fake.rows.lock().unwrap().retain(|r| r.pid != 100 && r.pid != 101);
+        t.poll();
+        assert_eq!(t.processes_of(Owner::Session(7)).iter().map(|x| x.pid).collect::<Vec<_>>(), [102]);
+        assert!(t.processes_of(Owner::Session(8)).is_empty());
     }
 
     #[test]

@@ -701,6 +701,16 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
           )}
           {taskId != null && <SessionServersBadge taskId={taskId} />}
           {task?.context && <ContextMeter ctx={task.context} />}
+          {taskId != null && (
+            <button
+              className="cv-hbtn"
+              title="Mapa de agentes: subagentes e tarefas em segundo plano desta sessão"
+              aria-label="Abrir o mapa de agentes"
+              onClick={() => useWorkbench.getState().openAgentMap(taskId)}
+            >
+              <Icon name="tree" size={15} />
+            </button>
+          )}
           {totals.turns > 0 && (
             <span
               className="cv-total"

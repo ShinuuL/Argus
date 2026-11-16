@@ -89,6 +89,10 @@ pub enum AgentEvent {
     },
     /// O subagente `id` terminou; `result` é o texto devolvido a quem o chamou.
     SubagentEnd { id: String, ok: bool, result: String },
+    /// Números que a CLI informa no fim do subagente `id` (vem logo antes do
+    /// `SubagentEnd`): duração total, tokens (claude: `totalTokens`, o tamanho
+    /// do contexto da última chamada do subagente) e quantas ferramentas usou.
+    SubagentStats { id: String, duration_ms: Option<u64>, tokens: Option<u64>, tool_uses: Option<u64> },
     /// Evento interno do subagente `subagent` (texto, ferramenta...). Os eventos
     /// do agente principal continuam vindo sem este invólucro.
     Scoped { subagent: String, event: Box<AgentEvent> },
@@ -196,7 +200,9 @@ impl AgentEvent {
     pub fn subagent_id(&self) -> Option<&str> {
         match self {
             AgentEvent::Scoped { subagent, .. } => Some(subagent),
-            AgentEvent::SubagentStart { id, .. } | AgentEvent::SubagentEnd { id, .. } => Some(id),
+            AgentEvent::SubagentStart { id, .. }
+            | AgentEvent::SubagentEnd { id, .. }
+            | AgentEvent::SubagentStats { id, .. } => Some(id),
             _ => None,
         }
     }
@@ -214,6 +220,7 @@ impl AgentEvent {
         match self {
             AgentEvent::SubagentStart { .. } => "SubagentStart",
             AgentEvent::SubagentEnd { .. } => "SubagentEnd",
+            AgentEvent::SubagentStats { .. } => "SubagentStats",
             AgentEvent::Scoped { event, .. } => event.kind(),
             AgentEvent::Session(_) => "Session",
             AgentEvent::User(_) => "User",

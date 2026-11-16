@@ -209,6 +209,11 @@ export type AgentEvent =
   | { SubagentStart: { id: string; parent: string | null; description: string; subagent_type: string; prompt: string } }
   /** O subagente `id` terminou; `result` é o texto devolvido a quem o chamou. */
   | { SubagentEnd: { id: string; ok: boolean; result: string } }
+  /**
+   * Números que a CLI informa no fim do subagente `id` (antes do `SubagentEnd`).
+   * `tokens` (claude: `totalTokens`) é o contexto da última chamada do subagente.
+   */
+  | { SubagentStats: { id: string; duration_ms: number | null; tokens: number | null; tool_uses: number | null } }
   /** Evento interno do subagente `subagent`; os do agente principal vêm sem este invólucro. */
   | { Scoped: { subagent: string; event: AgentEvent } }
   /** O usuário trocou o agente da conversa (ids de provedor). */
@@ -347,6 +352,18 @@ export type OrchEvent =
 
 /** Dono de um servidor: sessão de agente ou terminal. */
 export type Owner = { kind: "Session"; id: TaskId } | { kind: "Terminal"; id: PtyId };
+
+/** Processo vivo da árvore de um dono (sem a raiz, o próprio agente ou shell). */
+export interface OwnedProc {
+  pid: number;
+  parent: number | null;
+  name: string;
+  cmdline: string;
+  /** Segundos desde a época Unix. */
+  started_at: number;
+  /** Porta em LISTEN, se for um servidor. */
+  port: number | null;
+}
 
 export interface ServerInfo {
   pid: number;

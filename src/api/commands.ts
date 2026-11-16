@@ -25,6 +25,7 @@ import type {
   MissingCommand,
   ModelInfo,
   MusicFolder,
+  OwnedProc,
   Owner,
   Path,
   PermissionsInfo,
@@ -281,6 +282,9 @@ export const serversList = (): Promise<ServerInfo[]> => invoke("servers_list");
 
 /** Servidores de um dono (sessão ou terminal). */
 export const serversOf = (owner: Owner): Promise<ServerInfo[]> => invoke("servers_of", { owner });
+
+/** Processos vivos de um dono (tarefas em segundo plano da sessão). */
+export const ownerProcesses = (owner: Owner): Promise<OwnedProc[]> => invoke("owner_processes", { owner });
 
 /** Derruba um servidor (processo e filhos) e devolve a lista atualizada. */
 export const serverKill = (pid: number): Promise<ServerInfo[]> => invoke("server_kill", { pid });

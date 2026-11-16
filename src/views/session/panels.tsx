@@ -273,6 +273,13 @@ export function SubagentsPanel({ taskId }: { taskId: TaskId | null }) {
       />
       {nodes.length === 0 && <p className="rp-empty">Esta sessão não criou subagentes.</p>}
       {nodes.length > 0 && <p className="rp-hint">Clique num subagente para ver a conversa dele (somente leitura).</p>}
+      <button
+        className="rp-map-btn"
+        title="Abre o Mapa de agentes desta sessão numa aba do editor"
+        onClick={() => useWorkbench.getState().openAgentMap(taskId)}
+      >
+        <Icon name="tree" size={13} /> Abrir mapa
+      </button>
     </div>
   );
 }

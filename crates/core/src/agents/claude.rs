@@ -381,6 +381,21 @@ pub fn parse_stream_json(line: &str) -> Vec<AgentEvent> {
     StreamParser::default().parse(line)
 }
 
+/// `SubagentStats` a partir do `tool_use_result` do fim de um subagente
+/// (`totalDurationMs`, `totalTokens`, `totalToolUseCount`) ou do `usage` de um
+/// `task_notification` (`duration_ms`, `total_tokens`, `tool_uses`). None se
+/// nenhum número vier.
+fn subagent_stats(id: &str, v: &Value) -> Option<AgentEvent> {
+    let num = |keys: &[&str]| keys.iter().find_map(|k| v.get(*k).and_then(Value::as_u64));
+    let duration_ms = num(&["totalDurationMs", "duration_ms"]);
+    let tokens = num(&["totalTokens", "total_tokens"]);
+    let tool_uses = num(&["totalToolUseCount", "tool_uses"]);
+    if duration_ms.is_none() && tokens.is_none() && tool_uses.is_none() {
+        return None;
+    }
+    Some(AgentEvent::SubagentStats { id: id.to_string(), duration_ms, tokens, tool_uses })
+}
+
 /// Parser com estado do stream-json do claude.
 ///
 /// Formato conferido numa execução real (claude 2.1.220, fixture
@@ -578,6 +593,9 @@ impl StreamParser {
                         continue;
                     }
                     self.open.remove(id);
+                    if let Some(stats) = tur.and_then(|t| subagent_stats(id, t)) {
+                        evs.push(stats);
+                    }
                     let is_error = block.get("is_error").and_then(Value::as_bool).unwrap_or(false);
                     let mut result = content_text(tur.and_then(|t| t.get("content")));
                     if result.is_empty() {
@@ -683,11 +701,15 @@ impl StreamParser {
                     let id = s(&v, "tool_use_id");
                     if self.open.get(id) == Some(&true) {
                         self.open.remove(id);
-                        vec![AgentEvent::SubagentEnd {
+                        let stats = v.get("usage").and_then(|u| subagent_stats(id, u));
+                        stats
+                            .into_iter()
+                            .chain([AgentEvent::SubagentEnd {
                             id: id.to_string(),
                             ok: s(&v, "status") == "completed",
                             result: s(&v, "summary").to_string(),
-                        }]
+                            }])
+                            .collect()
                     } else {
                         vec![]
                     }
@@ -943,7 +965,7 @@ mod tests {
         let kinds: Vec<&str> = evs.iter().map(|e| e.kind()).collect();
         assert_eq!(
             kinds,
-            ["Session", "ToolUse", "SubagentStart", "ToolUse", "SubagentEnd", "Text", "Usage", "Result"],
+            ["Session", "ToolUse", "SubagentStart", "ToolUse", "SubagentStats", "SubagentEnd", "Text", "Usage", "Result"],
             "{evs:#?}"
         );
         // O tool_use que cria o subagente continua aparecendo no chat principal.
@@ -966,10 +988,15 @@ mod tests {
             }
             o => panic!("{o:?}"),
         }
-        assert_eq!(evs[4], AgentEvent::SubagentEnd { id: SUB.into(), ok: true, result: "- alfa.txt\n- beta.md".into() });
+        // Duração e tokens que a CLI informa no fim do subagente.
+        assert_eq!(
+            evs[4],
+            AgentEvent::SubagentStats { id: SUB.into(), duration_ms: Some(14989), tokens: Some(29039), tool_uses: Some(1) }
+        );
+        assert_eq!(evs[5], AgentEvent::SubagentEnd { id: SUB.into(), ok: true, result: "- alfa.txt\n- beta.md".into() });
         // O texto final é do agente principal (sem invólucro).
-        assert_eq!(evs[5], AgentEvent::Text("A pasta contém dois arquivos: `alfa.txt` e `beta.md`.".into()));
-        assert!(matches!(&evs[7], AgentEvent::Result { ok: true, .. }));
+        assert_eq!(evs[6], AgentEvent::Text("A pasta contém dois arquivos: `alfa.txt` e `beta.md`.".into()));
+        assert!(matches!(&evs[8], AgentEvent::Result { ok: true, .. }));
         let subs = subagents_of(&evs);
         assert_eq!(subs.len(), 1);
         assert!(subs[0].done && subs[0].ok == Some(true));
@@ -1029,6 +1056,17 @@ mod tests {
         let done = r#"{"type":"system","subtype":"task_notification","tool_use_id":"tA","status":"completed","summary":"feito"}"#;
         assert_eq!(p.parse(done), vec![AgentEvent::SubagentEnd { id: "tA".into(), ok: true, result: "feito".into() }]);
         assert!(p.parse(done).is_empty());
+        // Com `usage` no aviso, os números vêm antes do fim.
+        p.parse(N_A);
+        p.parse(launched);
+        let with_usage = r#"{"type":"system","subtype":"task_notification","tool_use_id":"tA","status":"completed","summary":"ok","usage":{"total_tokens":120,"tool_uses":3,"duration_ms":4000}}"#;
+        assert_eq!(
+            p.parse(with_usage),
+            vec![
+                AgentEvent::SubagentStats { id: "tA".into(), duration_ms: Some(4000), tokens: Some(120), tool_uses: Some(3) },
+                AgentEvent::SubagentEnd { id: "tA".into(), ok: true, result: "ok".into() },
+            ]
+        );
     }
 
     // Mensagem `assistant` no formato do stream-json (claude 2.1.x): a mesma
