@@ -1,0 +1,7 @@
+/* Realce de sintaxe dos blocos de código do chat (só cores, sem layout). */
+.chat-code .hl-com { color: var(--text-faint); font-style: italic; }
+.chat-code .hl-str { color: var(--ok); }
+.chat-code .hl-num { color: var(--warn); }
+.chat-code .hl-kw { color: var(--accent-text); font-weight: 600; }
+.chat-code .hl-fn { color: var(--text-strong); }
+.chat-code .hl-type { color: var(--run); }
