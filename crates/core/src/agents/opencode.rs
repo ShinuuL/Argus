@@ -5,6 +5,11 @@
 //! `step_start` | `text` | `tool_use` | `step_finish` | `error`, `sessionID`
 //! no topo e os dados em `part`. `step_finish` traz `reason` ("tool-calls" nos
 //! passos intermediários, "stop" no fim), `cost` e `tokens`.
+//!
+//! Permissões no modo "Auto" (`permissions::apply`): variável
+//! `OPENCODE_CONFIG_CONTENT` só deste processo, com `permission.bash` liberando
+//! tudo menos os nocivos (`crate::harmful`), `edit` liberado e
+//! `external_directory` negado. A configuração do usuário não é alterada.
 
 use super::provider::*;
 use serde_json::Value;

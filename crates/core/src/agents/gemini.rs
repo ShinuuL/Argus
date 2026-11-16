@@ -21,7 +21,13 @@
 //! Permissões em `auto_edit` sem interface: edições de arquivo aprovadas sozinhas
 //! (ferramentas de arquivo da CLI só alcançam a pasta de trabalho e as
 //! `--include-directories`, que o Argus não passa); shell e qualquer outra
-//! ferramenta que pediria aprovação é NEGADA.
+//! ferramenta que pediria aprovação é NEGADA (modo "Restrito").
+//! No modo "Auto" (`permissions::apply`) vira `--approval-mode yolo` com
+//! `--admin-policy <arquivo>`: regras `deny` de `run_shell_command` para os
+//! comandos nocivos (`crate::harmful`). A política admin fica no nível 5.x,
+//! acima do "permitir tudo" do yolo (1.998; `packages/core/src/policy/policies/yolo.toml`).
+//! O arquivo é do Argus (pasta temporária), sem tocar no `~/.gemini`. Se não
+//! der para gravar o arquivo, o turno segue em `auto_edit`.
 
 use super::provider::*;
 use serde_json::Value;

@@ -2,6 +2,7 @@ pub mod agents;
 pub mod attachments;
 pub mod autowork;
 pub mod db;
+pub mod harmful;
 pub mod deps;
 pub mod isolation;
 pub mod metrics;

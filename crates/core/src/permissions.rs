@@ -170,12 +170,89 @@ pub fn args(project_cmds: &[String], levels: GitLevels) -> Vec<String> {
     v
 }
 
-/// Acrescenta as permissões (padrão + níveis + lista do projeto) a um comando do
-/// `claude`. Outros programas ficam como estão.
-pub fn apply(mut spec: CommandSpec, project: &Path, levels: GitLevels) -> CommandSpec {
-    let is_claude = Path::new(&spec.program).file_stem().is_some_and(|s| s.to_string_lossy().eq_ignore_ascii_case("claude"));
-    if is_claude {
-        spec.args.extend(args(&crate::procs::allowed_commands(project), levels));
+/// Modo de permissão dos agentes. "Auto" (padrão): o agente roda comandos sem
+/// pedir e só os nocivos (`crate::harmful`) ficam bloqueados. "Restrito": o
+/// comportamento anterior (no claude, só edições e a lista liberada).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PermissionMode {
+    #[default]
+    Auto,
+    Restricted,
+}
+
+impl PermissionMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Restricted => "restricted",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "auto" => Some(Self::Auto),
+            "restricted" => Some(Self::Restricted),
+            _ => None,
+        }
+    }
+}
+
+fn program_is(spec: &CommandSpec, name: &str) -> bool {
+    Path::new(&spec.program).file_stem().is_some_and(|s| s.to_string_lossy().eq_ignore_ascii_case(name))
+}
+
+fn replace_after(args: &mut [String], flag: &str, value: &str) {
+    if let Some(i) = args.iter().position(|a| a == flag) {
+        if let Some(v) = args.get_mut(i + 1) {
+            *v = value.to_string();
+        }
+    }
+}
+
+/// Arquivo de política do gemini para o modo Auto (conteúdo fixo, regravado a
+/// cada turno numa pasta temporária do Argus; nunca no `~/.gemini`).
+fn gemini_policy_file() -> Option<std::path::PathBuf> {
+    let dir = std::env::temp_dir().join("argus");
+    std::fs::create_dir_all(&dir).ok()?;
+    let f = dir.join("gemini-auto-policy.toml");
+    std::fs::write(&f, crate::harmful::gemini_policy_toml()).ok()?;
+    Some(f)
+}
+
+/// Acrescenta as permissões a um comando de agente, conforme o modo:
+/// - claude: Restrito = `acceptEdits` + `--allowedTools` (padrão + níveis + lista
+///   do projeto); Auto = `--permission-mode auto` (classificador da CLI), a mesma
+///   lista liberada e os nocivos em `--disallowedTools`;
+/// - codex (Auto): rede liberada dentro do sandbox `workspace-write`;
+/// - gemini (Auto): `--approval-mode yolo` com a política de nocivos (`--admin-policy`);
+/// - opencode (Auto): `OPENCODE_CONFIG_CONTENT` com shell liberado e nocivos negados.
+pub fn apply(mut spec: CommandSpec, project: &Path, levels: GitLevels, mode: PermissionMode) -> CommandSpec {
+    let auto = mode == PermissionMode::Auto;
+    if program_is(&spec, "claude") {
+        let cmds = crate::procs::allowed_commands(project);
+        spec.args.extend(args(&cmds, levels));
+        if auto {
+            replace_after(&mut spec.args, "--permission-mode", "auto");
+            let mut deny = crate::harmful::claude_disallowed();
+            // Quem liberou algo de propósito na lista do projeto não é contrariado.
+            deny.retain(|d| !cmds.iter().any(|c| d.contains(c.trim_end_matches(":*").trim_end_matches('*'))));
+            if !spec.args.iter().any(|a| a == "--disallowedTools") {
+                spec.args.push("--disallowedTools".into());
+            }
+            spec.args.extend(deny);
+        }
+    } else if auto && program_is(&spec, "codex") {
+        let at = spec.args.iter().position(|a| a == "approval_policy=never").map(|i| i + 1).unwrap_or(spec.args.len().min(1));
+        spec.args.insert(at, "sandbox_workspace_write.network_access=true".into());
+        spec.args.insert(at, "-c".into());
+    } else if auto && program_is(&spec, "gemini") {
+        if let Some(f) = gemini_policy_file() {
+            replace_after(&mut spec.args, "--approval-mode", "yolo");
+            spec.args.push("--admin-policy".into());
+            spec.args.push(f.to_string_lossy().into_owned());
+        }
+    } else if auto && program_is(&spec, "opencode") {
+        spec.env.push(("OPENCODE_CONFIG_CONTENT".into(), crate::harmful::opencode_config_json()));
     }
     spec
 }
@@ -265,10 +342,40 @@ mod tests {
     fn only_claude_gets_the_arguments() {
         let dir = Path::new("projeto-que-nao-existe");
         let lv = GitLevels::defaults(WorkMode::Direct);
-        let c = apply(CommandSpec::new("claude").arg("-p"), dir, lv);
+        let r = PermissionMode::Restricted;
+        let c = apply(CommandSpec::new("claude").arg("-p"), dir, lv, r);
         assert_eq!(c.args[1], "--allowedTools");
         assert!(c.args.contains(&"Bash(git status:*)".to_string()));
-        assert_eq!(apply(CommandSpec::new("opencode").arg("run"), dir, lv).args, ["run"]);
+        assert_eq!(apply(CommandSpec::new("opencode").arg("run"), dir, lv, r).args, ["run"]);
+        assert!(apply(CommandSpec::new("opencode").arg("run"), dir, lv, r).env.is_empty());
+        let g = CommandSpec::new("gemini").arg("--approval-mode").arg("auto_edit");
+        assert_eq!(apply(g, dir, lv, r).args, ["--approval-mode", "auto_edit"]);
+    }
+
+    fn sp(p: &str, a: &[&str]) -> CommandSpec {
+        let mut s = CommandSpec::new(p);
+        s.args = a.iter().map(|x| x.to_string()).collect();
+        s
+    }
+
+    #[test]
+    fn auto_mode_per_cli() {
+        let dir = Path::new("projeto-que-nao-existe");
+        let lv = GitLevels::defaults(WorkMode::Direct);
+        let a = PermissionMode::Auto;
+        let c = apply(CommandSpec::new("claude").arg("-p").arg("--permission-mode").arg("acceptEdits"), dir, lv, a);
+        assert_eq!(c.args[2], "auto");
+        assert!(!c.args.iter().any(|x| x.contains("bypass") || x.contains("dangerously")));
+        let cut = c.args.iter().position(|x| x == "--disallowedTools").unwrap();
+        assert!(c.args[cut..].iter().any(|x| x == "Bash(git reset --hard:*)"));
+        assert!(c.args[..cut].iter().any(|x| x == "Bash(git status:*)"));
+        let x = apply(sp("codex", &["exec", "--sandbox", "workspace-write", "-c", "approval_policy=never", "-"]), dir, lv, a);
+        assert_eq!(x.args, ["exec", "--sandbox", "workspace-write", "-c", "approval_policy=never", "-c", "sandbox_workspace_write.network_access=true", "-"]);
+        let g = apply(sp("gemini", &["--approval-mode", "auto_edit"]), dir, lv, a);
+        assert_eq!(&g.args[..3], ["--approval-mode", "yolo", "--admin-policy"]);
+        assert!(std::fs::read_to_string(&g.args[3]).unwrap().contains("decision = \"deny\""));
+        let o = apply(CommandSpec::new("opencode").arg("run"), dir, lv, a);
+        assert_eq!(o.env[0].0, "OPENCODE_CONFIG_CONTENT");
     }
 
     #[test]

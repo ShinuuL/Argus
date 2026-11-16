@@ -28,6 +28,7 @@ import type {
   OwnedProc,
   Owner,
   Path,
+  PermissionMode,
   PermissionsInfo,
   Pricing,
   Project,
@@ -207,6 +208,10 @@ export const permissionsGet = (project?: Path | null): Promise<PermissionsInfo> 
 /** Liga/desliga um nível de git no geral (`project` null) ou no projeto; `on` null apaga a preferência. */
 export const permissionsSet = (project: Path | null, level: "local" | "remote", on: boolean | null): Promise<void> =>
   invoke("permissions_set", { project, level, on });
+
+/** Grava o modo de permissão no geral (`project` null) ou no projeto; `mode` null apaga a do projeto. */
+export const permissionModeSet = (project: Path | null, mode: PermissionMode | null): Promise<void> =>
+  invoke("permission_mode_set", { project, mode });
 
 /** Acrescenta um comando negado à lista de comandos permitidos do projeto; devolve a lista. */
 export const permissionsAllowDenied = (project: Path, tool: string, command: string): Promise<string[]> =>

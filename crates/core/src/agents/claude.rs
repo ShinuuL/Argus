@@ -68,6 +68,7 @@ impl AgentProvider for ClaudeProvider {
         }
         // Em `-p` não há quem aprove permissões: sem isto toda edição de arquivo
         // é negada. `acceptEdits` libera só edições (Bash continua bloqueado).
+        // No modo de permissão "Auto", `permissions::apply` troca para `auto`.
         // As pastas de anexos entram depois, com `--add-dir` (`attachments::apply_add_dirs`).
         c.arg("--permission-mode")
             .arg("acceptEdits")

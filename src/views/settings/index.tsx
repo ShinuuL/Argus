@@ -4,7 +4,7 @@
  */
 import { Select } from "@/shell/Select";
 import { useCallback, useEffect, useState } from "react";
-import { api, errorMessage, samePath, type Path, type PermissionsInfo, type WorkMode, type WorkModeInfo } from "@/api";
+import { api, errorMessage, samePath, type Path, type PermissionMode, type PermissionsInfo, type WorkMode, type WorkModeInfo } from "@/api";
 import { SETTINGS_SECTIONS, THEMES, useApp, useTheme, useWorkbench } from "@/store";
 import ProvidersView from "@/views/agents";
 import AutoWorkPanel from "@/views/autowork";
@@ -48,6 +48,13 @@ const MODE_OPTIONS = [
   { value: "Isolated", label: "Isolado (cópia do projeto)", hint: "revisa e aplica depois" },
   { value: "Direct", label: "Direto na pasta", hint: "vale na hora" },
 ];
+
+const PERM_OPTIONS = [
+  { value: "auto", label: "Auto (recomendado)", hint: "só bloqueia o nocivo" },
+  { value: "restricted", label: "Restrito", hint: "só a lista liberada" },
+];
+const PERM_TITLE =
+  "Auto: o agente roda comandos (npm install, testes, build…) sem pedir; só os nocivos são bloqueados (apagar fora do projeto, formatar disco, desligar, registro/serviços, push forçado, reset --hard, baixar e executar, credenciais). Restrito: só edições e os comandos liberados abaixo.";
 
 /** Carrega o modo de trabalho e as permissões (geral e do projeto) e devolve como gravar. */
 function useAgentSettings(project: Path | null) {
@@ -110,6 +117,16 @@ function AgentDefaults() {
       )}
       <div className="set-grid">
         <label className="set-field">
+          <span className="small">Permissões dos agentes</span>
+          <Select
+            ariaLabel="Permissões dos agentes"
+            title={PERM_TITLE}
+            value={perms?.global_mode ?? "auto"}
+            options={PERM_OPTIONS}
+            onChange={(v) => void save(api.permissionModeSet(null, v as PermissionMode))}
+          />
+        </label>
+        <label className="set-field">
           <span className="small">Modo de trabalho padrão</span>
           <Select
             ariaLabel="Modo de trabalho padrão"
@@ -148,11 +165,15 @@ function AgentDefaults() {
           />
         </label>
       </div>
+      <div className="small muted">
+        No Auto, o agente executa comandos sem pedir e só os nocivos à máquina ou ao projeto são bloqueados. No Restrito, vale só a
+        lista abaixo.
+      </div>
       {d && (
         <div className="set-card set-perms">
           <b>Comandos liberados ao agente por padrão</b>
           <div className="small muted">
-            Valem em todo projeto, sem configurar nada (Claude Code, nas ferramentas Bash e PowerShell). O resto é negado, a não
+            No modo Restrito, valem em todo projeto sem configurar nada (Claude Code, nas ferramentas Bash e PowerShell). O resto é negado, a não
             ser o que estiver em "Comandos permitidos ao agente" do projeto. "…" = aceita argumentos.
           </div>
           <Patterns title="Git, só leitura" items={d.git_read} />
@@ -192,6 +213,16 @@ function ProjectAgentSettings({ project }: { project: Path }) {
             value={mode != null && !mode.is_git ? "Direct" : (mode?.project ?? "")}
             options={[follow, ...MODE_OPTIONS]}
             onChange={(v) => void save(api.workmodeSet(project, (v || null) as WorkMode | null))}
+          />
+        </label>
+        <label className="set-field">
+          <span className="small">Permissões</span>
+          <Select
+            ariaLabel="Permissões dos agentes no projeto"
+            title={PERM_TITLE}
+            value={perms?.project_mode ?? ""}
+            options={[follow, ...PERM_OPTIONS]}
+            onChange={(v) => void save(api.permissionModeSet(project, (v || null) as PermissionMode | null))}
           />
         </label>
         <label className="set-field">

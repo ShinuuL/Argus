@@ -164,6 +164,8 @@ Limites conhecidos:
 - Nível "Git remoto" (desligado por padrão nos dois): `git push`, `pull`, `fetch`, `clone`; com ele ligado, o push forçado segue negado por `--disallowedTools`.
 - Nunca por padrão: `git push --force`, `git reset --hard`, `git clean`, shell genérico.
 
+**Modo de permissão (2026-11-16)**: "Auto (recomendado)" é o padrão; "Restrito" é o comportamento acima. Geral e por projeto em Configurações (chave `perm_mode`). No Auto só os nocivos (`crates/core/src/harmful.rs`: apagar raiz/home/disco, formatar, desligar, registro/serviços/usuários, push forçado, reset --hard, clean, baixar e executar, credenciais, chmod/icacls amplos, matar processo por nome) ficam bloqueados: claude `--permission-mode auto` + nocivos em `--disallowedTools`; codex rede liberada no sandbox; gemini `yolo` + `--admin-policy` com `deny`; opencode `OPENCODE_CONFIG_CONTENT`. ⚠ Conferido só a montagem (testes) e o claude aceitando os argumentos (Haiku); gemini/codex não instalados aqui, opencode não rodado com a política.
+
 A lista "Comandos permitidos ao agente" do projeto soma a isso (linha simples vira `Bash(...)`; para o PowerShell escreva `PowerShell(comando)`). Comando negado vira o evento `Denied` (lido de `permission_denials` do `result`) e aparece no chat com o atalho "Liberar este comando neste projeto". O OpenCode não foi alterado: as permissões dele vêm da configuração de agentes do próprio usuário.
 
 ## Funcionalidades

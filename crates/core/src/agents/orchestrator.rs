@@ -181,6 +181,10 @@ struct Inner {
 }
 
 /// Chave da preferência de um nível de git ("local" ou "remote") no banco.
+fn perm_key(project: Option<&Path>) -> String {
+    mode_key(project).replacen("work_mode", "perm_mode", 1)
+}
+
 fn git_key(project: Option<&Path>, level: &str) -> String {
     mode_key(project).replacen("work_mode", &format!("git_{level}"), 1)
 }
@@ -375,6 +379,26 @@ impl Orchestrator {
         let def = crate::permissions::GitLevels::defaults(mode);
         let pick = |level: &str, d: bool| self.git_setting(Some(project), level).or_else(|| self.git_setting(None, level)).unwrap_or(d);
         crate::permissions::GitLevels { local: pick("local", def.local), remote: pick("remote", def.remote) }
+    }
+
+    /// Preferência gravada de modo de permissão: a geral (`project` = None) ou a de
+    /// um projeto. None = segue a geral / o padrão ("Auto").
+    pub fn permission_mode_setting(&self, project: Option<&Path>) -> Option<crate::permissions::PermissionMode> {
+        let db = self.inner.db.as_ref()?;
+        db.get_setting(&perm_key(project)).ok().flatten().as_deref().and_then(crate::permissions::PermissionMode::parse)
+    }
+
+    /// Grava a preferência de modo de permissão (None apaga). Sem banco, não faz nada.
+    pub fn set_permission_mode_setting(&self, project: Option<&Path>, mode: Option<crate::permissions::PermissionMode>) -> Result<(), OrchestratorError> {
+        if let Some(db) = &self.inner.db {
+            db.set_setting(&perm_key(project), mode.map(|m| m.as_str()))?;
+        }
+        Ok(())
+    }
+
+    /// Modo de permissão de um turno em `project`: o do projeto, o geral, "Auto".
+    pub fn permission_mode(&self, project: &Path) -> crate::permissions::PermissionMode {
+        self.permission_mode_setting(Some(project)).or_else(|| self.permission_mode_setting(None)).unwrap_or_default()
     }
 
     /// Modo de trabalho de uma conversa nova em `project` quando ninguém escolhe:
@@ -765,7 +789,7 @@ impl Orchestrator {
         let spec = prov.task_command(prompt, workdir, session, opts);
         // Comandos de shell liberados: o padrão (git de leitura, inspeção), os níveis
         // de git do projeto neste modo e a lista "Comandos permitidos" do projeto.
-        let spec = crate::permissions::apply(spec, &task.project, self.git_levels(&task.project, task.mode));
+        let spec = crate::permissions::apply(spec, &task.project, self.git_levels(&task.project, task.mode), self.permission_mode(&task.project));
         // Os anexos do chat ficam fora da pasta de trabalho: libera a leitura deles.
         let dirs = crate::attachments::dirs_for(&crate::attachments::root(), id, &[&task.prompt, prompt]);
         let spec = crate::attachments::apply_add_dirs(spec, &dirs);
@@ -1801,6 +1825,17 @@ mod tests {
         use crate::permissions::GitLevels;
         assert_eq!(o.git_levels(&proj, WorkMode::Isolated), GitLevels { local: true, remote: false });
         assert_eq!(o.git_levels(&proj, WorkMode::Direct), GitLevels { local: false, remote: false });
+        {
+            use crate::permissions::PermissionMode as P;
+            assert_eq!(o.permission_mode(&proj), P::Auto);
+            o.set_permission_mode_setting(None, Some(P::Restricted)).unwrap();
+            assert_eq!(o.permission_mode(&proj), P::Restricted);
+            o.set_permission_mode_setting(Some(&proj), Some(P::Auto)).unwrap();
+            assert_eq!(o.permission_mode(&proj), P::Auto);
+            assert_eq!(o.permission_mode(&plain_other(&root)), P::Restricted);
+            o.set_permission_mode_setting(None, None).unwrap();
+            o.set_permission_mode_setting(Some(&proj), None).unwrap();
+        }
         o.set_git_setting(None, "remote", Some(true)).unwrap();
         o.set_git_setting(Some(&proj), "local", Some(false)).unwrap();
         assert_eq!(o.git_levels(&proj, WorkMode::Isolated), GitLevels { local: false, remote: true });

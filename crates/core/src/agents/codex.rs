@@ -20,6 +20,11 @@
 //! sem rede) e `-c approval_policy=never` (o valor sem aspas é lido como texto pela CLI) (sem ninguém para aprovar, o que o sandbox
 //! não permite falha em vez de pedir). Os comandos de shell que o codex roda ficam
 //! DENTRO desse sandbox; não há `--add-dir` nem `danger-full-access`.
+//! No modo de permissão "Auto" (`permissions::apply`) entra também
+//! `-c sandbox_workspace_write.network_access=true`: rede liberada dentro do
+//! sandbox, para `npm install` e afins (campo `network_access` de
+//! `SandboxWorkspaceWrite`, `codex-rs/config/src/types.rs`; `-c` aceita caminho
+//! com ponto). O sandbox continua barrando escrita fora da pasta.
 
 use super::provider::*;
 use serde_json::Value;

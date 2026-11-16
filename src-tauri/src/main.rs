@@ -75,6 +75,7 @@ fn main() {
             agents::isolation_check,
             agents::permissions_get,
             agents::permissions_set,
+            agents::permission_mode_set,
             agents::permissions_allow_denied,
             agents::task_set_model,
             agents::task_set_provider,

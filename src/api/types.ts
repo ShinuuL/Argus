@@ -259,7 +259,12 @@ export interface PermissionsInfo {
   global_remote: boolean | null;
   project_local: boolean | null;
   project_remote: boolean | null;
+  global_mode: PermissionMode | null;
+  project_mode: PermissionMode | null;
 }
+
+/** Modo de permissão dos agentes: Auto (só nocivos bloqueados) ou Restrito. */
+export type PermissionMode = "auto" | "restricted";
 
 /** Resumo de um subagente de uma tarefa (visão somente leitura). */
 export interface SubagentInfo {
