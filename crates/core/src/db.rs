@@ -18,7 +18,24 @@ pub struct TaskRecord {
     pub created_at: i64,
     pub workdir: Option<String>,
     pub session_id: Option<String>,
+    /// Modelo escolhido para a tarefa (None = padrão da CLI).
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Modo de trabalho ("Isolated" ou "Direct"). None nas tarefas antigas (isoladas).
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// JSON com a sessão e o modelo guardados de cada provedor já usado na tarefa.
+    #[serde(default)]
+    pub provider_state: Option<String>,
+    /// O próximo turno precisa receber o resumo da conversa (houve troca de provedor).
+    #[serde(default)]
+    pub handoff: bool,
+    /// JSON do último `ContextUsage` (ocupação da janela de contexto).
+    #[serde(default)]
+    pub context: Option<String>,
 }
+
+const TASK_COLS: &str = "id, project, provider, prompt, state, created_at, workdir, session_id, model, mode, provider_state, handoff, context";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventRecord {
@@ -28,6 +45,9 @@ pub struct EventRecord {
     /// JSON serializado do evento.
     pub payload: String,
     pub created_at: i64,
+    /// Id do subagente a que o evento pertence (None = agente principal).
+    #[serde(default)]
+    pub subagent: Option<String>,
 }
 
 /// Uma linha de consumo (um `AgentEvent::Usage`).
@@ -38,6 +58,22 @@ pub struct UsageRow {
     pub provider: String,
     pub usage: TokenUsage,
     pub created_at: i64,
+    /// Identificador do turno que gerou a linha (um turno com dois modelos grava
+    /// duas linhas com o mesmo valor). None nas linhas antigas.
+    #[serde(default)]
+    pub turn: Option<i64>,
+}
+
+impl UsageRow {
+    /// Chave do turno, para contar turnos sem repetir: (tarefa, turno). Nas linhas
+    /// antigas, sem a coluna, vale o segundo da gravação (as linhas de um mesmo
+    /// turno eram gravadas juntas).
+    pub fn turn_key(&self) -> (i64, bool, i64) {
+        match self.turn {
+            Some(t) => (self.task_id, true, t),
+            None => (self.task_id, false, self.created_at),
+        }
+    }
 }
 
 /// Consumo agregado por projeto + provedor + modelo.
@@ -52,6 +88,8 @@ pub struct ProjectUsage {
     pub cache_write: u64,
     /// Soma dos custos informados pela CLI (None se nenhuma linha informou).
     pub reported_cost_usd: Option<f64>,
+    /// Turnos em que este modelo foi usado. Um turno com dois modelos aparece
+    /// nas duas linhas: não some entre modelos (use `metrics::by_project`).
     pub turns: u64,
 }
 
@@ -86,6 +124,25 @@ impl TimeRange {
     fn bounds(&self) -> (i64, i64) {
         (self.from.unwrap_or(i64::MIN), self.to.unwrap_or(i64::MAX))
     }
+}
+
+/// Um build no histórico (`build_runs`). Tempos em milissegundos Unix.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BuildRecord {
+    pub id: i64,
+    pub project: String,
+    pub command_id: Option<String>,
+    pub label: String,
+    pub cmdline: String,
+    /// `ide` (botão), `terminal` (digitado num terminal da IDE) ou `agente`.
+    pub origin: String,
+    /// `running`, `ok`, `failed`, `stopped`, `ended` (sem código de saída) ou `interrompido`.
+    pub state: String,
+    pub exit_code: Option<i64>,
+    pub started_at: i64,
+    pub ended_at: Option<i64>,
+    pub artifact_path: Option<String>,
+    pub artifact_size: Option<i64>,
 }
 
 /// Banco thread-safe (conexão protegida por Mutex).
@@ -148,10 +205,27 @@ impl Db {
              CREATE INDEX IF NOT EXISTS idx_usage_time ON usage(created_at);
              CREATE TABLE IF NOT EXISTS autowork(
                 project TEXT PRIMARY KEY,
-                settings TEXT NOT NULL);",
+                settings TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS settings(
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS build_runs(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project TEXT NOT NULL,
+                command_id TEXT,
+                label TEXT NOT NULL,
+                cmdline TEXT NOT NULL,
+                origin TEXT NOT NULL,
+                state TEXT NOT NULL,
+                exit_code INTEGER,
+                started_at INTEGER NOT NULL,
+                ended_at INTEGER,
+                artifact_path TEXT,
+                artifact_size INTEGER);
+             CREATE INDEX IF NOT EXISTS idx_build_runs ON build_runs(project, started_at);",
         )?;
         // Migração de bancos antigos: colunas novas em `tasks`.
-        for col in ["workdir TEXT", "session_id TEXT"] {
+        for col in ["workdir TEXT", "session_id TEXT", "model TEXT", "mode TEXT", "provider_state TEXT", "handoff INTEGER NOT NULL DEFAULT 0", "context TEXT"] {
             let name = col.split_whitespace().next().unwrap();
             let exists: bool = conn
                 .prepare("SELECT 1 FROM pragma_table_info('tasks') WHERE name=?1")?
@@ -159,6 +233,19 @@ impl Db {
             if !exists {
                 conn.execute_batch(&format!("ALTER TABLE tasks ADD COLUMN {col};"))?;
             }
+        }
+        // Idem em `events`: id do subagente dono do evento.
+        let has_sub: bool =
+            conn.prepare("SELECT 1 FROM pragma_table_info('events') WHERE name='subagent'")?.exists([])?;
+        if !has_sub {
+            conn.execute_batch("ALTER TABLE events ADD COLUMN subagent TEXT;")?;
+        }
+        conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_events_sub ON events(task_id, subagent);")?;
+        // Idem em `usage`: turno que gerou a linha (para contar turnos, não linhas).
+        let has_turn: bool =
+            conn.prepare("SELECT 1 FROM pragma_table_info('usage') WHERE name='turn'")?.exists([])?;
+        if !has_turn {
+            conn.execute_batch("ALTER TABLE usage ADD COLUMN turn INTEGER;")?;
         }
         Ok(Self { conn: Mutex::new(conn) })
     }
@@ -192,14 +279,159 @@ impl Db {
         Ok(())
     }
 
+    /// Modelo da tarefa (None = padrão da CLI).
+    pub fn set_task_model(&self, id: i64, model: Option<&str>) -> rusqlite::Result<()> {
+        self.c().execute("UPDATE tasks SET model=?2 WHERE id=?1", params![id, model])?;
+        Ok(())
+    }
+
+    /// Modo de trabalho da tarefa ("Isolated" ou "Direct").
+    pub fn set_task_mode(&self, id: i64, mode: &str) -> rusqlite::Result<()> {
+        self.c().execute("UPDATE tasks SET mode=?2 WHERE id=?1", params![id, mode])?;
+        Ok(())
+    }
+
+    /// Troca de provedor: grava de uma vez o provedor novo, a sessão e o modelo
+    /// dele, o que ficou guardado dos outros e a marca de resumo pendente.
+    pub fn set_task_provider(
+        &self,
+        id: i64,
+        provider: &str,
+        session_id: Option<&str>,
+        model: Option<&str>,
+        provider_state: &str,
+        handoff: bool,
+    ) -> rusqlite::Result<()> {
+        self.c().execute(
+            "UPDATE tasks SET provider=?2, session_id=?3, model=?4, provider_state=?5, handoff=?6 WHERE id=?1",
+            params![id, provider, session_id, model, provider_state, handoff],
+        )?;
+        Ok(())
+    }
+
+    /// Última ocupação da janela de contexto (JSON de `ContextUsage`).
+    pub fn set_task_context(&self, id: i64, context: &str) -> rusqlite::Result<()> {
+        self.c().execute("UPDATE tasks SET context=?2 WHERE id=?1", params![id, context])?;
+        Ok(())
+    }
+
+    pub fn set_task_handoff(&self, id: i64, handoff: bool) -> rusqlite::Result<()> {
+        self.c().execute("UPDATE tasks SET handoff=?2 WHERE id=?1", params![id, handoff])?;
+        Ok(())
+    }
+
+    // ------------------------------------------------------------ builds
+
+    /// Registra um build iniciado. Devolve o id.
+    pub fn insert_build(&self, b: &BuildRecord) -> rusqlite::Result<i64> {
+        let c = self.c();
+        c.execute(
+            "INSERT INTO build_runs(project, command_id, label, cmdline, origin, state, exit_code, started_at, ended_at, artifact_path, artifact_size)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            params![b.project, b.command_id, b.label, b.cmdline, b.origin, b.state, b.exit_code, b.started_at, b.ended_at, b.artifact_path, b.artifact_size],
+        )?;
+        Ok(c.last_insert_rowid())
+    }
+
+    /// Fecha um build (estado, código, fim e artefato) e mantém só os `keep` mais recentes do projeto.
+    pub fn finish_build(&self, b: &BuildRecord, keep: usize) -> rusqlite::Result<()> {
+        let c = self.c();
+        c.execute(
+            "UPDATE build_runs SET state=?2, exit_code=?3, ended_at=?4, artifact_path=?5, artifact_size=?6 WHERE id=?1",
+            params![b.id, b.state, b.exit_code, b.ended_at, b.artifact_path, b.artifact_size],
+        )?;
+        c.execute(
+            "DELETE FROM build_runs WHERE project=?1 AND id NOT IN
+               (SELECT id FROM build_runs WHERE project=?1 ORDER BY started_at DESC, id DESC LIMIT ?2)",
+            params![b.project, keep as i64],
+        )?;
+        Ok(())
+    }
+
+    /// Histórico de builds (do projeto, ou de todos), mais recentes primeiro.
+    pub fn list_builds(&self, project: Option<&str>, limit: usize) -> rusqlite::Result<Vec<BuildRecord>> {
+        let c = self.c();
+        let mut st = c.prepare(
+            "SELECT id, project, command_id, label, cmdline, origin, state, exit_code, started_at, ended_at, artifact_path, artifact_size
+             FROM build_runs WHERE (?1 IS NULL OR project=?1) ORDER BY started_at DESC, id DESC LIMIT ?2",
+        )?;
+        let rows = st.query_map(params![project, limit as i64], |r| {
+            Ok(BuildRecord {
+                id: r.get(0)?,
+                project: r.get(1)?,
+                command_id: r.get(2)?,
+                label: r.get(3)?,
+                cmdline: r.get(4)?,
+                origin: r.get(5)?,
+                state: r.get(6)?,
+                exit_code: r.get(7)?,
+                started_at: r.get(8)?,
+                ended_at: r.get(9)?,
+                artifact_path: r.get(10)?,
+                artifact_size: r.get(11)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Builds deixados "em andamento" por uma sessão anterior do app viram "interrompido".
+    pub fn close_stale_builds(&self) -> rusqlite::Result<usize> {
+        self.c().execute("UPDATE build_runs SET state='interrompido' WHERE state='running'", [])
+    }
+
+    /// Preferência geral do app (chave e valor em texto).
+    pub fn get_setting(&self, key: &str) -> rusqlite::Result<Option<String>> {
+        self.c().query_row("SELECT value FROM settings WHERE key=?1", [key], |r| r.get(0)).optional()
+    }
+
+    /// Grava a preferência; `None` apaga.
+    pub fn set_setting(&self, key: &str, value: Option<&str>) -> rusqlite::Result<()> {
+        match value {
+            Some(v) => self.c().execute(
+                "INSERT INTO settings(key, value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                params![key, v],
+            )?,
+            None => self.c().execute("DELETE FROM settings WHERE key=?1", [key])?,
+        };
+        Ok(())
+    }
+
+    /// Maior id de tarefa já usado: o das tarefas existentes, o das linhas de
+    /// consumo (que sobrevivem à exclusão da tarefa) e o último excluído. Um id
+    /// nunca é reaproveitado: as métricas e a branch `argus/<id>` dependem disso.
     pub fn max_task_id(&self) -> rusqlite::Result<i64> {
-        self.c().query_row("SELECT COALESCE(MAX(id),0) FROM tasks", [], |r| r.get(0))
+        self.c().query_row(
+            "SELECT MAX(COALESCE((SELECT MAX(id) FROM tasks),0),
+                        COALESCE((SELECT MAX(task_id) FROM usage),0),
+                        COALESCE((SELECT CAST(value AS INTEGER) FROM settings WHERE key='last_deleted_task'),0))",
+            [],
+            |r| r.get(0),
+        )
+    }
+
+    /// Exclui a tarefa e tudo o que é dela (eventos de todos os agentes e
+    /// subagentes; sessão, modelo e estado de provedor vivem na própria linha).
+    /// As linhas de consumo (`usage`) ficam, órfãs, com o `task_id` original:
+    /// as métricas agregam por projeto/provedor/modelo/data e contam turnos por
+    /// (tarefa, turno), sem consultar `tasks`. Devolve se a tarefa existia.
+    pub fn delete_task(&self, id: i64) -> rusqlite::Result<bool> {
+        let mut c = self.c();
+        let tx = c.transaction()?;
+        tx.execute("DELETE FROM events WHERE task_id=?1", [id])?;
+        let n = tx.execute("DELETE FROM tasks WHERE id=?1", [id])?;
+        tx.execute(
+            "INSERT INTO settings(key, value) VALUES ('last_deleted_task', ?1)
+             ON CONFLICT(key) DO UPDATE SET value=MAX(CAST(value AS INTEGER), CAST(excluded.value AS INTEGER))",
+            [id.to_string()],
+        )?;
+        tx.commit()?;
+        Ok(n > 0)
     }
 
     pub fn get_task(&self, id: i64) -> rusqlite::Result<Option<TaskRecord>> {
         self.c()
             .query_row(
-                "SELECT id, project, provider, prompt, state, created_at, workdir, session_id FROM tasks WHERE id=?1",
+                &format!("SELECT {TASK_COLS} FROM tasks WHERE id=?1"),
                 [id],
                 task_row,
             )
@@ -208,28 +440,43 @@ impl Db {
 
     pub fn list_tasks(&self) -> rusqlite::Result<Vec<TaskRecord>> {
         let c = self.c();
-        let mut st = c.prepare(
-            "SELECT id, project, provider, prompt, state, created_at, workdir, session_id FROM tasks ORDER BY id DESC",
-        )?;
+        let mut st = c.prepare(&format!("SELECT {TASK_COLS} FROM tasks ORDER BY id DESC"))?;
         let rows = st.query_map([], task_row)?;
         rows.collect()
     }
 
     pub fn insert_event(&self, task_id: i64, kind: &str, payload: &str) -> rusqlite::Result<i64> {
+        self.insert_event_sub(task_id, kind, payload, None)
+    }
+
+    /// Como `insert_event`, marcando o subagente a que o evento pertence.
+    pub fn insert_event_sub(&self, task_id: i64, kind: &str, payload: &str, subagent: Option<&str>) -> rusqlite::Result<i64> {
         let c = self.c();
         c.execute(
-            "INSERT INTO events(task_id, kind, payload, created_at) VALUES (?1,?2,?3,?4)",
-            params![task_id, kind, payload, now()],
+            "INSERT INTO events(task_id, kind, payload, created_at, subagent) VALUES (?1,?2,?3,?4,?5)",
+            params![task_id, kind, payload, now(), subagent],
         )?;
         Ok(c.last_insert_rowid())
     }
 
+    /// Todos os eventos da tarefa (agente principal e subagentes), em ordem.
     pub fn list_events(&self, task_id: i64) -> rusqlite::Result<Vec<EventRecord>> {
         let c = self.c();
-        let mut st = c.prepare("SELECT id, task_id, kind, payload, created_at FROM events WHERE task_id=?1 ORDER BY id")?;
-        let rows = st.query_map([task_id], |r| {
-            Ok(EventRecord { id: r.get(0)?, task_id: r.get(1)?, kind: r.get(2)?, payload: r.get(3)?, created_at: r.get(4)? })
-        })?;
+        let mut st = c.prepare(
+            "SELECT id, task_id, kind, payload, created_at, subagent FROM events WHERE task_id=?1 ORDER BY id",
+        )?;
+        let rows = st.query_map([task_id], event_row)?;
+        rows.collect()
+    }
+
+    /// Eventos de um subagente da tarefa: o `SubagentStart`, os internos e o `SubagentEnd`.
+    pub fn list_subagent_events(&self, task_id: i64, subagent: &str) -> rusqlite::Result<Vec<EventRecord>> {
+        let c = self.c();
+        let mut st = c.prepare(
+            "SELECT id, task_id, kind, payload, created_at, subagent FROM events
+             WHERE task_id=?1 AND subagent=?2 ORDER BY id",
+        )?;
+        let rows = st.query_map(params![task_id, subagent], event_row)?;
         rows.collect()
     }
 
@@ -237,12 +484,31 @@ impl Db {
         self.insert_usage_at(task_id, project, provider, u, now())
     }
 
+    /// Como `insert_usage`, marcando o turno: todas as linhas de um mesmo turno
+    /// (uma por modelo) levam o mesmo `turn`.
+    pub fn insert_usage_turn(&self, task_id: i64, project: &str, provider: &str, u: &TokenUsage, turn: i64) -> rusqlite::Result<i64> {
+        self.insert_usage_full(task_id, project, provider, u, now(), Some(turn))
+    }
+
     /// Como `insert_usage`, com data explícita (importação/testes).
     pub fn insert_usage_at(&self, task_id: i64, project: &str, provider: &str, u: &TokenUsage, at: i64) -> rusqlite::Result<i64> {
+        self.insert_usage_full(task_id, project, provider, u, at, None)
+    }
+
+    /// Data e turno explícitos.
+    pub fn insert_usage_full(
+        &self,
+        task_id: i64,
+        project: &str,
+        provider: &str,
+        u: &TokenUsage,
+        at: i64,
+        turn: Option<i64>,
+    ) -> rusqlite::Result<i64> {
         let c = self.c();
         c.execute(
-            "INSERT INTO usage(task_id, project, provider, model, input_tokens, output_tokens, cache_read, cache_write, cost_usd, created_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+            "INSERT INTO usage(task_id, project, provider, model, input_tokens, output_tokens, cache_read, cache_write, cost_usd, created_at, turn)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
             params![
                 task_id,
                 project,
@@ -253,7 +519,8 @@ impl Db {
                 to_i(u.cache_read),
                 to_i(u.cache_write),
                 u.cost_usd,
-                at
+                at,
+                turn
             ],
         )?;
         Ok(c.last_insert_rowid())
@@ -284,7 +551,7 @@ impl Db {
         let (a, b) = range.bounds();
         let c = self.c();
         let mut st = c.prepare(
-            "SELECT task_id, project, provider, model, input_tokens, output_tokens, cache_read, cache_write, cost_usd, created_at
+            "SELECT task_id, project, provider, model, input_tokens, output_tokens, cache_read, cache_write, cost_usd, created_at, turn
              FROM usage WHERE created_at >= ?1 AND created_at < ?2 ORDER BY created_at, id",
         )?;
         let rows = st.query_map([a, b], |r| {
@@ -301,6 +568,7 @@ impl Db {
                     cost_usd: r.get(8)?,
                 },
                 created_at: r.get(9)?,
+                turn: r.get(10)?,
             })
         })?;
         rows.collect()
@@ -312,7 +580,8 @@ impl Db {
         let c = self.c();
         let mut st = c.prepare(
             "SELECT project, provider, model, SUM(input_tokens), SUM(output_tokens), SUM(cache_read), SUM(cache_write),
-                    SUM(cost_usd), COUNT(*)
+                    SUM(cost_usd),
+                    COUNT(DISTINCT task_id || CASE WHEN turn IS NULL THEN ':s' || created_at ELSE ':t' || turn END)
              FROM usage WHERE created_at >= ?1 AND created_at < ?2
              GROUP BY project, provider, model ORDER BY project, provider, model",
         )?;
@@ -333,6 +602,17 @@ impl Db {
     }
 }
 
+fn event_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<EventRecord> {
+    Ok(EventRecord {
+        id: r.get(0)?,
+        task_id: r.get(1)?,
+        kind: r.get(2)?,
+        payload: r.get(3)?,
+        created_at: r.get(4)?,
+        subagent: r.get(5)?,
+    })
+}
+
 fn task_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskRecord> {
     Ok(TaskRecord {
         id: r.get(0)?,
@@ -343,12 +623,35 @@ fn task_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskRecord> {
         created_at: r.get(5)?,
         workdir: r.get(6)?,
         session_id: r.get(7)?,
+        model: r.get(8)?,
+        mode: r.get(9)?,
+        provider_state: r.get(10)?,
+        handoff: r.get::<_, Option<i64>>(11)?.unwrap_or(0) != 0,
+        context: r.get(12)?,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn build_history_keeps_last_n() {
+        let db = Db::open_in_memory().unwrap();
+        let mut ids = Vec::new();
+        for n in 0..5 {
+            let rec = BuildRecord { project: "p".into(), label: "cargo build".into(), cmdline: "cargo build".into(), origin: "ide".into(), state: "running".into(), started_at: n, ..Default::default() };
+            ids.push(db.insert_build(&rec).unwrap());
+        }
+        db.insert_build(&BuildRecord { project: "q".into(), state: "running".into(), started_at: 9, ..Default::default() }).unwrap();
+        let done = BuildRecord { id: ids[4], project: "p".into(), state: "ok".into(), exit_code: Some(0), ended_at: Some(10), artifact_path: Some("x.exe".into()), artifact_size: Some(3), ..Default::default() };
+        db.finish_build(&done, 3).unwrap();
+        let list = db.list_builds(Some("p"), 10).unwrap();
+        assert_eq!(list.len(), 3);
+        assert_eq!((list[0].id, list[0].state.as_str(), list[0].artifact_size), (ids[4], "ok", Some(3)));
+        assert_eq!(db.list_builds(None, 10).unwrap().len(), 4);
+        assert_eq!(db.close_stale_builds().unwrap(), 3);
+    }
 
     #[test]
     fn roundtrip() {
@@ -367,14 +670,53 @@ mod tests {
         assert_eq!(db.get_task(7).unwrap().unwrap().workdir.as_deref(), Some("/wt"));
         assert!(db.get_task(8).unwrap().is_none());
         assert_eq!(db.max_task_id().unwrap(), 7);
+        db.insert_event_sub(7, "Text", "\"sub\"", Some("toolu_1")).unwrap();
+        db.insert_event_sub(7, "Text", "\"outro\"", Some("toolu_2")).unwrap();
         let e = db.list_events(7).unwrap();
-        assert_eq!(e.len(), 2);
+        assert_eq!(e.len(), 4);
         assert_eq!(e[0].kind, "Text");
+        assert_eq!(e[0].subagent, None);
+        assert_eq!(e[2].subagent.as_deref(), Some("toolu_1"));
+        let sub = db.list_subagent_events(7, "toolu_1").unwrap();
+        assert_eq!(sub.len(), 1);
+        assert_eq!(sub[0].payload, "\"sub\"");
+        assert!(db.list_subagent_events(8, "toolu_1").unwrap().is_empty());
         assert_eq!(db.get_autowork("/p").unwrap(), None);
         db.set_autowork("/p", "{}").unwrap();
         db.set_autowork("/p", "{\"enabled\":true}").unwrap();
         assert_eq!(db.get_autowork("/p").unwrap().as_deref(), Some("{\"enabled\":true}"));
         assert_eq!(db.list_autowork().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn delete_task_keeps_usage_and_never_reuses_id() {
+        let db = Db::open_in_memory().unwrap();
+        db.insert_task(Some(1), "/p", "claude", "a", "Completed").unwrap();
+        db.insert_task(Some(2), "/p", "claude", "b", "Discarded").unwrap();
+        db.set_task_provider(2, "opencode", Some("s"), Some("m"), "{\"claude\":{}}", true).unwrap();
+        db.insert_event(2, "Text", "\"oi\"").unwrap();
+        db.insert_event_sub(2, "Text", "\"sub\"", Some("toolu_1")).unwrap();
+        db.insert_event(1, "Text", "\"fica\"").unwrap();
+        let u = TokenUsage { input_tokens: 10, model: Some("x".into()), ..Default::default() };
+        db.insert_usage_turn(2, "/p", "claude", &u, 5).unwrap();
+
+        assert!(db.delete_task(2).unwrap());
+        assert!(db.get_task(2).unwrap().is_none());
+        assert!(db.list_events(2).unwrap().is_empty());
+        assert!(db.list_subagent_events(2, "toolu_1").unwrap().is_empty());
+        // A outra tarefa fica intacta.
+        assert_eq!(db.list_tasks().unwrap().len(), 1);
+        assert_eq!(db.list_events(1).unwrap().len(), 1);
+        // O consumo continua nas métricas, com o id original.
+        let rows = db.usage_rows(TimeRange::all()).unwrap();
+        assert_eq!((rows.len(), rows[0].task_id, rows[0].usage.input_tokens), (1, 2, 10));
+        assert_eq!(db.usage_by_project(TimeRange::all()).unwrap()[0].turns, 1);
+        // O id 2 não volta a ser usado, nem depois de excluir a 1 e de sumir o consumo.
+        assert_eq!(db.max_task_id().unwrap(), 2);
+        assert!(db.delete_task(1).unwrap());
+        assert!(!db.delete_task(1).unwrap());
+        db.c().execute("DELETE FROM usage", []).unwrap();
+        assert_eq!(db.max_task_id().unwrap(), 2);
     }
 
     #[test]
@@ -405,6 +747,50 @@ mod tests {
         assert_eq!(db.usage_rows(TimeRange::all()).unwrap().len(), 3);
     }
 
+    /// Um turno que usa dois modelos grava duas linhas, mas é um turno só.
+    #[test]
+    fn one_turn_two_models_is_one_turn() {
+        let db = Db::open_in_memory().unwrap();
+        let u = |m: &str| TokenUsage { input_tokens: 5, model: Some(m.into()), ..Default::default() };
+        db.insert_usage_turn(1, "/a", "claude", &u("opus"), 77).unwrap();
+        db.insert_usage_turn(1, "/a", "claude", &u("haiku"), 77).unwrap();
+        db.insert_usage_turn(1, "/a", "claude", &u("opus"), 78).unwrap();
+        let rows = db.usage_rows(TimeRange::all()).unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].turn, Some(77));
+        let keys: std::collections::HashSet<_> = rows.iter().map(UsageRow::turn_key).collect();
+        assert_eq!(keys.len(), 2);
+        // Por modelo: opus participou de 2 turnos, haiku de 1.
+        let by = db.usage_by_project(TimeRange::all()).unwrap();
+        let turns = |m: &str| by.iter().find(|r| r.model.as_deref() == Some(m)).unwrap().turns;
+        assert_eq!((turns("opus"), turns("haiku")), (2, 1));
+    }
+
+    /// Banco antigo, sem a coluna `turn`: migra e as linhas antigas contam pelo segundo.
+    #[test]
+    fn migrates_usage_without_turn() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("u.db");
+        {
+            let c = Connection::open(&p).unwrap();
+            c.execute_batch(
+                "CREATE TABLE usage(id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL, project TEXT NOT NULL,
+                 provider TEXT NOT NULL, model TEXT, input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL,
+                 cache_read INTEGER NOT NULL, cache_write INTEGER NOT NULL, cost_usd REAL, created_at INTEGER NOT NULL);
+                 INSERT INTO usage(task_id, project, provider, model, input_tokens, output_tokens, cache_read, cache_write, created_at)
+                 VALUES (1,'/a','claude','opus',1,1,0,0,100), (1,'/a','claude','haiku',1,1,0,0,100), (1,'/a','claude','opus',1,1,0,0,200);",
+            )
+            .unwrap();
+        }
+        let db = Db::open(&p).unwrap();
+        let rows = db.usage_rows(TimeRange::all()).unwrap();
+        assert!(rows.iter().all(|r| r.turn.is_none()));
+        let keys: std::collections::HashSet<_> = rows.iter().map(UsageRow::turn_key).collect();
+        assert_eq!(keys.len(), 2);
+        drop(db);
+        assert_eq!(Db::open(&p).unwrap().usage_rows(TimeRange::all()).unwrap().len(), 3);
+    }
+
     #[test]
     fn migrates_old_schema() {
         let dir = tempfile::tempdir().unwrap();
@@ -414,13 +800,42 @@ mod tests {
             c.execute_batch(
                 "CREATE TABLE tasks(id INTEGER PRIMARY KEY, project TEXT NOT NULL, provider TEXT NOT NULL,
                  prompt TEXT NOT NULL, state TEXT NOT NULL, created_at INTEGER NOT NULL);
-                 INSERT INTO tasks VALUES(1,'/p','claude','x','Completed',0);",
+                 INSERT INTO tasks VALUES(1,'/p','claude','x','Completed',0);
+                 CREATE TABLE events(id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL,
+                 kind TEXT NOT NULL, payload TEXT NOT NULL, created_at INTEGER NOT NULL);
+                 INSERT INTO events(task_id, kind, payload, created_at) VALUES(1,'Text','antigo',0);",
             )
             .unwrap();
         }
         let db = Db::open(&p).unwrap();
         let t = db.get_task(1).unwrap().unwrap();
         assert_eq!(t.session_id, None);
+        // Colunas novas da tarefa: modelo, modo de trabalho, estado por provedor e resumo pendente.
+        assert_eq!((t.model.clone(), t.mode.clone(), t.provider_state.clone(), t.handoff), (None, None, None, false));
+        db.set_task_model(1, Some("sonnet")).unwrap();
+        db.set_task_mode(1, "Direct").unwrap();
+        db.set_task_provider(1, "opencode", None, Some("a/b"), "{\"claude\":{}}", true).unwrap();
+        let t = db.get_task(1).unwrap().unwrap();
+        assert_eq!((t.provider.as_str(), t.model.as_deref(), t.mode.as_deref()), ("opencode", Some("a/b"), Some("Direct")));
+        assert_eq!((t.session_id.clone(), t.provider_state.as_deref(), t.handoff), (None, Some("{\"claude\":{}}"), true));
+        db.set_task_handoff(1, false).unwrap();
+        assert!(!db.get_task(1).unwrap().unwrap().handoff);
+        // A tabela de preferências também nasce na migração.
+        assert_eq!(db.get_setting("work_mode").unwrap(), None);
+        db.set_setting("work_mode", Some("Direct")).unwrap();
+        db.set_setting("work_mode", Some("Isolated")).unwrap();
+        assert_eq!(db.get_setting("work_mode").unwrap().as_deref(), Some("Isolated"));
+        db.set_setting("work_mode", None).unwrap();
+        assert_eq!(db.get_setting("work_mode").unwrap(), None);
         db.set_task_session(1, "s").unwrap();
+        // Eventos antigos continuam legíveis, sem subagente; os novos aceitam a coluna.
+        db.insert_event_sub(1, "Text", "\"novo\"", Some("toolu_1")).unwrap();
+        let e = db.list_events(1).unwrap();
+        assert_eq!(e.len(), 2);
+        assert_eq!(e[0].subagent, None);
+        assert_eq!(e[1].subagent.as_deref(), Some("toolu_1"));
+        // Reabrir não tenta criar a coluna de novo.
+        drop(db);
+        assert_eq!(Db::open(&p).unwrap().list_events(1).unwrap().len(), 2);
     }
 }

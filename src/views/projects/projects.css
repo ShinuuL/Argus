@@ -1,0 +1,52 @@
+/* Lista de sessões agrupada por projeto (.side do mockup, telas 02/03). */
+.pj { width: 230px; flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--border); font-size: 12.5px; }
+.pj-ibtn { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; flex: none; background: none; border: 0; border-radius: 5px; color: var(--text-2); }
+.pj-ibtn:hover { background: var(--selection); color: var(--text); }
+.pj-ibtn[aria-pressed="true"] { color: var(--accent-text); }
+.pj-ibtn:disabled { opacity: .5; cursor: default; }
+
+.pj-search { display: flex; align-items: center; gap: 4px; flex: none; margin: 10px 10px 2px; padding: 0 4px 0 8px; height: 24px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text-2); }
+.pj-search:focus-within { border-color: var(--focus); }
+.pj-search input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: none; color: var(--text); font-size: 11.5px; }
+.pj-search .pj-ibtn { opacity: .7; }
+.pj-search:hover .pj-ibtn { opacity: 1; }
+
+.pj-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 0 8px; }
+.pj-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 12px; color: var(--text-2); font-size: 12px; line-height: 1.5; }
+.pj-empty p { margin: 0; }
+
+/* Cabeçalho do projeto: h4 em caixa alta, discreto. */
+.pj-project { display: flex; align-items: center; gap: 6px; margin: 0; padding: 12px 8px 6px 12px; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); font-weight: 500; cursor: pointer; min-width: 0; }
+.pj-project:hover, .pj-project.sel { color: var(--text); }
+.pj-project:focus-visible, .pj-session:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.pj-name { flex: 0 1 auto; }
+.pj-git { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 6px; font-size: 10px; letter-spacing: 0; text-transform: none; white-space: nowrap; overflow: hidden; opacity: 0; }
+.pj-project:hover .pj-git, .pj-project:focus-visible .pj-git { opacity: 1; }
+.pj-changed { flex: none; color: var(--warn); font-variant-numeric: tabular-nums; }
+.pj-add { visibility: hidden; }
+.pj-project:hover .pj-add, .pj-project:focus-within .pj-add, .pj-add:focus-visible { visibility: visible; }
+
+/* Sessão: linha .it do mockup (ponto de status + título). */
+.pj-sessions { display: flex; flex-direction: column; }
+.pj-session { display: flex; align-items: center; gap: 8px; padding: 5px 12px; cursor: pointer; min-width: 0; color: var(--text-2); }
+.pj-session:hover { color: var(--text); background: color-mix(in srgb, var(--selection) 50%, transparent); }
+.pj-session.sel { background: var(--selection); color: var(--text); }
+.pj-session.unread { color: var(--text); font-weight: 600; }
+.pj-session.closed .pj-session-title { text-decoration: line-through; text-decoration-color: var(--border-strong); }
+.pj-session-title { flex: 1; min-width: 0; }
+.pj-provider { display: none; }
+.pj-tag { flex: none; display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border: 1px solid var(--border-strong); border-radius: 99px; color: var(--text-2); font-size: 10px; font-weight: 400; }
+.pj-tag.run { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
+.pj-tag.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.pj-none { display: block; width: 100%; padding: 5px 12px; background: none; border: 0; border-radius: 0; text-align: left; color: var(--text-2); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pj-none:hover { color: var(--text); }
+
+.pj-spin { animation: pj-spin .8s linear infinite; }
+@keyframes pj-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pj-spin { animation: none; } }
+
+.pj-project.missing .pj-name { text-decoration: line-through; }
+.pj-missing { color: var(--warn); font-style: italic; }
+
+/* Tela 03: com o inspetor aberto em janela estreita, a lista recolhe para a conversa não espremer. */
+@media (max-width: 1280px) { .sh-chat:has(.rp) .pj { display: none; } }

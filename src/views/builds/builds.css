@@ -1,0 +1,48 @@
+/* Tela Builds, aviso da status bar e botão de servidor de dev. Só tokens de tokens.css. */
+.bld { display: flex; flex-direction: column; gap: 18px; }
+.bld-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bld-bar select { min-width: 180px; }
+.bld-err { overflow-wrap: anywhere; }
+.bld-h { margin: 0 0 8px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-2); }
+.bld-note { margin-top: 10px; line-height: 1.5; }
+
+.bld-dot { flex: none; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); }
+.bld-dot.running { background: var(--run); }
+.bld-dot.ok { background: var(--ok); }
+.bld-dot.err { background: var(--err); }
+.bld-dot.info { background: var(--warn); }
+.bld-flash { max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+
+.bld-run, .bld-hist { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); min-width: 0; }
+.bld-run .bld-dot, .bld-hist .bld-dot { margin-top: 5px; }
+.bld-run-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.bld-run-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.bld-actions { display: flex; gap: 4px; flex: none; }
+.bld-actions button, .bld-artifact button { font-size: 11px; }
+.bld-artifact { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); }
+
+.bld-proj { padding: 6px 0; border-top: 1px solid var(--border); }
+.bld-proj-name { display: block; margin-bottom: 6px; }
+.bld-cmds { display: flex; flex-wrap: wrap; gap: 6px; }
+.bld-cmd { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
+.bld-cmd.servidor .ic { color: var(--ok); }
+.bld-cmd.build .ic { color: var(--run); }
+.bld-cmd:disabled { opacity: .6; cursor: default; }
+
+/* Servidores de dev (painel Servidores e barra esquerda). */
+.dsv { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.dsv-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.dsv-head button { font-size: 11px; }
+.dsv-row { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 3px 0; border-top: 1px dashed var(--border); }
+.dsv-name { flex: 0 1 auto; min-width: 0; font-weight: 600; }
+.dsv-state { flex: 1 1 0; min-width: 0; color: var(--text-2); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dsv-row select { max-width: 130px; font-size: 11px; }
+.dsv-row button { font-size: 11px; flex: none; }
+.dsv-err { overflow-wrap: anywhere; }
+
+/* Botão discreto na linha do projeto: aparece no hover; fica visível com o servidor no ar. */
+.dsv-btn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; flex: none; background: none; border: 0; color: var(--text-2); visibility: hidden; }
+.dsv-btn:hover { background: var(--bg-active); color: var(--text); }
+.pj-project:hover .dsv-btn, .pj-project:focus-within .dsv-btn, .dsv-btn:focus-visible, .dsv-btn.on { visibility: visible; }
+.dsv-btn.on { color: var(--ok); }
+.dsv-btn.wait { color: var(--run); }

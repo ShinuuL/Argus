@@ -1,0 +1,63 @@
+/* Mascote do Argus: bichinho de um olho só. Prefixo .argo-* (não usa as classes .pet-* antigas). */
+.argo {
+  position: relative; display: inline-flex; align-items: center; height: 100%;
+  --argo-body: var(--accent-hover); --argo-foot: var(--accent); --argo-eye: var(--text); --argo-ink: var(--bg); --argo-cheek: var(--err);
+}
+.argo-worried { --argo-body: var(--text-2); --argo-foot: var(--border-strong); }
+.argo-sweating { --argo-body: var(--warn); --argo-foot: color-mix(in srgb, var(--warn) 65%, var(--bg)); }
+.argo-btn { display: inline-flex; align-items: center; padding: 0 2px; height: 100%; background: none; border: 0; border-radius: var(--radius); cursor: pointer; }
+.argo-btn:hover { background: var(--bg-hover); }
+.argo-svg { display: block; overflow: visible; }
+.argo-fill, .argo-lid { fill: var(--argo-body); }
+.argo-foot, .argo-tip { fill: var(--argo-foot); }
+.argo-stalk { fill: none; stroke: var(--argo-foot); stroke-width: 2.4; stroke-linecap: round; }
+.argo-eye { fill: var(--argo-eye); stroke: var(--argo-ink); stroke-width: 1.6; }
+.argo-ink { fill: var(--argo-ink); }
+.argo-glint { fill: var(--argo-eye); }
+.argo-line { fill: none; stroke: var(--argo-ink); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.argo-cheek { fill: var(--argo-cheek); opacity: 0.6; }
+.argo-shadow { fill: var(--shadow); }
+.argo-drop { fill: var(--run); }
+.argo-z { fill: none; stroke: var(--text-2); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.argo-spark { fill: var(--warn); transform-box: fill-box; transform-origin: center; }
+.argo-body { transform-origin: 32px 58px; }
+.argo-pupil { transform-box: fill-box; transform-origin: center; }
+
+.argo-sleeping .argo-body { animation: argo-breathe 3.4s ease-in-out infinite; }
+.argo-sleeping .argo-z { animation: argo-float 2.6s ease-in-out infinite; }
+.argo-working .argo-body { animation: argo-bob 0.8s ease-in-out infinite; }
+.argo-working .argo-pupil { animation: argo-scan 2.4s ease-in-out infinite; }
+.argo-sweating .argo-body { animation: argo-shake 0.25s linear infinite; }
+.argo-sweating .argo-drop { animation: argo-drip 1.2s ease-in infinite; }
+.argo-happy .argo-body { animation: argo-jump 0.9s cubic-bezier(0.3, 1.6, 0.5, 1) infinite; }
+.argo-happy .argo-spark { animation: argo-twinkle 1.2s ease-in-out infinite; }
+.argo-happy .argo-spark.late { animation-delay: 0.6s; }
+.argo-worried .argo-body { animation: argo-tilt 2s ease-in-out infinite; }
+
+@keyframes argo-breathe { 50% { transform: scale(1.04, 0.96); } }
+@keyframes argo-bob { 50% { transform: translateY(-2px); } }
+@keyframes argo-scan { 0%, 100% { transform: translateX(-4px); } 50% { transform: translateX(4px); } }
+@keyframes argo-shake { 25% { transform: translateX(-1px); } 75% { transform: translateX(1px); } }
+@keyframes argo-drip { from { transform: translateY(0); opacity: 1; } to { transform: translateY(9px); opacity: 0; } }
+@keyframes argo-jump { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-6px); } }
+@keyframes argo-float { 0%, 100% { transform: translateY(0); opacity: 0.55; } 50% { transform: translateY(-4px); opacity: 1; } }
+@keyframes argo-twinkle { 0%, 100% { transform: scale(0.6); opacity: 0.5; } 50% { transform: scale(1.1); opacity: 1; } }
+@keyframes argo-tilt { 50% { transform: rotate(-6deg); } }
+
+.argo-bubble {
+  position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 60; min-width: 250px; padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 3px; font-size: 12px; line-height: 1.5; white-space: nowrap;
+  background: var(--bg-panel); color: var(--text); border: 1px solid var(--border-control); border-radius: var(--radius-lg);
+  box-shadow: 0 4px 14px var(--shadow);
+}
+.argo-bubble::after { content: ""; position: absolute; top: 100%; right: 8px; border: 6px solid transparent; border-top-color: var(--border-control); }
+.argo-bubble strong { color: var(--text-strong); margin-bottom: 2px; }
+.argo-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.argo-row > span:first-child { color: var(--text-dim); }
+.argo-row b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.argo-meter { flex: 1; height: 5px; min-width: 50px; background: var(--bg-control); border-radius: 3px; overflow: hidden; }
+.argo-meter span { display: block; height: 100%; background: var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .argo *, .argo *::before, .argo *::after { animation: none !important; transition: none !important; }
+}

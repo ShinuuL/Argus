@@ -74,6 +74,8 @@ const INSTALL_TABLE: &[(&str, Option<&str>, Option<&str>)] = &[
     ("gh", Some("GitHub.cli"), None),
     ("claude", None, Some("@anthropic-ai/claude-code")),
     ("opencode", None, Some("opencode-ai")),
+    ("codex", None, Some("@openai/codex")),
+    ("gemini", None, Some("@google/gemini-cli")),
 ];
 
 fn winget_plan(id: &str) -> InstallPlan {

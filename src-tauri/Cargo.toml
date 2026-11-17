@@ -1,0 +1,26 @@
+[package]
+name = "argus-desktop"
+description = "Argus: IDE desktop para vários projetos com agentes de IA"
+version.workspace = true
+edition.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+argus-core = { path = "../crates/core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+base64 = "0.23.1"
+sysinfo = "0.40.3"
+rodio = "0.20"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = ["Media_Control", "Foundation", "Foundation_Collections"] }
+
+[dev-dependencies]
+tempfile = "3"

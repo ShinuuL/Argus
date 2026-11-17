@@ -1,0 +1,192 @@
+/*
+ * Tokens de cor do Argus. TODA cor da interface vem daqui: nenhum componente
+ * usa hex direto.
+ *
+ * Cada tema define os mesmos tokens de base usando só as cores da própria
+ * paleta (tons intermediários por color-mix entre duas cores da paleta). Os
+ * tokens derivados (mais abaixo) são calculados a partir da base e valem para
+ * os três temas. As cores de estado são iguais em todos os temas.
+ *
+ * Tema escolhido: atributo data-theme em <html> (src/store/theme.ts).
+ */
+
+/* ---------- Oceano (padrão): #0d1b2a #1b263b #415a77 #778da9 #e0e1dd ---------- */
+:root,
+[data-theme="oceano"] {
+  --bg: #0d1b2a;
+  --surface: #1b263b;
+  --surface-2: color-mix(in srgb, #1b263b 70%, #415a77);
+  /* Borda suave: um pouco do texto sobre a superfície; a hierarquia vem do tom. */
+  --border: color-mix(in srgb, #e0e1dd 10%, #1b263b);
+  --border-strong: #415a77;
+  --text: #e0e1dd;
+  /* #778da9 puro dá 4,4:1 sobre a superfície; clareado com o texto da paleta. */
+  --text-2: color-mix(in srgb, #778da9 72%, #e0e1dd);
+  --accent: #778da9;
+  --accent-hover: color-mix(in srgb, #778da9 65%, #e0e1dd);
+  --on-accent: #0d1b2a;
+  --accent-text: color-mix(in srgb, #778da9 55%, #e0e1dd);
+  --selection: color-mix(in srgb, #1b263b 35%, #415a77);
+  --focus: color-mix(in srgb, #778da9 50%, #e0e1dd);
+  /* Status bar neutra: o fundo do app com texto secundário (8,6:1). */
+  --status-bg: #0d1b2a;
+  --on-status: color-mix(in srgb, #778da9 72%, #e0e1dd);
+  /* Fundo mais escuro que o app (vale para os temas que não definem o próprio). */
+  --page: color-mix(in srgb, var(--bg) 80%, #000000);
+}
+
+/* ---------- Nebulosa: #10002b #240046 #3c096c #5a189a #7b2cbf #9d4edd #c77dff #e0aaff ---------- */
+[data-theme="nebulosa"] {
+  /* Fundo quase preto com um toque da paleta; o roxo fica no destaque, na borda forte e na seleção. */
+  --bg: #0d061c;
+  --surface: #1a0a2a;
+  --surface-2: #281140;
+  --border: color-mix(in srgb, #eee2f7 9%, #1a0a2a);
+  --border-strong: #441770;
+  --text: #eee2f7;
+  --text-2: #bf9edc;
+  --accent: #7b2cbf;
+  --accent-hover: color-mix(in srgb, #7b2cbf 50%, #9d4edd);
+  --on-accent: #ffffff;
+  --accent-text: #c77dff;
+  --selection: #37105c;
+  --focus: #c77dff;
+  --status-bg: #0d061c;
+  --on-status: #bf9edc;
+}
+
+/* ---------- Brasa: #0b090a #161a1d #660708 #a4161a #ba181b #e5383b #b1a7a6 #d3d3d3 #f5f3f4 #ffffff ---------- */
+[data-theme="brasa"] {
+  /* Os vermelhos escuros da paleta entram nos controles, na borda forte e na seleção. */
+  --bg: #0b090a;
+  --surface: #161a1d;
+  --surface-2: #2e1417;
+  --border: color-mix(in srgb, #f5f3f4 7%, #1f1416);
+  --border-strong: #660708;
+  --text: #f5f3f4;
+  --text-2: #b1a7a6;
+  --accent: #ba181b;
+  --accent-hover: color-mix(in srgb, #ba181b 50%, #e5383b);
+  --on-accent: #ffffff;
+  --accent-text: color-mix(in srgb, #e5383b 65%, #f5f3f4);
+  --selection: #560b0c;
+  --focus: #e5383b;
+  --status-bg: #0b090a;
+  --on-status: #b1a7a6;
+}
+
+/* ---------- Temas do redesign (docs/mockups/argus-telas.html) ---------- */
+/* Ciano: ardósia + ciano */
+[data-theme="ciano"] {
+  --bg: #0b1418; --page: #081014; --surface: #121e24; --surface-2: #1a2a32;
+  --border: #20323b; --border-strong: #2c4651;
+  --text: #e3eef0; --text-2: #93abb2;
+  --accent: #2bb3b1; --accent-hover: color-mix(in srgb, #2bb3b1 70%, #5fd4d1);
+  --accent-text: #5fd4d1; --on-accent: #04201f;
+  --selection: #163a3d; --focus: #5fd4d1;
+  --status-bg: #0b1418; --on-status: #93abb2;
+}
+/* Âmbar: grafite + âmbar */
+[data-theme="ambar"] {
+  --bg: #131211; --page: #0e0d0c; --surface: #1c1a18; --surface-2: #262320;
+  --border: #2e2a26; --border-strong: #463f37;
+  --text: #efe9e1; --text-2: #a99f92;
+  --accent: #e0a23b; --accent-hover: color-mix(in srgb, #e0a23b 70%, #f0bd66);
+  --accent-text: #f0bd66; --on-accent: #241703;
+  --selection: #3a2e1c; --focus: #f0bd66;
+  --status-bg: #131211; --on-status: #a99f92;
+}
+/* Violeta: noite + violeta */
+[data-theme="violeta"] {
+  --bg: #100f19; --page: #0b0a12; --surface: #181725; --surface-2: #221f33;
+  --border: #2a2740; --border-strong: #3e3a5e;
+  --text: #e9e7f5; --text-2: #a29ec0;
+  --accent: #8b7cf6; --accent-hover: color-mix(in srgb, #8b7cf6 70%, #b0a6ff);
+  --accent-text: #b0a6ff; --on-accent: #120c33;
+  --selection: #2c2752; --focus: #b0a6ff;
+  --status-bg: #100f19; --on-status: #a29ec0;
+}
+
+:root {
+  color-scheme: dark;
+
+  /* Estado: iguais nos três temas, fora das paletas, para continuarem distinguíveis. */
+  --ok: #5fd38d;
+  --warn: #e8b04a;
+  --err: #ff8f7a;
+  --danger: #ff8f7a;
+  --run: #6cb6ff;
+  /* Estado do redesign (mockup): ok/warn acima, bad = erro, info = em andamento. */
+  --bad: #e06b6b;
+  --info: #6aa6e0;
+  --term-bg: color-mix(in srgb, var(--bg) 70%, #000000);
+  --ok-bg: color-mix(in srgb, var(--ok) 16%, var(--surface));
+  --warn-bg: color-mix(in srgb, var(--warn) 16%, var(--surface));
+  --err-bg: color-mix(in srgb, var(--err) 16%, var(--surface));
+  --run-bg: color-mix(in srgb, var(--run) 16%, var(--surface));
+
+  /* Sombra, véu de modal e papel do QR code (não são cor de tema). */
+  --shadow: rgba(0, 0, 0, 0.45);
+  --scrim: rgba(0, 0, 0, 0.6);
+  --paper: #ffffff;
+  --paper-ink: #000000;
+
+  /* Derivados (nomes usados pelos componentes) */
+  --bg-activity: var(--bg);
+  --bg-app: var(--bg);
+  --bg-editor: var(--bg);
+  --bg-code: var(--bg);
+  --bg-tabs: color-mix(in srgb, var(--bg) 55%, var(--surface));
+  --bg-raised: var(--surface);
+  --bg-panel: var(--surface);
+  --bg-hover: color-mix(in srgb, var(--surface) 70%, var(--border));
+  --bg-active: color-mix(in srgb, var(--surface) 45%, var(--border));
+  --bg-control: var(--surface-2);
+  --bg-control-hover: color-mix(in srgb, var(--surface-2) 55%, var(--border-strong));
+  --bg-selected: var(--selection);
+  --bg-status: var(--status-bg);
+  --border-control: var(--border-strong);
+  --text-strong: var(--text);
+  --text-dim: var(--text-2);
+  --text-faint: var(--text-2);
+  --text-on-status: var(--on-status);
+  --accent-soft: color-mix(in srgb, var(--accent) 22%, transparent);
+
+  /* Tipografia: Geist (OFL-1.1, empacotada por @fontsource-variable/geist, sem CDN); mono do sistema. */
+  --font-sans: "Geist Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono-family: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+  --font-ui: 13px/1.35 var(--font-sans);
+  --font-mono: 12px var(--font-mono-family);
+
+  /* Espaçamento: passo de 4 px. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* Raios: controles pequenos, controles, cartões e a caixa de composição. */
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+
+  --sidebar-width: 272px;
+  --right-width: 320px;
+  /* Barra de título: largura dos botões flutuantes nos cantos e o vermelho do Fechar (padrão do Windows). */
+  --title-lead-w: 40px;
+  --title-ctl-w: 212px;
+  --win-close-bg: #c42b1c;
+  --win-close-text: #ffffff;
+  --status-height: 24px;
+  --tab-height: 34px;
+  --chat-width: 820px;
+}
+
+/* Brasa: painéis laterais e faixa de abas com um toque do vermelho escuro da paleta. */
+[data-theme="brasa"] {
+  --bg-panel: #20181a;
+  --bg-raised: #20181a;
+  --bg-tabs: #170f11;
+}

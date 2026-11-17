@@ -1,0 +1,27 @@
+/* Dispositivos: faixa de estado em cima e o painel do Screen-Mirror ocupando o resto. */
+.dv { height: 100%; display: flex; flex-direction: column; background: var(--bg); min-height: 0; }
+.dv-bar {
+  display: flex; align-items: center; gap: var(--space-2, 8px); flex-wrap: wrap;
+  padding: 8px 14px; border-bottom: 1px solid var(--border); background: var(--surface);
+}
+.dv-bar > .ic { color: var(--text-2); }
+.dv-bar button { display: inline-flex; align-items: center; gap: 6px; }
+.dv-devs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; min-width: 0; }
+.dv-spacer { flex: 1; }
+.dv-chip {
+  font-size: 12px; padding: 2px 8px; border-radius: var(--radius-lg, 999px);
+  border: 1px solid var(--border); color: var(--text-2); white-space: nowrap;
+}
+.dv-chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }
+.dv-chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
+.dv-error, .dv-problem {
+  margin: 10px 14px 0; padding: 8px 12px; border-radius: var(--radius, 6px);
+  border: 1px solid color-mix(in srgb, var(--err) 50%, var(--border)); color: var(--text); background: var(--surface-2); white-space: pre-wrap;
+}
+.dv-problem { margin: 0; }
+.dv-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--bg); }
+.dv .page-col { width: 100%; }
+.dv-field { display: flex; flex-direction: column; gap: 6px; }
+.dv-row { display: flex; gap: 8px; }
+.dv-row input { flex: 1; min-width: 0; }
+.dv-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); cursor: pointer; white-space: nowrap; }

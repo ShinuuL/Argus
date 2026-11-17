@@ -1,0 +1,21 @@
+/* Modal de confirmação de instalação e complementos do painel de dependências. */
+.dx-backdrop {
+  position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center;
+  background: var(--scrim);
+}
+.dx-modal {
+  width: 90%; max-width: 640px; max-height: 90vh; overflow: auto; padding: 16px 20px;
+  background: var(--bg-panel); color: var(--text); border: 1px solid var(--border-control);
+  border-radius: var(--radius-lg); box-shadow: 0 10px 40px var(--scrim);
+}
+.dx-modal h3 { margin: 0 0 8px; }
+.dx-modal p { margin: 8px 0; overflow-wrap: anywhere; }
+.dx-cmd {
+  margin: 8px 0; padding: 8px; background: var(--bg-code); border: 1px solid var(--border);
+  border-radius: var(--radius); font: var(--font-mono); white-space: pre-wrap; word-break: break-all; user-select: text;
+}
+.dx-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+.dx-panel { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dx-panel select { width: 100%; min-width: 0; }
+.dx-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dep-item .dep-cmd { user-select: text; font: var(--font-mono); font-size: 11px; }

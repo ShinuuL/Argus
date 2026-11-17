@@ -1,0 +1,15 @@
+/* Tela 09 · Terminais. Grade sobre .sh-chat.term-full (ver index.tsx). Cores só por tokens. */
+.sh-chat.term-full { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto 1fr; }
+.sh-chat.term-full > .ta-wrap { display: contents; }
+.sh-chat.term-full .ta-head { grid-column: 1 / -1; grid-row: 1; }
+.sh-chat.term-full .ta-side { grid-column: 1; grid-row: 2; display: flex; min-height: 0; }
+.sh-chat.term-full > .sh-main { grid-column: 2; grid-row: 2; min-width: 0; }
+.ta-empty { padding: 4px 12px 8px; }
+
+/* A lista lateral substitui a faixa de abas do painel inferior. */
+.sh-chat.term-full .bottom > .tabs { display: none; }
+.sh-chat.term-full .terms { background: var(--term-bg); }
+
+/* Dividir: todos os terminais lado a lado, separados por 1px de borda. */
+body[data-term-split] .sh-chat.term-full .terms { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); grid-auto-rows: 1fr; gap: 1px; background: var(--border); }
+body[data-term-split] .sh-chat.term-full .terms > .pane { position: relative; inset: auto; display: block !important; min-width: 0; min-height: 0; background: var(--term-bg); }

@@ -5,9 +5,10 @@
 //! Preços em USD por 1 milhão de tokens, editáveis via JSON (`pricing.json`).
 
 use crate::agents::provider::TokenUsage;
-use crate::db::{ProjectUsage, UsageRow};
+use crate::db::UsageRow;
+use chrono::{Days, NaiveDate, TimeZone};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// Preço de um modelo (USD por 1M tokens).
@@ -23,6 +24,10 @@ impl ModelPrice {
     /// Cache read = 0,1x e cache write = 1,25x do input (cache de 5 min).
     pub const fn standard(input: f64, output: f64) -> Self {
         Self { input, output, cache_read: input * 0.1, cache_write: input * 1.25 }
+    }
+    /// Preço com cache lido explícito e sem escrita em cache (OpenAI, Gemini).
+    pub const fn cached(input: f64, output: f64, cache_read: f64) -> Self {
+        Self { input, output, cache_read, cache_write: 0.0 }
     }
 }
 
@@ -51,6 +56,21 @@ impl Default for Pricing {
         m.insert("haiku".into(), ModelPrice::standard(1.0, 5.0));
         m.insert("haiku-3-5".into(), ModelPrice::standard(0.8, 4.0));
         m.insert("3-5-haiku".into(), ModelPrice::standard(0.8, 4.0));
+        // OpenAI (codex), tabela oficial "Standard, short context", 2026-11-16
+        // (developers.openai.com/api/docs/pricing). Sem cobrança de escrita em cache.
+        m.insert("gpt-6.1-sol".into(), ModelPrice::cached(2.0, 10.0, 0.10));
+        m.insert("gpt-6.1-terra".into(), ModelPrice::cached(1.0, 5.0, 0.05));
+        m.insert("gpt-6-astra".into(), ModelPrice::cached(10.0, 50.0, 1.0));
+        m.insert("gpt-6-luna".into(), ModelPrice::cached(0.10, 0.50, 0.01));
+        m.insert("gpt-5.3-codex".into(), ModelPrice::cached(1.75, 14.0, 0.175));
+        // Gemini, tabela oficial do AI Studio (pago, Standard, até 200 mil tokens),
+        // 2026-11-16 (aistudio.google.com/docs/pricing). O 3.8 Flash muda em 2027-01-01.
+        m.insert("gemini-2.5-pro".into(), ModelPrice::cached(1.25, 10.0, 0.125));
+        m.insert("gemini-2.5-flash".into(), ModelPrice::cached(0.30, 2.50, 0.03));
+        m.insert("gemini-3.1-pro".into(), ModelPrice::cached(2.0, 12.0, 0.20));
+        m.insert("gemini-3.8-flash".into(), ModelPrice::cached(0.75, 3.75, 0.075));
+        m.insert("gemini-3.5-flash-lite".into(), ModelPrice::cached(0.30, 2.50, 0.03));
+        m.insert("gemini-3.1-flash-lite".into(), ModelPrice::cached(0.25, 1.50, 0.025));
         Self { models: m, fallback: ModelPrice::standard(3.0, 15.0), prefer_reported: true }
     }
 }
@@ -68,9 +88,9 @@ impl Pricing {
     /// Caminho padrão: `%APPDATA%/argus/pricing.json` (ou `~/.config/argus/pricing.json`).
     pub fn default_path() -> Option<PathBuf> {
         if let Some(a) = std::env::var_os("APPDATA") {
-            return Some(PathBuf::from(a).join("argus").join("pricing.json"));
+            return Some(PathBuf::from(a).join(crate::paths::dir_name()).join("pricing.json"));
         }
-        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config").join("argus").join("pricing.json"))
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config").join(crate::paths::dir_name()).join("pricing.json"))
     }
 
     /// Padrões mesclados com o JSON em `path` (se existir e for válido).
@@ -106,6 +126,9 @@ impl Pricing {
 
     pub fn price_for(&self, model: Option<&str>) -> ModelPrice {
         let Some(m) = model.map(str::to_ascii_lowercase) else { return self.fallback };
+        if is_free_model(&m) {
+            return ModelPrice { input: 0.0, output: 0.0, cache_read: 0.0, cache_write: 0.0 };
+        }
         self.models
             .iter()
             .filter(|(k, _)| m.contains(&k.to_ascii_lowercase()))
@@ -133,6 +156,12 @@ impl Pricing {
     }
 }
 
+/// Modelo gratuito (OpenCode `...-free`, OpenRouter `...:free`): custo zero,
+/// nunca o fallback da tabela. `m` já em minúsculas.
+fn is_free_model(m: &str) -> bool {
+    m.ends_with("-free") || m.ends_with(":free") || m.ends_with("/free")
+}
+
 /// Custo com a tabela padrão.
 pub fn cost(u: &TokenUsage) -> f64 {
     Pricing::default().cost(u)
@@ -154,26 +183,34 @@ impl CostLine {
     pub fn total_tokens(&self) -> u64 {
         self.input_tokens + self.output_tokens + self.cache_read + self.cache_write
     }
-    fn add(&mut self, u: &TokenUsage, turns: u64, cost: f64) {
+    fn add(&mut self, u: &TokenUsage, cost: f64) {
         self.input_tokens += u.input_tokens;
         self.output_tokens += u.output_tokens;
         self.cache_read += u.cache_read;
         self.cache_write += u.cache_write;
-        self.turns += turns;
         self.api_cost_usd += cost;
     }
 }
 
 /// Agrega linhas por uma chave arbitrária (ordenado pela chave).
+///
+/// `turns` conta turnos, não linhas: um turno que usa dois modelos grava duas
+/// linhas de consumo (uma por modelo) e continua sendo um turno só.
 pub fn aggregate<F: Fn(&UsageRow) -> String>(rows: &[UsageRow], pricing: &Pricing, key: F) -> Vec<CostLine> {
-    let mut m: BTreeMap<String, CostLine> = BTreeMap::new();
+    let mut m: BTreeMap<String, (CostLine, HashSet<(i64, bool, i64)>)> = BTreeMap::new();
     for r in rows {
         let k = key(r);
-        m.entry(k.clone())
-            .or_insert_with(|| CostLine { key: k, ..Default::default() })
-            .add(&r.usage, 1, pricing.cost(&r.usage));
+        let (line, turns) =
+            m.entry(k.clone()).or_insert_with(|| (CostLine { key: k, ..Default::default() }, HashSet::new()));
+        line.add(&r.usage, pricing.cost(&r.usage));
+        turns.insert(r.turn_key());
     }
-    m.into_values().collect()
+    m.into_values()
+        .map(|(mut line, turns)| {
+            line.turns = turns.len() as u64;
+            line
+        })
+        .collect()
 }
 
 pub fn by_project(rows: &[UsageRow], p: &Pricing) -> Vec<CostLine> {
@@ -189,17 +226,30 @@ pub fn by_model(rows: &[UsageRow], p: &Pricing) -> Vec<CostLine> {
 pub fn by_day(rows: &[UsageRow], p: &Pricing) -> Vec<CostLine> {
     aggregate(rows, p, |r| day_string(r.created_at))
 }
+/// Por dia no fuso `tz` ("AAAA-MM-DD"). A interface usa o fuso do computador
+/// (`chrono::Local`): em UTC, o "hoje" de Brasília virava às 21h.
+pub fn by_day_in<Tz: TimeZone>(rows: &[UsageRow], p: &Pricing, tz: &Tz) -> Vec<CostLine> {
+    aggregate(rows, p, |r| day_in(r.created_at, tz).to_string())
+}
 
-/// Resumo por projeto a partir de `Db::usage_by_project` (já agrupado por modelo).
-pub fn summarize_projects(rows: &[ProjectUsage], p: &Pricing) -> Vec<CostLine> {
-    let mut m: BTreeMap<String, CostLine> = BTreeMap::new();
-    for r in rows {
-        let u = r.as_usage();
-        m.entry(r.project.clone())
-            .or_insert_with(|| CostLine { key: r.project.clone(), ..Default::default() })
-            .add(&u, r.turns, p.cost(&u));
-    }
-    m.into_values().collect()
+/// Data (calendário) do instante `ts` no fuso `tz`.
+pub fn day_in<Tz: TimeZone>(ts: i64, tz: &Tz) -> NaiveDate {
+    tz.timestamp_opt(ts, 0).earliest().map(|d| d.date_naive()).unwrap_or_default()
+}
+
+/// Instante (segundos Unix) em que o dia `day` começa no fuso `tz`. Se a
+/// meia-noite não existir (virada de horário de verão), vale a primeira hora válida.
+pub fn day_start_in<Tz: TimeZone>(day: NaiveDate, tz: &Tz) -> i64 {
+    (0..24)
+        .find_map(|h| tz.from_local_datetime(&day.and_hms_opt(h, 0, 0)?).earliest())
+        .map(|d| d.timestamp())
+        .unwrap_or_else(|| day.and_hms_opt(0, 0, 0).map(|d| d.and_utc().timestamp()).unwrap_or(0))
+}
+
+/// Os `n` últimos dias do calendário até o dia de `ts` no fuso `tz`, do mais antigo ao mais novo.
+pub fn last_days_in<Tz: TimeZone>(ts: i64, n: u64, tz: &Tz) -> Vec<NaiveDate> {
+    let today = day_in(ts, tz);
+    (0..n).rev().filter_map(|i| today.checked_sub_days(Days::new(i))).collect()
 }
 
 /// Segundos Unix -> "AAAA-MM-DD" (UTC).
@@ -242,7 +292,20 @@ mod tests {
         assert_eq!(p.price_for(Some("claude-haiku-4-5-20251001")).input, 1.0);
         assert_eq!(p.price_for(Some("claude-3-5-haiku-20241022")).input, 0.8);
         assert_eq!(p.price_for(Some("openai/gpt-x")), p.fallback);
+        assert_eq!(p.price_for(Some("gpt-6.1-sol")).cache_read, 0.10);
+        assert_eq!(p.price_for(Some("gemini-3.1-pro-preview")).output, 12.0);
+        assert_eq!(p.price_for(Some("gemini-3.1-flash-lite")).input, 0.25);
         assert_eq!(p.price_for(None), p.fallback);
+    }
+
+    #[test]
+    fn free_models_cost_nothing() {
+        let p = Pricing::default();
+        for m in ["opencode/deepseek-v4.1-flash-free", "openrouter/qwen/qwen3-coder:FREE"] {
+            let u = usage(Some(m), 1_000_000, 1_000_000, 0, 0, None);
+            assert_eq!(p.cost(&u), 0.0, "{m}");
+        }
+        assert_ne!(p.price_for(Some("free-tier-x/gpt")), ModelPrice { input: 0.0, output: 0.0, cache_read: 0.0, cache_write: 0.0 });
     }
 
     #[test]
@@ -271,7 +334,7 @@ mod tests {
         )
         .unwrap();
         let p = Pricing::load(&f);
-        assert_eq!(p.price_for(Some("openai/gpt-6-luna")).output, 8.0);
+        assert_eq!(p.price_for(Some("openai/gpt-6-nova")).output, 8.0);
         assert_eq!(p.price_for(Some("desconhecido")).input, 1.0);
         assert!(p.price_for(Some("sonnet")).input == 3.0); // padrões preservados
         assert_eq!(p.cost(&usage(Some("x"), 1_000_000, 0, 0, 0, Some(9.0))), 1.0);
@@ -293,6 +356,7 @@ mod tests {
             provider: prov.into(),
             usage: usage(Some("sonnet"), 1_000_000, 0, 0, 0, c),
             created_at: ts,
+            turn: None,
         };
         let rows = vec![row("/a", "claude", 0, None), row("/a", "claude", 86_400, Some(1.0)), row("/b", "opencode", 86_401, None)];
         let bp = by_project(&rows, &p);
@@ -307,15 +371,59 @@ mod tests {
         assert_eq!(by_model(&rows, &p)[0].key, "sonnet");
     }
 
+    /// Um turno com dois modelos (principal + subagente) é um turno só no total,
+    /// no projeto, no provedor e no dia; cada modelo aparece com 1.
     #[test]
-    fn summarize_from_db() {
+    fn two_models_in_one_turn_count_once() {
         let db = crate::db::Db::open_in_memory().unwrap();
-        db.insert_usage(1, "/a", "claude", &usage(Some("claude-opus-4-7"), 1_000_000, 0, 0, 0, None)).unwrap();
-        db.insert_usage(2, "/a", "claude", &usage(Some("claude-haiku-4-5"), 1_000_000, 0, 0, 0, None)).unwrap();
-        let s = summarize_projects(&db.usage_by_project(crate::db::TimeRange::last_days(1)).unwrap(), &Pricing::default());
+        db.insert_usage_turn(1, "/a", "claude", &usage(Some("claude-opus-4-7"), 1_000_000, 0, 0, 0, None), 500).unwrap();
+        db.insert_usage_turn(1, "/a", "claude", &usage(Some("claude-haiku-4-5"), 1_000_000, 0, 0, 0, None), 500).unwrap();
+        let rows = db.usage_rows(crate::db::TimeRange::last_days(1)).unwrap();
+        let p = Pricing::default();
+        let s = by_project(&rows, &p);
         assert_eq!(s.len(), 1);
         assert!((s[0].api_cost_usd - 6.0).abs() < 1e-9);
-        assert_eq!(s[0].turns, 2);
+        assert_eq!(s[0].turns, 1);
+        assert_eq!(by_provider(&rows, &p)[0].turns, 1);
+        assert_eq!(by_day(&rows, &p)[0].turns, 1);
+        assert_eq!(aggregate(&rows, &p, |_| "total".into())[0].turns, 1);
+        assert_eq!(by_model(&rows, &p).iter().map(|l| l.turns).collect::<Vec<_>>(), [1, 1]);
+        // Outro turno da mesma tarefa, e um turno de outra tarefa com o mesmo número.
+        db.insert_usage_turn(1, "/a", "claude", &usage(Some("claude-opus-4-7"), 1, 0, 0, 0, None), 501).unwrap();
+        db.insert_usage_turn(2, "/a", "claude", &usage(Some("claude-opus-4-7"), 1, 0, 0, 0, None), 500).unwrap();
+        let rows = db.usage_rows(crate::db::TimeRange::last_days(1)).unwrap();
+        assert_eq!(by_project(&rows, &p)[0].turns, 3);
+    }
+
+    /// O dia segue o fuso pedido: 22h30 de Brasília ainda é o mesmo dia (em UTC já seria o seguinte).
+    #[test]
+    fn days_follow_the_time_zone() {
+        let brt = chrono::FixedOffset::west_opt(3 * 3600).unwrap();
+        // 2026-11-14 22:30 em Brasília = 2026-11-15 01:30 UTC.
+        let ts = 1_794_706_200;
+        assert_eq!(day_string(ts), "2026-11-15");
+        assert_eq!(day_in(ts, &brt).to_string(), "2026-11-14");
+        assert_eq!(day_in(ts, &chrono::Utc).to_string(), "2026-11-15");
+        let start = day_start_in(day_in(ts, &brt), &brt);
+        assert_eq!(start, ts - 22 * 3600 - 30 * 60);
+        assert_eq!(day_in(start, &brt).to_string(), "2026-11-14");
+        assert_eq!(day_in(start - 1, &brt).to_string(), "2026-11-13");
+        let days: Vec<String> = last_days_in(ts, 3, &brt).iter().map(ToString::to_string).collect();
+        assert_eq!(days, ["2026-11-12", "2026-11-13", "2026-11-14"]);
+        let p = Pricing::default();
+        let row = |at| UsageRow {
+            task_id: 1,
+            project: "/a".into(),
+            provider: "claude".into(),
+            usage: usage(Some("sonnet"), 1, 0, 0, 0, None),
+            created_at: at,
+            turn: Some(at),
+        };
+        // 20h e 22h30 de Brasília: mesmo dia local, dias diferentes em UTC.
+        let rows = vec![row(ts - 9_000), row(ts)];
+        assert_eq!(by_day_in(&rows, &p, &brt).len(), 1);
+        assert_eq!(by_day_in(&rows, &p, &brt)[0].turns, 2);
+        assert_eq!(by_day(&rows, &p).len(), 2);
     }
 
     #[test]

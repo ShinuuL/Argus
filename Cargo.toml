@@ -1,7 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/app"]
+# crates/app (UI antiga em Dioxus) fica só como referência e está fora do workspace.
+members = ["crates/core", "src-tauri"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"

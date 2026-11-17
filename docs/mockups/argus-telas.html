@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Argus: novas telas</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: índice fixo à esquerda + pilha de janelas mockup, cada uma com nota "o que muda". Paleta = tema Oceano do Argus (tokens.css). */
+:root{
+  --bg:#0d1b2a; --surface:#1b263b; --surface-2:color-mix(in srgb,#1b263b 70%,#415a77);
+  --border:color-mix(in srgb,#e0e1dd 10%,#1b263b); --border-strong:#415a77;
+  --text:#e0e1dd; --text-2:color-mix(in srgb,#778da9 72%,#e0e1dd);
+  --accent:#778da9; --accent-text:color-mix(in srgb,#778da9 55%,#e0e1dd); --on-accent:#0d1b2a;
+  --selection:color-mix(in srgb,#1b263b 35%,#415a77);
+  --ok:#5fb98a; --warn:#e0b25a; --bad:#e06b6b; --info:#6aa6e0;
+  --page:#0a1520;
+  --f:"Geist",system-ui,"Segoe UI",sans-serif; --m:"Geist Mono",ui-monospace,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--page);color:var(--text);font:14px/1.5 var(--f);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1320px;margin:0 auto;display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px;padding-block:32px}
+nav.idx{position:sticky;top:calc(16px + env(safe-area-inset-top,0px));align-self:start;display:flex;flex-direction:column;gap:2px}
+nav.idx h1{font-size:18px;margin:0 0 4px;font-weight:600}
+nav.idx p{color:var(--text-2);font-size:12.5px;margin:0 0 14px}
+nav.idx a{color:var(--text-2);text-decoration:none;font-size:13px;padding:5px 8px;border-radius:6px;display:flex;gap:8px}
+nav.idx a span{font-family:var(--m);font-size:11px;color:var(--accent);width:18px;font-variant-numeric:tabular-nums;padding-top:2px}
+nav.idx a:hover,nav.idx a:focus-visible{background:var(--surface);color:var(--text);outline:none}
+main{display:flex;flex-direction:column;gap:56px;min-width:0}
+.intro{max-width:70ch}
+.intro h2{font-size:26px;margin:0 0 8px;text-wrap:balance;font-weight:600}
+.intro p{color:var(--text-2);margin:0 0 8px}
+.pend{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;display:grid;gap:10px}
+.pend h3{margin:0;font-size:15px}
+.pend ul{margin:0;padding-left:18px;color:var(--text-2);font-size:13px;display:grid;gap:4px}
+.pend b{color:var(--text);font-weight:500}
+section.scr{display:grid;gap:14px;scroll-margin-top:24px}
+.scr header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.scr header .n{font-family:var(--m);color:var(--accent);font-size:13px}
+.scr header h3{margin:0;font-size:19px;font-weight:600}
+.scr header .tag{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-2);border:1px solid var(--border-strong);border-radius:99px;padding:1px 8px}
+.why{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px 24px;color:var(--text-2);font-size:13px;max-width:100%}
+.why div b{display:block;color:var(--text);font-weight:500;font-size:12px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:2px}
+.frame{overflow-x:auto;border-radius:12px}
+/* ------- janela mockup ------- */
+.win{min-width:980px;height:560px;background:var(--bg);border:1px solid var(--border-strong);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;font-size:12.5px;box-shadow:0 24px 60px -30px #000}
+.tb{height:34px;display:flex;align-items:center;gap:10px;padding:0 10px;border-bottom:1px solid var(--border);background:var(--bg);flex:none}
+.tb .logo{width:16px;height:16px;border-radius:4px;background:var(--accent)}
+.tb .crumb{color:var(--text-2)}
+.tb .crumb b{color:var(--text);font-weight:500}
+.tb .sp{flex:1}
+.tb .search{width:300px;height:22px;border:1px solid var(--border);border-radius:6px;color:var(--text-2);font-size:11.5px;display:flex;align-items:center;padding:0 8px;gap:6px;background:var(--surface)}
+.kbd{font-family:var(--m);font-size:10px;border:1px solid var(--border-strong);border-radius:4px;padding:0 4px;color:var(--text-2)}
+.dots{display:flex;gap:12px;color:var(--text-2)}
+.body{flex:1;display:flex;min-height:0}
+.rail{width:48px;border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 0;flex:none}
+.ri{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:var(--text-2)}
+.ri.on{background:var(--selection);color:var(--text)}
+.ri svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7}
+.rail .gap{flex:1}
+.side{width:230px;border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;flex:none;min-height:0}
+.side h4{margin:0;padding:12px 12px 6px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-2);font-weight:500}
+.it{display:flex;align-items:center;gap:8px;padding:5px 12px;color:var(--text-2)}
+.it.on{background:var(--selection);color:var(--text)}
+.it .grow{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--text-2);flex:none}
+.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.bad{background:var(--bad)}.dot.info{background:var(--info)}
+.mut{color:var(--text-2)}.mono{font-family:var(--m)}.sm{font-size:11px}
+.center{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
+.panel{width:300px;border-left:1px solid var(--border);background:var(--surface);flex:none;display:flex;flex-direction:column;min-height:0}
+.tabs{display:flex;gap:2px;padding:6px 8px;border-bottom:1px solid var(--border)}
+.tab{padding:3px 9px;border-radius:6px;color:var(--text-2)}
+.tab.on{background:var(--selection);color:var(--text)}
+.sb{height:22px;border-top:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 10px;font-size:11px;color:var(--text-2);flex:none}
+.msg{max-width:640px;margin:0 auto;width:100%;padding:0 24px}
+.bubble{background:var(--surface-2);border-radius:10px;padding:8px 12px;margin-left:auto;max-width:70%}
+.ans{color:var(--text);line-height:1.6}
+.ans code{font-family:var(--m);font-size:11.5px;background:var(--surface);padding:1px 4px;border-radius:4px}
+.tool{display:flex;align-items:center;gap:8px;color:var(--text-2);font-size:11.5px;padding:4px 0}
+.tool .mono{color:var(--accent-text)}
+.composer{margin:0 auto 14px;width:calc(100% - 48px);max-width:640px;border:1px solid var(--border-strong);border-radius:12px;background:var(--surface);padding:10px 12px;display:grid;gap:8px}
+.composer .row{display:flex;gap:8px;align-items:center;color:var(--text-2);font-size:11.5px}
+.chip{border:1px solid var(--border-strong);border-radius:99px;padding:1px 8px;font-size:11px;color:var(--text-2);white-space:nowrap}
+.chip.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
+.chip.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
+.chip.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,transparent)}
+.btn{background:var(--accent);color:var(--on-accent);border-radius:7px;padding:4px 12px;font-weight:500;font-size:12px;white-space:nowrap}
+.btn.g{background:transparent;color:var(--text);border:1px solid var(--border-strong)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px}
+.grid{display:grid;gap:12px}
+table.t{width:100%;border-collapse:collapse;font-size:12px}
+.t th{text-align:left;font-weight:500;color:var(--text-2);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding:6px 10px;border-bottom:1px solid var(--border)}
+.t td{padding:6px 10px;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums}
+.t tr.sel td{background:var(--selection)}
+.bar{height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden}.bar i{display:block;height:100%;background:var(--accent)}
+.h{font-size:16px;font-weight:600;margin:0}
+.pad{padding:18px 22px}
+.diff div{font-family:var(--m);font-size:11.5px;padding:0 10px;white-space:pre}
+.diff .a{background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.diff .d{background:color-mix(in srgb,var(--bad) 14%,transparent)}
+.term{background:#08121d;font-family:var(--m);font-size:11.5px;padding:10px 12px;color:var(--text-2);line-height:1.6}
+.term b{color:var(--ok);font-weight:400}
+@media (max-width:860px){.wrap{grid-template-columns:1fr}nav.idx{position:static}}
+@media (prefers-reduced-motion:no-preference){nav.idx a{transition:background .15s}}
+
+.ag{display:grid;grid-template-columns:230px 1fr 70px;gap:12px;align-items:center;padding:7px 14px;border-bottom:1px solid var(--border)}
+.ag.hd{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-2)}
+.ag.on{background:var(--selection)}
+.agn{display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden}
+.agn b{font-weight:500}
+.ag.sub .agn{padding-left:16px}.ag.sub2 .agn{padding-left:32px}
+.lane{position:relative;height:16px;background:color-mix(in srgb,var(--surface) 60%,transparent);border-radius:4px}
+.lane i{position:absolute;top:0;bottom:0;border-radius:4px}
+.lane em{position:absolute;right:6px;top:0;font-style:normal;font-size:10.5px;color:var(--warn);line-height:16px}
+.tk{text-align:right;font-variant-numeric:tabular-nums;color:var(--text-2)}
+.seg{display:inline-flex;border:1px solid var(--border-strong);border-radius:7px;overflow:hidden}
+.seg b{font-weight:400;font-size:11.5px;padding:2px 9px;color:var(--text-2)}
+.seg b+b{border-left:1px solid var(--border-strong)}
+.seg .on-ok{background:color-mix(in srgb,var(--ok) 22%,transparent);color:var(--text)}
+.seg .on-warn{background:color-mix(in srgb,var(--warn) 22%,transparent);color:var(--text)}
+.seg .on-bad{background:color-mix(in srgb,var(--bad) 22%,transparent);color:var(--text)}
+/* ---- temas para escolha ---- */
+:root[data-t="ciano"]{--bg:#0b1418;--page:#081014;--surface:#121e24;--surface-2:#1a2a32;--border:#20323b;--border-strong:#2c4651;--text:#e3eef0;--text-2:#93abb2;--accent:#2bb3b1;--accent-text:#5fd4d1;--on-accent:#04201f;--selection:#163a3d}
+:root[data-t="ambar"]{--bg:#131211;--page:#0e0d0c;--surface:#1c1a18;--surface-2:#262320;--border:#2e2a26;--border-strong:#463f37;--text:#efe9e1;--text-2:#a99f92;--accent:#e0a23b;--accent-text:#f0bd66;--on-accent:#241703;--selection:#3a2e1c}
+:root[data-t="violeta"]{--bg:#100f19;--page:#0b0a12;--surface:#181725;--surface-2:#221f33;--border:#2a2740;--border-strong:#3e3a5e;--text:#e9e7f5;--text-2:#a29ec0;--accent:#8b7cf6;--accent-text:#b0a6ff;--on-accent:#120c33;--selection:#2c2752}
+.tsw{display:grid;gap:6px;margin:0 0 16px}
+.tsw button{all:unset;cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;color:var(--text-2)}
+.tsw button[aria-pressed="true"]{border-color:var(--accent);color:var(--text)}
+.tsw button:focus-visible{outline:2px solid var(--accent)}
+.sw{width:14px;height:14px;border-radius:4px;flex:none}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+ <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></symbol>
+ <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+ <symbol id="i-git" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="8" r="2.5"/><path d="M6 8.5v7M18 10.5c0 4-6 3-11 6"/></symbol>
+ <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+ <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18h2"/></symbol>
+ <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+ <symbol id="i-tree" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4M12 11.5L5 16.5M12 11.5l7 5"/></symbol>
+ <symbol id="i-term" viewBox="0 0 24 24"><path d="M4 6l6 6-6 6M12 19h8"/></symbol>
+ <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></symbol>
+ <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4"/></symbol>
+</svg>
+
+<div class="wrap">
+<nav class="idx" aria-label="Telas">
+  <h1>Argus</h1>
+  <p>12 propostas de tela.</p>
+  <div class="tsw" role="group" aria-label="Tema">
+    <button data-v="" aria-pressed="true"><span class="sw" style="background:#778da9"></span>Oceano (atual)</button>
+    <button data-v="ciano"><span class="sw" style="background:#2bb3b1"></span>A · Ardósia + ciano</button>
+    <button data-v="ambar"><span class="sw" style="background:#e0a23b"></span>B · Grafite + âmbar</button>
+    <button data-v="violeta"><span class="sw" style="background:#8b7cf6"></span>C · Noite + violeta</button>
+  </div>
+  <a href="#pendencias"><span>··</span>Pendências</a>
+  <a href="#s1"><span>01</span>Início</a>
+  <a href="#s2"><span>02</span>Conversa em foco</a>
+  <a href="#s3"><span>03</span>Conversa + inspetor</a>
+  <a href="#s4"><span>04</span>Paleta de comandos</a>
+  <a href="#s5"><span>05</span>Revisão de alterações</a>
+  <a href="#s6"><span>06</span>Agentes (refeita)</a>
+  <a href="#s7"><span>07</span>Servidores e portas</a>
+  <a href="#s8"><span>08</span>Dispositivos</a>
+  <a href="#s9"><span>09</span>Terminais</a>
+  <a href="#s10"><span>10</span>Conexões e PRs</a>
+  <a href="#s11"><span>11</span>Uso e métricas</a>
+  <a href="#s12"><span>12</span>Configurações (refeita)</a>
+</nav>
+
+<main>
+<div class="intro">
+  <h2>Menos coisas na tela ao mesmo tempo</h2>
+  <p>A ideia central das 12 telas: uma barra de ícones fixa à esquerda com 7 áreas (Conversas, Início, Git, Servidores, Dispositivos, Métricas, Terminal) e Configurações embaixo. Cada área ocupa a janela inteira. O painel direito vira um inspetor opcional só dentro da conversa. Tudo o que é raro sai da tela e vai para a paleta de comandos (Ctrl+K).</p>
+  <p>Escolha por número. Dá para misturar: por exemplo, a 02 como padrão e a 03 com o inspetor aberto.</p>
+</div>
+
+<section class="pend" id="pendencias">
+  <h3>Pendências do PENDENCIAS.md</h3>
+  <ul>
+    <li><b>C1 e C2 estão sem marcação, mas já foram feitos</b> nos commits 1d4e3ab (links clicáveis) e 1b7d20d (rascunho por sessão). Falta marcar [x].</li>
+    <li><b>Base comum (0):</b> registro de módulos, gerenciador de sidecars, helper elevado, política unificada, ferramentas MCP do Argus e componentes de UI compartilhados. Nada iniciado.</li>
+    <li><b>Portas (P1 a P6):</b> nada iniciado. É o próximo item da ordem sugerida.</li>
+    <li><b>Dispositivos fase A:</b> A4 feito (falta testar um turno real do codex). A1, A2, A3 e A5 em aberto; o sidecar roda, mas falta conferir na janela e empacotar.</li>
+    <li><b>Dispositivos fase B (B1 a B3)</b>, pareamento Wi-Fi, áudio e gravação: em aberto.</li>
+    <li><b>AllSeenEye (E1 a E6):</b> nada iniciado. Pendente também conferir onde o app guarda a chave privada da CA do MITM.</li>
+    <li><b>Dúvidas abertas:</b> destino dos repositórios antigos, Screen-Mirror standalone e distribuição do adb/scrcpy no instalador.</li>
+  </ul>
+</section>
+
+<!-- 01 -->
+<section class="scr" id="s1">
+<header><span class="n">01</span><h3>Início</h3><span class="tag">nova tela</span></header>
+<div class="frame"><div class="win">
+ <div class="tb"><div class="logo"></div><span class="crumb"><b>Início</b></span><span class="sp"></span><div class="search">Buscar ou executar… <span class="sp"></span><span class="kbd">Ctrl K</span></div><span class="sp"></span><div class="dots">— ▢ ✕</div></div>
+ <div class="body">
+  <div class="rail"><div class="ri"><svg><use href="#i-chat"/></svg></div><div class="ri on"><svg><use href="#i-home"/></svg></div><div class="ri"><svg><use href="#i-git"/></svg></div><div class="ri"><svg><use href="#i-server"/></svg></div><div class="ri"><svg><use href="#i-phone"/></svg></div><div class="ri"><svg><use href="#i-chart"/></svg></div><div class="ri"><svg><use href="#i-term"/></svg></div><div class="gap"></div><div class="ri"><svg><use href="#i-gear"/></svg></div></div>
+  <div class="center pad" style="gap:18px;overflow:hidden">
+   <div style="display:flex;align-items:end;gap:12px"><div><p class="mut sm" style="margin:0">terça, 17 de novembro</p><p class="h" style="font-size:20px">Bom dia, Gabriel</p></div><span class="sp" style="flex:1"></span><span class="btn g">Abrir pasta</span><span class="btn">Nova conversa</span></div>
+   <div class="grid" style="grid-template-columns:repeat(4,1fr)">
+    <div class="card"><div class="mut sm">Conversas ativas</div><div style="font-size:22px;font-weight:600">3</div><div class="sm mut">1 aguardando você</div></div>
+    <div class="card"><div class="mut sm">Servidores</div><div style="font-size:22px;font-weight:600">2 <span class="sm" style="color:var(--ok)">no ar</span></div><div class="sm mut">:5173 · :8080</div></div>
+    <div class="card"><div class="mut sm">PRs abertos</div><div style="font-size:22px;font-weight:600">4</div><div class="sm mut">2 com revisão pedida</div></div>
+    <div class="card"><div class="mut sm">Uso hoje</div><div style="font-size:22px;font-weight:600">38%</div><div class="bar"><i style="width:38%"></i></div></div>
+   </div>
+   <div class="grid" style="grid-template-columns:1.4fr 1fr;flex:1;min-height:0">
+    <div class="card" style="display:grid;gap:2px;align-content:start"><div class="mut sm" style="margin-bottom:6px">Projetos recentes</div>
+     <div class="it on" style="border-radius:6px"><span class="dot ok"></span><span class="grow">Argus <span class="mut">· migracao-tauri</span></span><span class="sm mut">agora</span></div>
+     <div class="it"><span class="dot"></span><span class="grow">PDV Mastersys <span class="mut">· main</span></span><span class="sm mut">ontem</span></div>
+     <div class="it"><span class="dot warn"></span><span class="grow">ERP Web <span class="mut">· fix/nfce-sefaz-go</span></span><span class="sm mut">2 dias</span></div>
+     <div class="it"><span class="dot"></span><span class="grow">Screen-Mirror <span class="mut">· main</span></span><span class="sm mut">3 dias</span></div>
+     <div class="it"><span class="dot"></span><span class="grow">AllSeenEye <span class="mut">· main</span></span><span class="sm mut">1 sem</span></div>
+    </div>
+    <div class="card" style="display:grid;gap:8px;align-content:start"><div class="mut sm">Precisa de você</div>
+     <div class="it" style="padding:4px 0"><span class="dot warn"></span><span class="grow">Agente pede permissão: <span class="mono">npm run build</span></span></div>
+     <div class="it" style="padding:4px 0"><span class="dot bad"></span><span class="grow">Build falhou em ERP Web</span></div>
+     <div class="it" style="padding:4px 0"><span class="dot info"></span><span class="grow">PR #41 recebeu revisão</span></div>
+     <div class="it" style="padding:4px 0"><span class="dot warn"></span><span class="grow">Porta 8080 ocupada por java.exe</span></div>
+    </div>
+   </div>
+  </div>
+ </div>
+ <div class="sb"><span>● claude conectado</span><span>2 servidores</span><span class="sp" style="flex:1"></span><span>Oceano</span></div>
+</div></div>
+<div class="why"><div><b>Resolve</b>Hoje o app abre direto num layout de 4 painéis. Aqui você vê o estado geral primeiro.</div><div><b>Junta</b>Projetos, avisos de agente, builds, PRs e portas numa caixa só.</div><div><b>Sai da tela</b>Pet, player e autowork viram widgets opcionais aqui.</div></div>
+</section>
+
+<!-- 02 -->
+<section class="scr" id="s2">
+<header><span class="n">02</span><h3>Conversa em foco</h3><span class="tag">tela principal</span></header>
+<div class="frame"><div class="win">
+ <div class="tb"><div class="logo"></div><span class="crumb">Argus <span class="mut">/</span> <b>Painel de portas em Rust</b></span><span class="chip ok">trabalhando</span><span class="sp"></span><div class="search">Buscar ou executar… <span class="sp"></span><span class="kbd">Ctrl K</span></div><span class="sp"></span><div class="dots">— ▢ ✕</div></div>
+ <div class="body">
+  <div class="rail"><div class="ri on"><svg><use href="#i-chat"/></svg></div><div class="ri"><svg><use href="#i-home"/></svg></div><div class="ri"><svg><use href="#i-git"/></svg></div><div class="ri"><svg><use href="#i-server"/></svg></div><div class="ri"><svg><use href="#i-phone"/></svg></div><div class="ri"><svg><use href="#i-chart"/></svg></div><div class="ri"><svg><use href="#i-term"/></svg></div><div class="gap"></div><div class="ri"><svg><use href="#i-gear"/></svg></div></div>
+  <div class="side"><h4>Argus</h4>
+   <div class="it on"><span class="dot ok"></span><span class="grow">Painel de portas em Rust</span></div>
+   <div class="it"><span class="dot warn"></span><span class="grow">Empacotar Screen-Mirror</span></div>
+   <div class="it"><span class="dot"></span><span class="grow">Links clicáveis no chat</span></div>
+   <h4>PDV Mastersys</h4>
+   <div class="it"><span class="dot"></span><span class="grow">TEF: timeout no pinpad</span></div>
+   <div class="it"><span class="dot"></span><span class="grow">Revisar IN 1608/2025</span></div>
+   <h4>ERP Web</h4>
+   <div class="it"><span class="dot bad"></span><span class="grow">NFC-e rejeição 539</span></div>
+  </div>
+  <div class="center">
+   <div style="flex:1;overflow:hidden;padding-top:22px;display:flex;flex-direction:column;gap:14px" class="msg">
+    <div class="bubble">Porta o scan de portas do Gerenciador para crates/core/src/ports com testes.</div>
+    <div class="tool"><span>▸</span> Leu <span class="mono">PortService.cs</span>, <span class="mono">NativeMethods.cs</span> <span class="mut">e mais 3</span></div>
+    <div class="tool"><span>▸</span> Criou <span class="mono">core/ports/scan.rs</span> <span class="chip ok">+184</span></div>
+    <div class="ans">Pronto: o scan usa <code>GetExtendedTcpTable</code> para IPv4 e IPv6 e a detecção de conflito segue a mesma regra do C#. Os 12 casos do xUnit viraram testes em <code>core/ports</code>; todos passam.</div>
+    <div class="tool"><span>▸</span> Executou <span class="mono">cargo test -p argus-core ports</span> <span class="chip ok">12 ok</span></div>
+   </div>
+   <div class="composer"><div class="mut">Responder…</div><div class="row"><span class="chip">claude · opus</span><span class="chip">Planejar</span><span style="flex:1"></span><span>contexto 42%</span><span class="btn">Enviar</span></div></div>
+  </div>
+ </div>
+ <div class="sb"><span>● claude</span><span>migracao-tauri</span><span>3 alterações</span><span class="sp" style="flex:1"></span><span>Ctrl+J terminal · Ctrl+. inspetor</span></div>
+</div></div>
+<div class="why"><div><b>Resolve</b>Painel direito e terminal começam fechados. A conversa fica no centro, com largura de leitura.</div><div><b>Junta</b>Projetos e sessões numa lista só, agrupada por projeto.</div><div><b>Sai da tela</b>Pills de estado, medidor de contexto e uso vão para a linha do composer.</div></div>
+</section>
+
+<!-- 03 -->
+<section class="scr" id="s3">
+<header><span class="n">03</span><h3>Conversa + inspetor</h3><span class="tag">Ctrl+.</span></header>
+<div class="frame"><div class="win">
+ <div class="tb"><div class="logo"></div><span class="crumb">Argus <span class="mut">/</span> <b>Painel de portas em Rust</b></span><span class="sp"></span><div class="search">Buscar ou executar… <span class="sp"></span><span class="kbd">Ctrl K</span></div><span class="sp"></span><div class="dots">— ▢ ✕</div></div>
+ <div class="body">
+  <div class="rail"><div class="ri on"><svg><use href="#i-chat"/></svg></div><div class="ri"><svg><use href="#i-home"/></svg></div><div class="ri"><svg><use href="#i-git"/></svg></div><div class="ri"><svg><use href="#i-server"/></svg></div><div class="ri"><svg><use href="#i-phone"/></svg></div><div class="ri"><svg><use href="#i-chart"/></svg></div><div class="ri"><svg><use href="#i-term"/></svg></div><div class="gap"></div><div class="ri"><svg><use href="#i-gear"/></svg></div></div>
+  <div class="center">
+   <div style="flex:1;overflow:hidden;padding-top:22px;display:flex;flex-direction:column;gap:14px" class="msg">
+    <div class="bubble">Agora liga a aba Portas no painel.</div>
+    <div class="tool"><span>▸</span> Editou <span class="mono">src/views/ports/index.tsx</span> <span class="chip ok">+96</span></div>
+    <div class="tool"><span>▸</span> Editou <span class="mono">src-tauri/src/commands/ports.rs</span> <span class="chip ok">+41</span></div>
+    <div class="ans">A tabela atualiza a cada 2 s só com a aba visível. Os conflitos aparecem com selo vermelho.</div>
+   </div>
+   <div class="composer"><div class="mut">Responder…</div><div class="row"><span class="chip">claude · opus</span><span style="flex:1"></span><span class="btn">Enviar</span></div></div>
+  </div>
+  <div class="panel" style="width:340px">
+   <div class="tabs"><span class="tab on">Alterações 3</span><span class="tab">Arquivos</span><span class="tab">Agentes</span></div>
+   <div style="padding:8px 0;display:grid;gap:2px">
+    <div class="it on"><span class="chip ok">M</span><span class="grow mono sm">views/ports/index.tsx</span><span class="sm" style="color:var(--ok)">+96</span></div>
+    <div class="it"><span class="chip ok">A</span><span class="grow mono sm">commands/ports.rs</span><span class="sm" style="color:var(--ok)">+41</span></div>
+    <div class="it"><span class="chip">M</span><span class="grow mono sm">store/layout.ts</span><span class="sm" style="color:var(--bad)">-2</span></div>
+   </div>
+   <div class="diff" style="border-top:1px solid var(--border);padding:6px 0;flex:1;overflow:hidden">
+    <div class="mut">@@ -8,6 +8,7 @@</div>
+    <div>  { id: "files", label: "Arquivos" },</div>
+    <div class="d">- { id: "servers", label: "Servidores" },</div>
+    <div class="a">+ { id: "ports", label: "Portas" },</div>
+    <div>];</div>
+   </div>
+   <div style="display:flex;gap:8px;padding:10px;border-top:1px solid var(--border)"><span class="btn g">Descartar</span><span style="flex:1"></span><span class="btn">Aplicar tudo</span></div>
+  </div>
+ </div>
+ <div class="sb"><span>● claude</span><span>migracao-tauri</span><span class="sp" style="flex:1"></span><span>inspetor aberto</span></div>
+</div></div>
+<div class="why"><div><b>Resolve</b>Quatro abas no painel direito viram três, e só dentro da conversa. Servidores sai daqui e ganha tela própria.</div><div><b>Junta</b>A lista de sessões recolhe quando o inspetor abre, para a conversa não espremer.</div><div><b>Sai da tela</b>Contagem de servidores no painel.</div></div>
+</section>
+
+<!-- 04 -->
+<section class="scr" id="s4">
+<header><span class="n">04</span><h3>Paleta de comandos</h3><span class="tag">Ctrl+K</span></header>
+<div class="frame"><div class="win" style="position:relative">
+ <div class="tb"><div class="logo"></div><span class="crumb">Argus</span><span class="sp"></span><div class="dots">— ▢ ✕</div></div>
+ <div class="body" style="opacity:.35"><div class="rail"></div><div class="side"></div><div class="center"></div></div>
+ <div style="position:absolute;left:50%;top:70px;transform:translateX(-50%);width:560px;background:var(--surface);border:1px solid var(--border-strong);border-radius:12px;box-shadow:0 30px 80px -20px #000;overflow:hidden">
+  <div style="padding:12px 14px;border-bottom:1px solid var(--border);font-size:14px">porta 80<span style="border-left:1.5px solid var(--text);margin-left:1px"></span></div>
+  <div style="padding:6px 0">
+   <h4 style="margin:0;padding:6px 14px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-2);font-weight:500">Portas</h4>
+   <div class="it on"><span class="mono">:8080</span><span class="grow">java.exe · Tomcat ERP</span><span class="chip warn">em uso</span></div>
+   <div class="it"><span class="mono">:80</span><span class="grow">nginx.exe</span><span class="kbd">Enter</span></div>
+   <h4 style="margin:0;padding:6px 14px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-2);font-weight:500">Ações</h4>
+   <div class="it"><span class="grow">Liberar porta 8080</span><span class="mut sm">Servidores</span></div>
+   <div class="it"><span class="grow">Bloquear porta no firewall</span><span class="mut sm">precisa de admin</span></div>
+   <h4 style="margin:0;padding:6px 14px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-2);font-weight:500">Ir para</h4>
+   <div class="it"><span class="grow">Configurações › Política de agentes</span></div>
+   <div class="it"><span class="grow">Abrir player · Pet · Autowork</span><span class="mut sm">extras</span></div>
+  </div>
+  <div style="display:flex;gap:14px;padding:8px 14px;border-top:1px solid var(--border);font-size:11px;color:var(--text-2)"><span>↑↓ navegar</span><span>Enter abrir</span><span>Tab filtrar por tipo</span></div>
+ </div>
+</div></div>
+<div class="why"><div><b>Resolve</b>Ações raras deixam de ocupar botões fixos. Tudo é achável por nome.</div><div><b>Junta</b>Sessões, arquivos, portas, comandos, telas e configurações num campo só.</div><div><b>Sai da tela</b>Botões soltos da barra superior e menus de contexto profundos.</div></div>
+</section>
+
+<!-- 05 -->
+<section class="scr" id="s5">
+<header><span class="n">05</span><h3>Revisão de alterações</h3><span class="tag">tela cheia</span></header>
+<div class="frame"><div class="win">
+ <div class="tb"><div class="logo"></div><span class="crumb">Argus <span class="mut">/</span> <b>Revisar 3 arquivos</b></span><span class="sp"></span><span class="btn g">Voltar à conversa</span><span class="btn">Aplicar e commitar</span><div class="dots" style="margin-left:10px">— ▢ ✕</div></div>
+ <div class="body">
+  <div class="rail"><div class="ri"><svg><use href="#i-chat"/></svg></div><div class="ri"><svg><use href="#i-home"/></svg></div><div class="ri on"><svg><use href="#i-git"/></svg></div><div class="ri"><svg><use href="#i-server"/></svg></div><div class="ri"><svg><use href="#i-phone"/></svg></div><div class="ri"><svg><use href="#i-chart"/></svg></div><div class="ri"><svg><use href="#i-term"/></svg></div><div class="gap"></div><div class="ri"><svg><use href="#i-gear"/></svg></div></div>
+  <div class="side" style="width:260px"><h4>Alterações · 3</h4>
+   <div class="it on"><input type="checkbox" checked aria-label="incluir"><span class="grow mono sm">views/ports/index.tsx</span><span class="sm" style="color:var(--ok)">+96</span></div>
+   <div class="it"><input type="checkbox" checked aria-label="incluir"><span class="grow mono sm">commands/ports.rs</span><span class="sm" style="color:var(--ok)">+41</span></div>
+   <div class="it"><input type="checkbox" aria-label="incluir"><span class="grow mono sm">store/layout.ts</span><span class="sm">±2</span></div>
+   <h4 style="margin-top:12px">Mensagem do commit</h4>
+   <div style="margin:0 12px;border:1px solid var(--border-strong);border-radius:8px;padding:8px;min-height:70px;color:var(--text)">Portas: aba no painel com scan e conflitos</div>
+  </div>
+  <div class="center">
+   <div style="display:flex;gap:10px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--border)"><span class="mono">src/views/ports/index.tsx</span><span style="flex:1"></span><span class="tab on">Lado a lado</span><span class="tab">Unificado</span></div>
+   <div style="display:grid;grid-template-columns:1fr 1fr;flex:1;overflow:hidden" class="diff">
+    <div style="border-right:1px solid var(--border);padding:6px 0">
+     <div class="mut">12  export function PortsView() {</div><div class="d">13    const rows = usePorts();</div><div class="mut">14    return (</div><div class="d">15      &lt;Table rows={rows} /&gt;</div><div class="mut">16    );</div>
+    </div>
+    <div style="padding:6px 0">
+     <div class="mut">12  export function PortsView() {</div><div class="a">13    const rows = usePorts({ every: 2000, onlyVisible: true });</div><div class="a">14    const conflicts = useConflicts(rows);</div><div class="mut">15    return (</div><div class="a">16      &lt;Table rows={rows} badge={conflicts} /&gt;</div><div class="mut">17    );</div>
+    </div>
+   </div>
+  </div>
+ </div>
+ <div class="sb"><span>2 de 3 arquivos selecionados</span><span class="sp" style="flex:1"></span><span>migracao-tauri</span></div>
+</div></div>
+<div class="why"><div><b>Resolve</b>Diff num painel de 300 px é ruim de ler. Aqui ganha a janela toda.</div><div><b>Junta</b>Aplicar, descartar por arquivo e commit no mesmo lugar.</div><div><b>Sai da tela</b>A aba Alterações do inspetor vira só resumo com botão "Revisar".</div></div>
+</section>
+
+<!-- 06 -->
+<section class="scr" id="s6">
+<header><span class="n">06</span><h3>Agentes</h3><span class="tag">linha do tempo + detalhe</span></header>
+<div class="frame"><div class="win">
+ <div class="tb"><div class="logo"></div><span class="crumb">Argus <span class="mut">/</span> Painel de portas em Rust <span class="mut">/</span> <b>Agentes</b></span><span class="chip ok">3 rodando</span><span class="chip warn">1 aguardando você</span><span class="sp"></span><span class="btn g">Pausar todos</span><span class="btn g" style="color:var(--bad);margin-left:6px">Parar todos</span><div class="dots" style="margin-left:10px">— ▢ ✕</div></div>
+ <div class="body">
+  <div class="rail"><div class="ri on"><svg><use href="#i-chat"/></svg></div><div class="ri"><svg><use href="#i-home"/></svg></div><div class="ri"><svg><use href="#i-git"/></svg></div><div class="ri"><svg><use href="#i-server"/></svg></div><div class="ri"><svg><use href="#i-phone"/></svg></div><div class="ri"><svg><use href="#i-chart"/></svg></div><div class="ri"><svg><use href="#i-term"/></svg></div><div class="gap"></div><div class="ri"><svg><use href="#i-gear"/></svg></div></div>
+  <div class="center">
+   <div class="ag hd"><span>Agente</span><span style="display:flex;justify-content:space-between"><span>11:30</span><span>11:35</span><span>11:40</span><span>agora</span></span><span style="text-align:right">Tokens</span></div>
+   <div class="ag"><span class="agn"><span class="dot info"></span><b>Principal</b> <span class="mut">opus</span></span><span class="lane"><i style="left:0;width:100%;background:color-mix(in srgb,var(--accent) 35%,transparent)"></i></span><span class="tk">84k</span></div>
+   <div class="ag sub"><span class="agn"><span class="dot"></span>Explore <span class="mut">ler o C#</span></span><span class="lane"><i style="left:2%;width:18%;background:var(--surface-2)"></i></span><span class="tk">22k</span></div>
+   <div class="ag sub"><span class="agn"><span class="dot"></span>Plan <span class="mut">plano do porte</span></span><span class="lane"><i style="left:20%;width:14%;background:var(--surface-2)"></i></span><span class="tk">9k</span></div>
+   <div class="ag sub on"><span class="agn"><span class="dot ok"></span><b>Porte P1</b> <span class="mut">scan + conflito</span></span><span class="lane"><i style="left:36%;width:64%;background:var(--accent)"></i></span><span class="tk">41k</span></div>
+   <div class="ag sub2"><span class="agn"><span class="dot ok"></span>Testes xUnit</span><span class="lane"><i style="left:70%;width:30%;background:var(--accent)"></i></span><span class="tk">6k</span></div>
+   <div class="ag sub2"><span class="agn"><span class="dot warn"></span>reserved.rs</span><span class="lane"><i style="left:78%;width:18%;background:var(--warn)"></i><em>aguardando permissão</em></span><span class="tk">3k</span></div>
+   <div style="margin:auto 14px 12px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+    <div class="card"><div class="mut sm">Processos da sessão</div>node ×2 · cargo ×1</div>
+    <div class="card"><div class="mut sm">CPU / GPU</div>14% / 0%</div>
+    <div class="card"><div class="mut sm">Gasto da conversa</div>165k tokens · 38% do limite</div>
+   </div>
+  </div>
+  <div class="panel" style="width:330px">
+   <div style="padding:12px 14px;border-bottom:1px solid var(--border);display:grid;gap:4px"><div style="display:flex;gap:8px;align-items:center"><span class="dot ok"></span><b style="font-weight:600">Porte P1</b><span class="chip">general-purpose</span></div><div class="mut sm">Tarefa: portar scan, conflict e reserved do PortService.cs</div></div>
+   <div class="card" style="margin:10px;border-color:var(--warn);display:grid;gap:8px"><div class="sm" style="color:var(--warn)">reserved.rs pede para executar</div><div class="mono sm">netsh int ipv4 show excludedportrange tcp</div><div style="display:flex;gap:6px;flex-wrap:wrap"><span class="btn">Permitir</span><span class="btn g">Sempre neste projeto</span><span class="btn g">Negar</span></div></div>
+   <div style="padding:0 14px;display:grid;gap:2px;align-content:start;flex:1;overflow:hidden">
+    <div class="mut sm" style="margin:4px 0">Atividade ao vivo</div>
+    <div class="tool"><span class="mut mono sm">11:41</span> Leu <span class="mono">PortService.cs</span></div>
+    <div class="tool"><span class="mut mono sm">11:42</span> Criou <span class="mono">scan.rs</span> <span class="chip ok">+184</span></div>
+    <div class="tool"><span class="mut mono sm">11:44</span> Editando <span class="mono">conflict.rs</span>…</div>
+   </div>
+   <div style="padding:10px;border-top:1px solid var(--border);display:flex;gap:6px"><div style="flex:1;border:1px solid var(--border-strong);border-radius:8px;padding:5px 8px" class="mut">Mandar instrução a este agente…</div><span class="btn g">Parar</span></div>
+  </div>
+ </div>
+ <div class="sb"><span>3 rodando · 2 concluídos · 1 aguardando</span><span class="sp" style="flex:1"></span><span>clique numa barra para ver o agente</span></div>
+</div></div>
+<div class="why"><div><b>Resolve</b>A árvore desenhada dizia pouco. Na linha do tempo você vê quem roda agora, há quanto tempo e quanto gasta.</div><div><b>Junta</b>Hierarquia (pelo recuo), duração, tokens, pedidos de permissão e um campo para mandar instrução a um subagente.</div><div><b>Prioriza</b>O pedido de permissão aparece em amarelo no topo do detalhe, nunca escondido.</div></div>
+</section>
+
+<!-- 07 -->
+<section class="scr" id="s7">
+<header><span class="n">07</span><h3>Servidores e portas</h3><span class="tag">módulo ports</span></header>
+<div class="frame"><div class="win">
+ <div class="tb"><div class="logo"></div><span class="crumb"><b>Servidores e portas</b></span><span class="sp"></span><div class="search">Filtrar por porta, processo ou linha de comando</div><span class="sp"></span><div class="dots">— ▢ ✕</div></div>
+ <div class="body">
+  <div class="rail"><div class="ri"><svg><use href="#i-chat"/></svg></div><div class="ri"><svg><use href="#i-home"/></svg></div><div class="ri"><svg><use href="#i-git"/></svg></div><div class="ri on"><svg><use href="#i-server"/></svg></div><div class="ri"><svg><use href="#i-phone"/></svg></div><div class="ri"><svg><use href="#i-chart"/></svg></div><div class="ri"><svg><use href="#i-term"/></svg></div><div class="gap"></div><div class="ri"><svg><use href="#i-gear"/></svg></div></div>
+  <div class="center">
+   <div style="display:flex;gap:6px;padding:10px 14px;border-bottom:1px solid var(--border)"><span class="tab on">Dos meus projetos 2</span><span class="tab">Todas as portas 148</span><span class="tab">Conflitos 1</span><span class="tab">Reservadas</span><span style="flex:1"></span><span class="chip">TCP</span><span class="chip">UDP</span><span class="chip">Escutando</span></div>
+   <table class="t">
+    <thead><tr><th>Porta</th><th>Proto</th><th>Processo</th><th>Projeto</th><th>Estado</th><th>CPU</th></tr></thead>
+    <tbody>
+     <tr class="sel"><td class="mono">5173</td><td>TCP</td><td>node.exe · vite</td><td>Argus</td><td><span class="chip ok">no ar</span></td><td>2%</td></tr>
+     <tr><td class="mono">8080</td><td>TCP</td><td>java.exe · Tomcat</td><td>ERP Web</td><td><span class="chip bad">conflito</span></td><td>11%</td></tr>
+     <tr><td class="mono">8080</td><td>TCP</td><td>docker-proxy</td><td>—</td><td><span class="chip bad">conflito</span></td><td>0%</td></tr>
+     <tr><td class="mono">5432</td><td>TCP</td><td>postgres.exe</td><td>—</td><td><span class="chip">escutando</span></td><td>1%</td></tr>
+     <tr><td class="mono">50000–50059</td><td>TCP</td><td>Hyper-V</td><td>—</td><td><span class="chip warn">reservada</span></td><td></td></tr>
+    </tbody>
+   </table>
+  </div>
+  <div class="panel"><div style="padding:14px;display:grid;gap:10px">
+   <p class="h">:5173 · vite</p><div class="mut sm mono">node node_modules/vite/bin/vite.js --port 5173</div>
+   <div class="grid" style="grid-template-columns:1fr 1fr"><div class="card"><div class="mut sm">PID</div>18432</div><div class="card"><div class="mut sm">Memória</div>212 MB</div></div>
+   <span class="btn g">Abrir no navegador</span><span class="btn g">Reiniciar</span><span class="btn g" style="color:var(--bad)">Encerrar árvore</span>
+   <div class="mut sm">Bloquear no firewall pede admin (helper elevado).</div>
+  </div></div>
+ </div>
+ <div class="sb"><span>atualiza a cada 2 s</span><span class="sp" style="flex:1"></span><span>Exportar CSV/JSON</span></div>
+</div></div>
+<div class="why"><div><b>Resolve</b>Servidores sai do painel direito e o módulo Portas (P2–P5) entra no mesmo lugar.</div><div><b>Junta</b>Servidores dos projetos, todas as portas, conflitos e faixas reservadas Hyper-V/WSL.</div><div><b>Sai da tela</b>As ações perigosas ficam no detalhe, não em cada linha.</div></div>
+</section>
+
+<!-- 08 -->
+<section class="scr" id="s8">
+<header><span class="n">08</span><h3>Dispositivos</h3><span class="tag">Screen-Mirror nativo</span></header>
+<div class="frame"><div class="win">
+ <div class="tb"><div class="logo"></div><span class="crumb">Dispositivos <span class="mut">/</span> <b>Galaxy A54</b></span><span class="chip ok">USB</span><span class="sp"></span><span class="btn g">Instalar APK do projeto</span><div class="dots" style="margin-left:10px">— ▢ ✕</div></div>
+ <div class="body">
+  <div class="rail"><div class="ri"><svg><use href="#i-chat"/></svg></div><div class="ri"><svg><use href="#i-home"/></svg></div><div class="ri"><svg><use href="#i-git"/></svg></div><div class="ri"><svg><use href="#i-server"/></svg></div><div class="ri on"><svg><use href="#i-phone"/></svg></div><div class="ri"><svg><use href="#i-chart"/></svg></div><div class="ri"><svg><use href="#i-term"/></svg></div><div class="gap"></div><div class="ri"><svg><use href="#i-gear"/></svg></div></div>
+  <div class="side" style="width:200px"><h4>Aparelhos</h4>
+   <div class="it on"><span class="dot ok"></span><span class="grow">Galaxy A54</span></div>
+   <div class="it"><span class="dot"></span><span class="grow">Moto G PDV</span><span class="sm mut">Wi-Fi</span></div>
+   <div class="it mut"><span class="grow">+ Parear por Wi-Fi</span></div>
+  </div>
+  <div class="center" style="flex-direction:row;gap:18px;padding:18px;background:color-mix(in srgb,var(--bg) 70%,#000)">
+   <div style="width:210px;height:440px;border-radius:26px;border:6px solid #1a2433;background:linear-gradient(170deg,#24344d,#0f1a28);flex:none;display:grid;place-items:center;color:var(--text-2)">espelho ao vivo</div>
+   <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:10px">
+    <div style="display:flex;gap:4px"><span class="tab on">Logcat</span><span class="tab">Apps</span><span class="tab">Arquivos</span><span class="tab">Rede (AllSeenEye)</span><span class="tab">Info</span></div>
+    <div class="term" style="flex:1;border-radius:8px;overflow:hidden">
+     <div>11:42:08 I PDV/Venda iniciada #4812</div><div>11:42:09 I PDV/TEF: aguardando pinpad</div><div style="color:var(--warn)">11:42:39 W PDV/TEF: timeout 30s</div><div style="color:var(--bad)">11:42:39 E PDV/TEF: transação cancelada</div><div>11:42:40 I PDV/Venda #4812 voltou ao caixa</div>
+    </div>
+    <div style="display:flex;gap:8px"><span class="chip">nível: W+</span><span class="chip">pacote: br.com.mastersys.pdv</span><span style="flex:1"></span><span class="chip ok">MCP liberado nas conversas</span></div>
+   </div>
+  </div>
+ </div>
+ <div class="sb"><span>sidecar Screen-Mirror ok · :47110</span><span class="sp" style="flex:1"></span><span>modo interativo</span></div>
+</div></div>
+<div class="why"><div><b>Resolve</b>Sai o iframe com o painel inteiro do Screen-Mirror (A2/A3). Fica um layout nativo.</div><div><b>Junta</b>Espelho, logcat, apps, arquivos e a futura aba de rede do AllSeenEye (E2).</div><div><b>Sai da tela</b>Configuração do sidecar vai para Configurações.</div></div>
+</section>
+
+<!-- 09 -->
+<section class="scr" id="s9">
+<header><span class="n">09</span><h3>Terminais</h3><span class="tag">Ctrl+J ou tela cheia</span></header>
+<div class="frame"><div class="win">
+ <div class="tb"><div class="logo"></div><span class="crumb"><b>Terminais</b></span><span class="sp"></span><div class="dots">— ▢ ✕</div></div>
+ <div class="body">
+  <div class="rail"><div class="ri"><svg><use href="#i-chat"/></svg></div><div class="ri"><svg><use href="#i-home"/></svg></div><div class="ri"><svg><use href="#i-git"/></svg></div><div class="ri"><svg><use href="#i-server"/></svg></div><div class="ri"><svg><use href="#i-phone"/></svg></div><div class="ri"><svg><use href="#i-chart"/></svg></div><div class="ri on"><svg><use href="#i-term"/></svg></div><div class="gap"></div><div class="ri"><svg><use href="#i-gear"/></svg></div></div>
+  <div class="side" style="width:200px"><h4>Abertos</h4>
+   <div class="it on"><span class="dot ok"></span><span class="grow">Argus · cargo</span></div>
+   <div class="it"><span class="dot ok"></span><span class="grow">Argus · vite</span></div>
+   <div class="it"><span class="dot"></span><span class="grow">ERP · PowerShell</span></div>
+   <h4>Builds</h4>
+   <div class="it"><span class="dot bad"></span><span class="grow">ERP Web · mvn package</span></div>
+   <div class="it"><span class="dot ok"></span><span class="grow">Argus · tauri build</span></div>
+  </div>
+  <div class="center" style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border)">
+   <div class="term" style="height:100%"><div>PS D:\Dev\Argus&gt; cargo test -p argus-core ports</div><div>running 12 tests</div><div>test ports::conflict::same_port_two_listeners ... <b>ok</b></div><div>test ports::reserved::parse_netsh_v6 ... <b>ok</b></div><div>test result: <b>ok</b>. 12 passed; 0 failed</div></div>
+   <div class="term" style="height:100%"><div>  VITE v5.4.10  ready in 412 ms</div><div>  ➜  Local:   http://localhost:5173/</div><div>  ➜  press h + enter to show help</div></div>
+  </div>
+ </div>
+ <div class="sb"><span>2 painéis</span><span class="sp" style="flex:1"></span><span>Ctrl+Shift+5 dividir</span></div>
+</div></div>
+<div class="why"><div><b>Resolve</b>O terminal inferior continua para uso rápido, mas existe uma tela própria com divisão.</div><div><b>Junta</b>Terminais e builds, que hoje ficam em lugares diferentes.</div><div><b>Sai da tela</b>A aba de builds isolada.</div></div>
+</section>
+
+<!-- 10 -->
+<section class="scr" id="s10">
+<header><span class="n">10</span><h3>Conexões e PRs</h3><span class="tag">Git</span></header>
+<div class="frame"><div class="win">
+ <div class="tb"><div class="logo"></div><span class="crumb"><b>Git</b></span><span class="sp"></span><div class="search">Buscar repositório, branch ou PR</div><span class="sp"></span><div class="dots">— ▢ ✕</div></div>
+ <div class="body">
+  <div class="rail"><div class="ri"><svg><use href="#i-chat"/></svg></div><div class="ri"><svg><use href="#i-home"/></svg></div><div class="ri on"><svg><use href="#i-git"/></svg></div><div class="ri"><svg><use href="#i-server"/></svg></div><div class="ri"><svg><use href="#i-phone"/></svg></div><div class="ri"><svg><use href="#i-chart"/></svg></div><div class="ri"><svg><use href="#i-term"/></svg></div><div class="gap"></div><div class="ri"><svg><use href="#i-gear"/></svg></div></div>
+  <div class="center pad" style="gap:14px;display:flex">
+   <div style="display:flex;gap:6px"><span class="tab on">Pull requests 4</span><span class="tab">Repositórios 9</span><span class="tab">Branches locais</span><span class="tab">Alterações 3</span></div>
+   <table class="t">
+    <thead><tr><th>PR</th><th>Repositório</th><th>Branch</th><th>Checks</th><th>Revisão</th><th>Atualizado</th></tr></thead>
+    <tbody>
+     <tr><td>#41 Portas: scan em Rust</td><td>argus</td><td class="mono">migracao-tauri</td><td><span class="chip ok">5/5</span></td><td><span class="chip warn">mudanças pedidas</span></td><td>10 min</td></tr>
+     <tr><td>#212 NFC-e: rejeição 539</td><td>erp-web</td><td class="mono">fix/nfce-sefaz-go</td><td><span class="chip bad">1 falhou</span></td><td><span class="chip">pendente</span></td><td>1 h</td></tr>
+     <tr><td>#88 TEF: timeout configurável</td><td>pdv</td><td class="mono">feat/tef-timeout</td><td><span class="chip ok">3/3</span></td><td><span class="chip ok">aprovado</span></td><td>ontem</td></tr>
+     <tr><td>#17 MCP: token aleatório</td><td>screen-mirror</td><td class="mono">feat/token</td><td><span class="chip">rodando</span></td><td><span class="chip">pendente</span></td><td>ontem</td></tr>
+    </tbody>
+   </table>
+   <div class="card" style="display:flex;gap:10px;align-items:center"><span class="dot warn"></span><span style="flex:1">#41 tem 2 comentários de revisão.</span><span class="btn g">Abrir no navegador</span><span class="btn">Pedir ao agente para resolver</span></div>
+  </div>
+ </div>
+ <div class="sb"><span>GitHub conectado</span><span class="sp" style="flex:1"></span></div>
+</div></div>
+<div class="why"><div><b>Resolve</b>Os cards de repositório viram tabela: mais itens visíveis, menos ruído.</div><div><b>Junta</b>PRs, repositórios, branches e o atalho para mandar o agente resolver revisão.</div><div><b>Sai da tela</b>Cards grandes por repositório.</div></div>
+</section>
+
+<!-- 11 -->
+<section class="scr" id="s11">
+<header><span class="n">11</span><h3>Uso e métricas</h3><span class="tag">métricas</span></header>
+<div class="frame"><div class="win">
+ <div class="tb"><div class="logo"></div><span class="crumb"><b>Uso</b></span><span class="sp"></span><span class="tab on">7 dias</span><span class="tab">30 dias</span><div class="dots" style="margin-left:10px">— ▢ ✕</div></div>
+ <div class="body">
+  <div class="rail"><div class="ri"><svg><use href="#i-chat"/></svg></div><div class="ri"><svg><use href="#i-home"/></svg></div><div class="ri"><svg><use href="#i-git"/></svg></div><div class="ri"><svg><use href="#i-server"/></svg></div><div class="ri"><svg><use href="#i-phone"/></svg></div><div class="ri on"><svg><use href="#i-chart"/></svg></div><div class="ri"><svg><use href="#i-term"/></svg></div><div class="gap"></div><div class="ri"><svg><use href="#i-gear"/></svg></div></div>
+  <div class="center pad" style="gap:14px;display:flex">
+   <div class="grid" style="grid-template-columns:repeat(3,1fr)">
+    <div class="card"><div class="mut sm">Limite da janela atual</div><div style="font-size:22px;font-weight:600">38%</div><div class="bar"><i style="width:38%"></i></div><div class="sm mut">renova em 3 h 12 min</div></div>
+    <div class="card"><div class="mut sm">Conversas na semana</div><div style="font-size:22px;font-weight:600">27</div><div class="sm mut">média 4 por dia</div></div>
+    <div class="card"><div class="mut sm">Projeto que mais usou</div><div style="font-size:22px;font-weight:600">Argus</div><div class="sm mut">61% das mensagens</div></div>
+   </div>
+   <div class="card" style="flex:1">
+    <div class="mut sm" style="margin-bottom:8px">Mensagens por dia (exemplo)</div>
+    <svg viewBox="0 0 700 220" style="width:100%;height:220px" role="img" aria-label="Barras por dia">
+     <g stroke="var(--border)"><line x1="40" x2="690" y1="20" y2="20"/><line x1="40" x2="690" y1="100" y2="100"/><line x1="40" x2="690" y1="180" y2="180"/></g>
+     <g fill="var(--text-2)" font-size="11" font-family="Geist,system-ui"><text x="30" y="24" text-anchor="end">120</text><text x="30" y="104" text-anchor="end">60</text><text x="30" y="184" text-anchor="end">0</text></g>
+     <g fill="var(--accent)">
+      <rect x="70" y="113" width="50" height="67" rx="3"/><rect x="160" y="73" width="50" height="107" rx="3"/><rect x="250" y="47" width="50" height="133" rx="3"/><rect x="340" y="140" width="50" height="40" rx="3"/><rect x="430" y="167" width="50" height="13" rx="3"/><rect x="520" y="87" width="50" height="93" rx="3"/><rect x="610" y="33" width="50" height="147" rx="3" fill="var(--accent-text)"/>
+     </g>
+     <g fill="var(--text-2)" font-size="11" font-family="Geist,system-ui" text-anchor="middle"><text x="95" y="200">qua</text><text x="185" y="200">qui</text><text x="275" y="200">sex</text><text x="365" y="200">sáb</text><text x="455" y="200">dom</text><text x="545" y="200">seg</text><text x="635" y="200">ter</text></g>
+    </svg>
+   </div>
+  </div>
+ </div>
+ <div class="sb"><span>dados locais</span><span class="sp" style="flex:1"></span></div>
+</div></div>
+<div class="why"><div><b>Resolve</b>Uso e limite saem da barra de status e do chat, e ficam numa tela só.</div><div><b>Junta</b>Uso do plano, conversas por projeto e o gráfico diário que já existe.</div><div><b>Sai da tela</b>O pill de uso continua só no composer, como lembrete curto.</div></div>
+</section>
+
+<!-- 12 -->
+<section class="scr" id="s12">
+<header><span class="n">12</span><h3>Configurações</h3><span class="tag">permissões em tabela</span></header>
+<div class="frame"><div class="win">
+ <div class="tb"><div class="logo"></div><span class="crumb">Configurações <span class="mut">/</span> <b>Permissões dos agentes</b></span><span class="sp"></span><div class="search">Buscar configuração… <span class="sp"></span><span class="kbd">/</span></div><span class="sp"></span><div class="dots">— ▢ ✕</div></div>
+ <div class="body">
+  <div class="rail"><div class="ri"><svg><use href="#i-chat"/></svg></div><div class="ri"><svg><use href="#i-home"/></svg></div><div class="ri"><svg><use href="#i-git"/></svg></div><div class="ri"><svg><use href="#i-server"/></svg></div><div class="ri"><svg><use href="#i-phone"/></svg></div><div class="ri"><svg><use href="#i-chart"/></svg></div><div class="ri"><svg><use href="#i-term"/></svg></div><div class="gap"></div><div class="ri on"><svg><use href="#i-gear"/></svg></div></div>
+  <div class="side" style="width:220px">
+   <h4>Você</h4><div class="it">Aparência</div><div class="it">Atalhos</div>
+   <h4>Agentes</h4><div class="it"><span class="grow">Provedores</span><span class="chip ok">4</span></div><div class="it on"><span class="grow">Permissões</span></div><div class="it"><span class="grow">Ferramentas MCP</span><span class="chip">2</span></div>
+   <h4>Este computador</h4><div class="it"><span class="grow">Dependências</span><span class="chip warn">1 falta</span></div><div class="it"><span class="grow">Auxiliares</span><span class="chip ok">ok</span></div><div class="it"><span class="grow">Acesso remoto</span><span class="chip">desligado</span></div>
+   <h4>Registro</h4><div class="it">Auditoria</div>
+   <h4>Extras</h4><div class="it mut">Pet · Player · Autowork</div>
+  </div>
+  <div class="center" style="overflow:hidden">
+   <div class="pad" style="display:flex;gap:16px;align-items:end;padding-bottom:10px"><div style="flex:1"><p class="h">Permissões dos agentes</p><p class="mut sm" style="margin:2px 0 0">O que um agente pode fazer sem te perguntar. Vale para Claude, Codex e o MCP do celular.</p></div><div style="display:flex;gap:4px"><span class="tab">Padrão global</span><span class="tab on">Argus</span><span class="tab">ERP Web</span></div></div>
+   <div style="padding:0 22px"><table class="t">
+    <thead><tr><th>Ação</th><th style="width:250px">Regra</th><th>Exceções</th></tr></thead>
+    <tbody>
+     <tr><td>Ler arquivos do projeto</td><td><span class="seg"><b class="on-ok">Permitir</b><b>Perguntar</b><b>Bloquear</b></span></td><td class="mut sm">.env e *.pfx sempre bloqueados</td></tr>
+     <tr><td>Editar arquivos</td><td><span class="seg"><b class="on-ok">Permitir</b><b>Perguntar</b><b>Bloquear</b></span></td><td class="mut sm">fora da pasta do projeto: perguntar</td></tr>
+     <tr><td>Executar comandos</td><td><span class="seg"><b>Permitir</b><b class="on-warn">Perguntar</b><b>Bloquear</b></span></td><td class="sm"><span class="chip">cargo test</span> <span class="chip">npm run *</span> <span class="chip">git status</span></td></tr>
+     <tr><td>Acessar a internet</td><td><span class="seg"><b>Permitir</b><b class="on-warn">Perguntar</b><b>Bloquear</b></span></td><td class="mut sm">docs.rs e crates.io liberados</td></tr>
+     <tr><td>Controlar o celular</td><td><span class="seg"><b>Permitir</b><b class="on-warn">Perguntar</b><b>Bloquear</b></span></td><td class="mut sm">apps protegidos: banco, WhatsApp</td></tr>
+     <tr><td>Firewall, serviços e processos de outros usuários</td><td><span class="seg"><b>Permitir</b><b>Perguntar</b><b class="on-bad">Bloquear</b></span></td><td class="mut sm">quando liberado, sempre pede UAC pelo helper elevado</td></tr>
+     <tr><td>Git push e abrir PR</td><td><span class="seg"><b>Permitir</b><b class="on-warn">Perguntar</b><b>Bloquear</b></span></td><td class="mut sm">push na main: bloqueado</td></tr>
+    </tbody>
+   </table></div>
+   <div class="card" style="margin:14px 22px;display:flex;gap:10px;align-items:center"><span style="flex:1" class="sm">Modos prontos: <b style="font-weight:500">Leitura</b> · <b style="font-weight:500;color:var(--accent-text)">Interativo</b> · <b style="font-weight:500">Total</b> preenchem a tabela de uma vez. Depois você ajusta linha por linha.</span><span class="btn g">Restaurar padrão</span></div>
+  </div>
+  <div class="panel" style="width:270px">
+   <div style="padding:12px 14px;border-bottom:1px solid var(--border)"><b style="font-weight:600">Últimas decisões</b><div class="mut sm">audit.log · hoje</div></div>
+   <div style="padding:8px 0;display:grid;gap:2px">
+    <div class="it"><span class="dot ok"></span><span class="grow sm"><span class="mono">cargo test</span> · permitido</span><span class="mut sm">11:44</span></div>
+    <div class="it"><span class="dot warn"></span><span class="grow sm"><span class="mono">netsh …</span> · perguntou</span><span class="mut sm">11:43</span></div>
+    <div class="it"><span class="dot bad"></span><span class="grow sm">ler <span class="mono">.env</span> · bloqueado</span><span class="mut sm">11:20</span></div>
+    <div class="it"><span class="dot ok"></span><span class="grow sm">toque no celular · permitido</span><span class="mut sm">10:58</span></div>
+   </div>
+   <div style="padding:10px 14px" class="mut sm">Clique numa linha para criar uma regra a partir dela.</div>
+  </div>
+ </div>
+ <div class="sb"><span>salvo automaticamente</span><span class="sp" style="flex:1"></span><span>%APPDATA%\argus\policy.json</span></div>
+</div></div>
+<div class="why"><div><b>Resolve</b>Chips soltos não diziam o que o agente pode fazer. A tabela mostra cada tipo de ação com uma regra clara.</div><div><b>Junta</b>Permissões do Argus e o policy.ts do Screen-Mirror, por projeto, com o log de auditoria ao lado.</div><div><b>Organiza</b>Menu em 5 grupos com status visível (dependência faltando, auxiliares ok). Extras ficam no fim.</div></div>
+</section>
+</main>
+</div>
+<script>
+document.querySelectorAll('.tsw button').forEach(b=>b.onclick=()=>{
+ const v=b.dataset.v; v?document.documentElement.dataset.t=v:delete document.documentElement.dataset.t;
+ document.querySelectorAll('.tsw button').forEach(x=>x.setAttribute('aria-pressed',x===b));
+ try{localStorage.setItem('argus-t',v)}catch(e){}
+});
+try{const v=localStorage.getItem('argus-t');if(v)document.querySelector('.tsw button[data-v="'+v+'"]')?.click()}catch(e){}
+</script>

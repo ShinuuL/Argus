@@ -1,0 +1,28 @@
+/* Complementos da tela de métricas (as classes .m-* vêm de components.css). */
+.metrics { user-select: text; }
+.mx-chart { position: relative; padding: 8px 0 4px; }
+.mx-day-svg { display: block; outline-offset: -2px; }
+.mx-grid { stroke: var(--border); stroke-width: 1; shape-rendering: crispEdges; }
+.mx-tick { fill: var(--text-dim); font-size: 10px; font-variant-numeric: tabular-nums; }
+.mx-bar { fill: var(--accent); opacity: 0.85; }
+.mx-bar.on { opacity: 1; fill: var(--accent-hover); }
+.mx-band { fill: var(--bg-hover); }
+.mx-tip {
+  position: absolute; top: 8px; display: flex; flex-direction: column; gap: 1px; padding: 6px 8px;
+  background: var(--bg-active); border: 1px solid var(--border-control); border-radius: var(--radius-lg);
+  font-size: 11px; line-height: 1.45; white-space: nowrap; pointer-events: none;
+  box-shadow: 0 4px 14px var(--shadow); font-variant-numeric: tabular-nums;
+}
+.mx-tip b { color: var(--text-strong); }
+.mx-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 18px 0 8px; }
+.mx-section-head h4 { margin: 0; }
+.mx-seg { display: flex; gap: 4px; }
+.mx-seg button { padding: 2px 8px; font-size: 11px; }
+.mx-track { fill: var(--bg-control); }
+.mx-fill { fill: var(--accent); }
+.mx-table { margin-top: 6px; }
+.mx-table summary { cursor: pointer; }
+.mx-table .grid tbody tr:hover { cursor: default; }
+.mx-table td, .mx-table th { font-variant-numeric: tabular-nums; }
+.mx-side-kpi { display: flex; flex-direction: column; gap: 2px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-raised); }
+.mx-side-kpi b { font-size: 16px; font-variant-numeric: tabular-nums; }

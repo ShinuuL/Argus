@@ -4,6 +4,7 @@
 //! demanda. Toda rota exige o token de pareamento (header `Authorization:
 //! Bearer <token>` ou cookie definido em `/pair?token=...`). Revogar =
 //! regenerar o token: cookies e QR antigos deixam de valer na hora.
+//! O token nunca aparece em log nem em corpo de resposta.
 //! Fora da LAN, use uma VPN como Tailscale em vez de expor a porta.
 
 use crate::autowork::AutoWork;
@@ -15,7 +16,7 @@ use axum::{
     },
     http::{header, HeaderMap, StatusCode},
     middleware::{self, Next},
-    response::{IntoResponse, Redirect, Response},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -24,15 +25,44 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex, RwLock};
-use tokio::sync::{broadcast, oneshot};
+use tokio::sync::{broadcast, oneshot, watch};
 
 const COOKIE: &str = "argus_token";
 
-const INDEX_HTML: &str = include_str!("../../app/assets/remote/index.html");
-const APP_JS: &str = include_str!("../../app/assets/remote/app.js");
-const STYLE_CSS: &str = include_str!("../../app/assets/remote/style.css");
-const MANIFEST: &str = include_str!("../../app/assets/remote/manifest.webmanifest");
-const ICON_SVG: &str = include_str!("../../app/assets/remote/icon.svg");
+const INDEX_HTML: &str = include_str!("../assets/remote/index.html");
+const APP_JS: &str = include_str!("../assets/remote/app.js");
+const STYLE_CSS: &str = include_str!("../assets/remote/style.css");
+const MANIFEST: &str = include_str!("../assets/remote/manifest.webmanifest");
+const ICON_SVG: &str = include_str!("../assets/remote/icon.svg");
+/// Geist (OFL-1.1, subconjunto latino de @fontsource-variable/geist), servida localmente.
+const GEIST_WOFF2: &[u8] = include_bytes!("../assets/remote/geist.woff2");
+const UNAUTHORIZED_HTML: &str = include_str!("../assets/remote/unauthorized.html");
+
+/// Política de conteúdo das páginas: só arquivos do próprio servidor, sem script inline.
+const CSP: &str = "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+const CSP_UNAUTHORIZED: &str = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'";
+
+/// Cores de cada tema (as mesmas de `src/styles/tokens.css`): (fundo, superfície,
+/// destaque). O manifest e o ícone acompanham o tema escolhido no aparelho.
+fn theme_colors(theme: Option<&str>) -> (&'static str, &'static str, &'static str) {
+    match theme {
+        Some("nebulosa") => ("#0d061c", "#1a0a2a", "#9d4edd"),
+        Some("brasa") => ("#0b090a", "#161a1d", "#e5383b"),
+        _ => ("#0d1b2a", "#1b263b", "#778da9"),
+    }
+}
+
+/// Aviso da CLI que cita a organização da conta: nunca sai do computador.
+fn hidden_notice(line: &str) -> bool {
+    let t = line.trim();
+    let t = t.strip_prefix("[stderr]").map(str::trim).unwrap_or(t);
+    t.to_ascii_lowercase().starts_with("warning: claude.ai mcp servers blocked")
+}
+
+/// O evento (já sem `Scoped`) é só o aviso escondido?
+fn is_hidden_event(ev: &crate::agents::provider::AgentEvent) -> bool {
+    matches!(ev.inner(), crate::agents::provider::AgentEvent::Raw(l) if hidden_notice(l))
+}
 
 /// Dados para exibir ao usuário depois de iniciar o servidor.
 #[derive(Debug, Clone, Serialize)]
@@ -161,6 +191,11 @@ struct AppState {
     orch: Orchestrator,
     aw: Arc<RwLock<Option<AutoWork>>>,
     token: Arc<RwLock<String>>,
+    projects: Arc<RwLock<Vec<std::path::PathBuf>>>,
+    /// Vira `true` quando o servidor é desligado: fecha os WebSockets abertos.
+    stopped: watch::Receiver<bool>,
+    /// Avisos da IDE fora do orquestrador (ex.: build concluído), já em JSON.
+    notices: broadcast::Sender<Value>,
 }
 
 impl AppState {
@@ -188,28 +223,135 @@ fn token_from_headers(h: &HeaderMap) -> Option<String> {
     None
 }
 
+/// Página "não autorizado" (401). Igual para token ausente, errado ou revogado:
+/// não revela qual foi o caso nem nada do que o servidor guarda.
+fn unauthorized_page() -> Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+            (header::CONTENT_SECURITY_POLICY, CSP_UNAUTHORIZED),
+            (header::REFERRER_POLICY, "no-referrer"),
+        ],
+        UNAUTHORIZED_HTML,
+    )
+        .into_response()
+}
+
 async fn auth(State(st): State<AppState>, req: Request, next: Next) -> Response {
     match token_from_headers(req.headers()) {
         Some(t) if st.check(&t) => next.run(req).await,
-        _ => (StatusCode::UNAUTHORIZED, "não autorizado: escaneie o QR code na IDE").into_response(),
+        // A página inicial responde com a tela de "não autorizado"; o resto, com JSON.
+        _ if req.uri().path() == "/" => unauthorized_page(),
+        _ => (StatusCode::UNAUTHORIZED, [(header::CACHE_CONTROL, "no-store")], Json(json!({ "error": "não autorizado" })))
+            .into_response(),
     }
 }
 
 #[derive(Deserialize)]
 struct PairQuery {
-    token: String,
+    token: Option<String>,
 }
 
-async fn pair(State(st): State<AppState>, Query(q): Query<PairQuery>) -> Response {
-    if !st.check(&q.token) {
-        return (StatusCode::UNAUTHORIZED, "token inválido ou revogado").into_response();
+async fn pair(State(st): State<AppState>, q: Result<Query<PairQuery>, axum::extract::rejection::QueryRejection>) -> Response {
+    let token = q.ok().and_then(|Query(q)| q.token).unwrap_or_default();
+    if !st.check(&token) {
+        return unauthorized_page();
     }
-    let cookie = format!("{COOKIE}={}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000", q.token);
-    ([(header::SET_COOKIE, cookie)], Redirect::to("/")).into_response()
+    // SameSite=Lax: o link do QR é aberto pela câmera ou por outro app, e nesse caso o
+    // navegador do celular não manda cookie Strict na navegação seguinte (dava "Não autorizado").
+    let cookie = format!("{COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000");
+    // Em vez de redirecionar, devolve uma página que segue sozinha para a tela inicial: a
+    // navegação passa a partir do próprio site, e o token sai da barra de endereço.
+    (
+        [
+            (header::SET_COOKIE, cookie.as_str()),
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+            (header::CONTENT_SECURITY_POLICY, CSP_UNAUTHORIZED),
+            (header::REFERRER_POLICY, "no-referrer"),
+        ],
+        PAIRED_PAGE,
+    )
+        .into_response()
 }
 
-fn asset(ct: &'static str, body: &'static str) -> Response {
-    ([(header::CONTENT_TYPE, ct), (header::CACHE_CONTROL, "no-cache")], body).into_response()
+/// Quantas portas acima da pedida são tentadas antes de desistir.
+const PORT_SEARCH: u16 = 50;
+
+/// Abre a porta pedida ou, se estiver ocupada, a livre mais próxima acima dela.
+async fn bind_nearest(port: u16) -> anyhow::Result<tokio::net::TcpListener> {
+    let mut last = None;
+    for p in (port..=port.saturating_add(PORT_SEARCH)).take(if port == 0 { 1 } else { usize::from(PORT_SEARCH) + 1 }) {
+        match tokio::net::TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], p))).await {
+            Ok(l) => return Ok(l),
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => last = Some(e),
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Err(anyhow::anyhow!(
+        "nenhuma porta livre entre {port} e {}: {}",
+        port.saturating_add(PORT_SEARCH),
+        last.map(|e| e.to_string()).unwrap_or_default()
+    ))
+}
+
+const PAIRED_PAGE: &str = r#"<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="0;url=/?pareado=1">
+<title>Argus</title></head>
+<body style="font-family:system-ui,sans-serif;background:#0d1b2a;color:#e0e1dd;padding:24px">
+<p>Aparelho pareado.</p><p><a href="/?pareado=1" style="color:#e0e1dd">Abrir o Argus</a></p>
+</body></html>"#;
+
+fn asset(ct: &'static str, body: impl Into<String>) -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, ct),
+            (header::CACHE_CONTROL, "no-cache"),
+            (header::CONTENT_SECURITY_POLICY, CSP),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+            (header::REFERRER_POLICY, "no-referrer"),
+        ],
+        body.into(),
+    )
+        .into_response()
+}
+
+/// A fonte Geist (binária, muda só com o app: cache longo).
+fn font_asset() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "font/woff2"),
+            (header::CACHE_CONTROL, "max-age=604800"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        GEIST_WOFF2,
+    )
+        .into_response()
+}
+
+#[derive(Deserialize)]
+struct ThemeQuery {
+    tema: Option<String>,
+}
+
+/// Manifest do PWA com as cores do tema pedido (`?tema=oceano|nebulosa|brasa`).
+async fn manifest(Query(q): Query<ThemeQuery>) -> Response {
+    let (bg, _, _) = theme_colors(q.tema.as_deref());
+    let tema = match q.tema.as_deref() {
+        Some(t @ ("nebulosa" | "brasa")) => t,
+        _ => "oceano",
+    };
+    asset("application/manifest+json", MANIFEST.replace("__BG__", bg).replace("__TEMA__", tema))
+}
+
+/// Ícone com as cores do tema pedido.
+async fn icon(Query(q): Query<ThemeQuery>) -> Response {
+    let (bg, surface, accent) = theme_colors(q.tema.as_deref());
+    asset("image/svg+xml", ICON_SVG.replace("#0d1b2a", bg).replace("#1b263b", surface).replace("#778da9", accent))
 }
 
 fn err(code: StatusCode, msg: impl ToString) -> Response {
@@ -233,7 +375,10 @@ async fn list_tasks(State(st): State<AppState>) -> Response {
 
 async fn get_task(State(st): State<AppState>, Path(id): Path<TaskId>) -> Response {
     match st.orch.task(id) {
-        Some(t) => Json(json!({ "task": t, "events": st.orch.history(id) })).into_response(),
+        Some(t) => {
+            let events: Vec<_> = st.orch.history(id).into_iter().filter(|e| !is_hidden_event(e)).collect();
+            Json(json!({ "task": t, "events": events })).into_response()
+        }
         None => err(StatusCode::NOT_FOUND, "tarefa não encontrada"),
     }
 }
@@ -271,7 +416,11 @@ async fn create_task(State(st): State<AppState>, Json(b): Json<NewTask>) -> Resp
     if b.prompt.trim().is_empty() {
         return err(StatusCode::BAD_REQUEST, "pedido vazio");
     }
-    let p = std::path::PathBuf::from(&b.project);
+    // Só projetos que a IDE já conhece: o celular não escolhe pastas do computador.
+    let wanted = path_key(std::path::Path::new(&b.project));
+    let Some(p) = known_projects(&st).into_iter().find(|k| path_key(k) == wanted) else {
+        return err(StatusCode::BAD_REQUEST, "projeto desconhecido");
+    };
     if !p.is_dir() {
         return err(StatusCode::BAD_REQUEST, "projeto inexistente");
     }
@@ -281,12 +430,61 @@ async fn create_task(State(st): State<AppState>, Json(b): Json<NewTask>) -> Resp
     }
 }
 
-/// Projetos conhecidos (das tarefas existentes), para o formulário de nova tarefa.
+/// Chave de comparação de caminhos (barras e maiúsculas não importam).
+fn path_key(p: &std::path::Path) -> String {
+    p.to_string_lossy().replace('\\', "/").trim_end_matches('/').to_lowercase()
+}
+
+/// Projetos da pasta raiz aberta na IDE mais os das tarefas existentes, sem repetir.
+fn known_projects(st: &AppState) -> Vec<std::path::PathBuf> {
+    let mut v = st.projects.read().unwrap().clone();
+    v.extend(st.orch.tasks().into_iter().map(|t| t.project));
+    let mut seen = std::collections::HashSet::new();
+    v.retain(|p| seen.insert(path_key(p)));
+    v
+}
+
+/// Projetos conhecidos: `[{ "name", "path" }]`, por nome.
 async fn projects(State(st): State<AppState>) -> Response {
-    let mut v: Vec<String> = st.orch.tasks().into_iter().map(|t| t.project.to_string_lossy().into_owned()).collect();
-    v.sort();
-    v.dedup();
+    let mut v: Vec<Value> = known_projects(&st)
+        .into_iter()
+        .map(|p| {
+            let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.to_string_lossy().into_owned());
+            json!({ "name": name, "path": p })
+        })
+        .collect();
+    v.sort_by_key(|p| p["name"].as_str().unwrap_or_default().to_lowercase());
     Json(v).into_response()
+}
+
+/// Provedores de agente disponíveis: `[{ "id", "name" }]`.
+async fn providers(State(st): State<AppState>) -> Response {
+    let v: Vec<Value> = st.orch.providers().into_iter().map(|(id, name)| json!({ "id": id, "name": name })).collect();
+    Json(v).into_response()
+}
+
+/// Tabela de preços usada no custo "equivalente em API" (a mesma das métricas da IDE).
+async fn pricing() -> Response {
+    let p = crate::metrics::Pricing::default_path().map(|p| crate::metrics::Pricing::load(&p)).unwrap_or_default();
+    Json(p).into_response()
+}
+
+/// Servidores em execução vinculados a sessões e terminais.
+async fn servers_list() -> Response {
+    Json(crate::procs::tracker().servers()).into_response()
+}
+
+/// Derruba um servidor rastreado (o processo e os filhos). Devolve a lista atualizada.
+async fn server_kill(Path(pid): Path<u32>) -> Response {
+    let tracker = crate::procs::tracker();
+    if tracker.owner_of(pid).is_none() {
+        return err(StatusCode::NOT_FOUND, "servidor não encontrado");
+    }
+    match tokio::task::spawn_blocking(move || crate::procs::tracker().kill(pid)).await {
+        Ok(Ok(())) => Json(tracker.servers()).into_response(),
+        Ok(Err(e)) => err(StatusCode::INTERNAL_SERVER_ERROR, e),
+        Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e),
+    }
 }
 
 fn autowork_of(st: &AppState) -> Result<AutoWork, Response> {
@@ -346,33 +544,51 @@ pub fn event_json(ev: &OrchestratorEvent) -> Value {
         OrchestratorEvent::Agent { task, event } => json!({ "type": "agent", "task": task, "event": event }),
         OrchestratorEvent::Stderr { task, line } => json!({ "type": "stderr", "task": task, "line": line }),
         OrchestratorEvent::AutoWork(e) => json!({ "type": "autowork", "task": e.task, "autowork": e }),
+        OrchestratorEvent::Removed { task } => json!({ "type": "removed", "task": task }),
     }
 }
 
 async fn stream(State(st): State<AppState>, ws: WebSocketUpgrade) -> Response {
     let rx = st.orch.subscribe();
+    let notices = st.notices.subscribe();
     let token = st.token.clone();
     let initial = token.read().unwrap().clone();
-    ws.on_upgrade(move |sock| ws_loop(sock, rx, token, initial))
+    let stopped = st.stopped.clone();
+    ws.on_upgrade(move |sock| ws_loop(sock, rx, notices, token, initial, stopped))
 }
 
 async fn ws_loop(
     mut sock: WebSocket,
     mut rx: broadcast::Receiver<OrchestratorEvent>,
+    mut notices: broadcast::Receiver<Value>,
     token: Arc<RwLock<String>>,
     initial: String,
+    mut stopped: watch::Receiver<bool>,
 ) {
     let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
     loop {
         tokio::select! {
             ev = rx.recv() => match ev {
                 Ok(ev) => {
+                    let hidden = match &ev {
+                        OrchestratorEvent::Stderr { line, .. } => hidden_notice(line),
+                        OrchestratorEvent::Agent { event, .. } => is_hidden_event(event),
+                        _ => false,
+                    };
+                    if hidden { continue; }
                     if sock.send(Message::Text(event_json(&ev).to_string().into())).await.is_err() { break; }
                 }
                 Err(broadcast::error::RecvError::Lagged(_)) => {
                     // cliente atrasou: pede para recarregar
                     if sock.send(Message::Text(json!({"type":"resync"}).to_string().into())).await.is_err() { break; }
                 }
+                Err(_) => break,
+            },
+            notice = notices.recv() => match notice {
+                Ok(v) => {
+                    if sock.send(Message::Text(v.to_string().into())).await.is_err() { break; }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => {}
                 Err(_) => break,
             },
             msg = sock.recv() => match msg {
@@ -382,7 +598,11 @@ async fn ws_loop(
             _ = tick.tick() => {
                 // token revogado: encerra conexões abertas
                 if *token.read().unwrap() != initial { break; }
+                // sinal de vida: o cliente reconecta se parar de receber
+                if sock.send(Message::Text(json!({"type":"ping"}).to_string().into())).await.is_err() { break; }
             }
+            // servidor desligado na IDE: quem está conectado cai na hora
+            _ = stopped.changed() => break,
         }
     }
     let _ = sock.send(Message::Close(None)).await;
@@ -393,10 +613,15 @@ fn router(st: AppState) -> Router {
         .route("/", get(|| async { asset("text/html; charset=utf-8", INDEX_HTML) }))
         .route("/app.js", get(|| async { asset("application/javascript; charset=utf-8", APP_JS) }))
         .route("/style.css", get(|| async { asset("text/css; charset=utf-8", STYLE_CSS) }))
-        .route("/manifest.webmanifest", get(|| async { asset("application/manifest+json", MANIFEST) }))
-        .route("/icon.svg", get(|| async { asset("image/svg+xml", ICON_SVG) }))
+        .route("/geist.woff2", get(|| async { font_asset() }))
+        .route("/manifest.webmanifest", get(manifest))
+        .route("/icon.svg", get(icon))
         .route("/api/tasks", get(list_tasks).post(create_task))
         .route("/api/projects", get(projects))
+        .route("/api/providers", get(providers))
+        .route("/api/pricing", get(pricing))
+        .route("/api/servers", get(servers_list))
+        .route("/api/servers/{pid}/kill", post(server_kill))
         .route("/api/tasks/{id}", get(get_task))
         .route("/api/tasks/{id}/reply", post(reply))
         .route("/api/tasks/{id}/cancel", post(cancel))
@@ -409,6 +634,7 @@ fn router(st: AppState) -> Router {
 
 struct Running {
     shutdown: oneshot::Sender<()>,
+    stopped: watch::Sender<bool>,
     port: u16,
 }
 
@@ -420,6 +646,10 @@ pub struct RemoteServer {
     host: RwLock<Option<String>>,
     /// Controlador do auto-work exposto pela API (opcional).
     aw: Arc<RwLock<Option<AutoWork>>>,
+    /// Projetos da pasta raiz aberta na IDE (os únicos onde o celular cria conversa).
+    projects: Arc<RwLock<Vec<std::path::PathBuf>>>,
+    /// Avisos repassados a todos os celulares conectados em `/api/stream`.
+    notices: broadcast::Sender<Value>,
 }
 
 impl Default for RemoteServer {
@@ -430,7 +660,18 @@ impl Default for RemoteServer {
 
 impl RemoteServer {
     pub fn new() -> Self {
-        Self { token: Arc::new(RwLock::new(new_token())), running: Mutex::new(None), host: RwLock::new(None), aw: Arc::new(RwLock::new(None)) }
+        Self { token: Arc::new(RwLock::new(new_token())), running: Mutex::new(None), host: RwLock::new(None), aw: Arc::new(RwLock::new(None)), projects: Arc::new(RwLock::new(Vec::new())), notices: broadcast::channel(64).0 }
+    }
+
+    /// Informa os projetos da pasta raiz aberta na IDE (`/api/projects`).
+    pub fn set_projects(&self, projects: Vec<std::path::PathBuf>) {
+        *self.projects.write().unwrap() = projects;
+    }
+
+    /// Envia um aviso (JSON com `type`) aos celulares conectados em `/api/stream`.
+    /// Sem ninguém conectado, o aviso se perde (não há fila).
+    pub fn notify(&self, notice: Value) {
+        let _ = self.notices.send(notice);
     }
 
     /// Liga os endpoints de auto-work (`/api/autowork`).
@@ -442,12 +683,22 @@ impl RemoteServer {
         self.running.lock().unwrap().is_some()
     }
 
-    /// Inicia em 0.0.0.0:`port` (0 = porta livre). Se já rodando, reinicia.
+    /// Inicia em 0.0.0.0:`port` (0 = porta livre). Se a porta pedida estiver ocupada (por
+    /// exemplo, por outra cópia do Argus), usa a porta livre mais próxima acima dela; a porta
+    /// de fato usada vem em `RemoteInfo`. Se já rodando, reinicia.
     pub async fn start(&self, orch: Orchestrator, port: u16) -> anyhow::Result<RemoteInfo> {
         self.stop();
-        let listener = tokio::net::TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], port))).await?;
+        let listener = bind_nearest(port).await?;
         let port = listener.local_addr()?.port();
-        let app = router(AppState { orch, aw: self.aw.clone(), token: self.token.clone() });
+        let (stopped, stopped_rx) = watch::channel(false);
+        let app = router(AppState {
+            orch,
+            aw: self.aw.clone(),
+            token: self.token.clone(),
+            projects: self.projects.clone(),
+            stopped: stopped_rx,
+            notices: self.notices.clone(),
+        });
         let (tx, rx) = oneshot::channel::<()>();
         tokio::spawn(async move {
             let r = axum::serve(listener, app)
@@ -459,12 +710,13 @@ impl RemoteServer {
                 tracing::warn!("servidor remoto: {e}");
             }
         });
-        *self.running.lock().unwrap() = Some(Running { shutdown: tx, port });
+        *self.running.lock().unwrap() = Some(Running { shutdown: tx, stopped, port });
         self.info()
     }
 
     pub fn stop(&self) {
         if let Some(r) = self.running.lock().unwrap().take() {
+            let _ = r.stopped.send(true);
             let _ = r.shutdown.send(());
         }
     }
@@ -548,10 +800,19 @@ mod tests {
         assert_eq!(token_from_headers(&h).as_deref(), Some("tok"));
     }
 
+
+    #[tokio::test]
+    async fn busy_port_falls_back_to_the_nearest_free_one() {
+        let taken = bind_nearest(0).await.unwrap();
+        let busy = taken.local_addr().unwrap().port();
+        let l = bind_nearest(busy).await.unwrap();
+        let got = l.local_addr().unwrap().port();
+        assert!(got > busy && got <= busy.saturating_add(PORT_SEARCH), "{busy} -> {got}");
+    }
     #[tokio::test]
     async fn auth_flow() {
         let srv = RemoteServer::new();
-        let orch = Orchestrator::new(vec![], 1, false);
+        let orch = Orchestrator::new(vec![], 1);
         let info = srv.start(orch, 0).await.unwrap();
         assert!(info.qr_svg.contains("<svg"));
         let port = info.port;
@@ -569,7 +830,7 @@ mod tests {
         assert!(r.ends_with("[]"));
         // pareamento define cookie
         let r = http(port, get(&format!("/pair?token={token}"), "")).await;
-        assert!(r.starts_with("HTTP/1.1 303"), "{r}");
+        assert!(r.starts_with("HTTP/1.1 200"), "{r}");
         assert!(r.contains("HttpOnly"));
         let ck = format!("Cookie: {COOKIE}={token}\r\n");
         assert!(http(port, get("/", &ck)).await.starts_with("HTTP/1.1 200"));
@@ -578,5 +839,161 @@ mod tests {
         srv.regenerate_token().unwrap();
         assert!(http(port, get("/", &ck)).await.starts_with("HTTP/1.1 401"));
         srv.stop();
+    }
+
+    fn post(path: &str, extra: &str, body: &str) -> String {
+        format!(
+            "POST {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n{extra}\r\n{body}",
+            body.len()
+        )
+    }
+
+    /// Pedido de upgrade para WebSocket; devolve só a primeira linha da resposta.
+    async fn ws_status(port: u16, extra: &str) -> String {
+        let req = format!(
+            "GET /api/stream HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n{extra}\r\n"
+        );
+        let mut s = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        s.write_all(req.as_bytes()).await.unwrap();
+        let mut buf = [0u8; 64];
+        let n = s.read(&mut buf).await.unwrap();
+        String::from_utf8_lossy(&buf[..n]).lines().next().unwrap_or_default().to_string()
+    }
+
+    #[tokio::test]
+    async fn every_route_requires_the_token() {
+        let srv = RemoteServer::new();
+        let port = srv.start(Orchestrator::new(vec![], 1), 0).await.unwrap().port;
+        let token = srv.token.read().unwrap().clone();
+        let gets = [
+            "/", "/app.js", "/style.css", "/manifest.webmanifest", "/icon.svg", "/api/tasks", "/api/tasks/1", "/api/projects",
+            "/api/providers", "/api/pricing", "/api/servers", "/api/autowork", "/api/stream",
+        ];
+        for path in gets {
+            for extra in ["", "Authorization: Bearer errado\r\n", "Cookie: argus_token=errado\r\n"] {
+                let r = http(port, get(path, extra)).await;
+                assert!(r.starts_with("HTTP/1.1 401"), "GET {path}: {r}");
+                assert!(!r.contains(&token), "GET {path} vazou o token");
+            }
+        }
+        let posts = [
+            "/api/tasks", "/api/tasks/1/reply", "/api/tasks/1/cancel", "/api/autowork", "/api/tasks/1/autowork/pause", "/api/servers/1/kill",
+        ];
+        for path in posts {
+            let r = http(port, post(path, "", "{}")).await;
+            assert!(r.starts_with("HTTP/1.1 401"), "POST {path}: {r}");
+        }
+        // WebSocket: sem token não faz o upgrade; com token, faz.
+        assert!(ws_status(port, "").await.starts_with("HTTP/1.1 401"));
+        assert!(ws_status(port, "Cookie: argus_token=errado\r\n").await.starts_with("HTTP/1.1 401"));
+        assert!(ws_status(port, &format!("Cookie: {COOKIE}={token}\r\n")).await.starts_with("HTTP/1.1 101"));
+        srv.stop();
+    }
+
+    #[tokio::test]
+    async fn stopping_the_server_closes_open_websockets() {
+        let srv = RemoteServer::new();
+        let port = srv.start(Orchestrator::new(vec![], 1), 0).await.unwrap().port;
+        let token = srv.token.read().unwrap().clone();
+        let req = format!(
+            "GET /api/stream HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nCookie: {COOKIE}={token}\r\n\r\n"
+        );
+        let mut s = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        s.write_all(req.as_bytes()).await.unwrap();
+        let mut buf = [0u8; 512];
+        let n = s.read(&mut buf).await.unwrap();
+        assert!(String::from_utf8_lossy(&buf[..n]).starts_with("HTTP/1.1 101"));
+        srv.stop();
+        // O servidor fecha a conexão sozinho (sem isso o read ficaria parado para sempre).
+        let closed = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            let mut rest = Vec::new();
+            let _ = s.read_to_end(&mut rest).await;
+        })
+        .await;
+        assert!(closed.is_ok(), "o WebSocket continuou aberto depois de desligar o servidor");
+        // E a porta deixa de aceitar conexões novas.
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(tokio::net::TcpStream::connect(("127.0.0.1", port)).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn unauthorized_page_is_clear_and_leaks_nothing() {
+        let srv = RemoteServer::new();
+        let port = srv.start(Orchestrator::new(vec![], 1), 0).await.unwrap().port;
+        let token = srv.token.read().unwrap().clone();
+        let missing = http(port, get("/pair", "")).await;
+        let wrong = http(port, get("/pair?token=errado", "")).await;
+        let empty = http(port, get("/pair?token=", "")).await;
+        let home = http(port, get("/", "")).await;
+        for r in [&missing, &wrong, &empty, &home] {
+            assert!(r.starts_with("HTTP/1.1 401"), "{r}");
+            assert!(r.contains("text/html") && r.contains("Não autorizado"));
+            assert!(!r.to_ascii_lowercase().contains("set-cookie") && !r.contains(&token) && !r.contains("errado"));
+        }
+        // Token ausente e token errado dão exatamente a mesma página.
+        let body = |r: &str| r.split("\r\n\r\n").nth(1).unwrap_or_default().to_string();
+        assert_eq!(body(&missing), body(&wrong));
+        // Pareamento certo: cookie e redirecionamento sem o token no endereço.
+        let ok = http(port, get(&format!("/pair?token={token}"), "")).await;
+        assert!(ok.starts_with("HTTP/1.1 200") && ok.contains("url=/?pareado=1") && ok.contains("SameSite=Lax"), "{ok}");
+        srv.stop();
+    }
+
+    #[tokio::test]
+    async fn projects_providers_pricing_servers_and_theme() {
+        let root = tempfile::tempdir().unwrap();
+        let alfa = root.path().join("alfa");
+        std::fs::create_dir(&alfa).unwrap();
+        let srv = RemoteServer::new();
+        srv.set_projects(vec![alfa.clone()]);
+        let port = srv.start(Orchestrator::new(vec![], 1), 0).await.unwrap().port;
+        let auth = format!("Authorization: Bearer {}\r\n", srv.token.read().unwrap());
+
+        let r = http(port, get("/api/projects", &auth)).await;
+        assert!(r.starts_with("HTTP/1.1 200") && r.contains(r#""name":"alfa""#), "{r}");
+        let r = http(port, get("/api/providers", &auth)).await;
+        assert!(r.starts_with("HTTP/1.1 200") && r.ends_with("[]"), "{r}");
+        let r = http(port, get("/api/pricing", &auth)).await;
+        assert!(r.starts_with("HTTP/1.1 200") && r.contains(r#""fallback""#) && r.contains(r#""models""#), "{r}");
+        let r = http(port, get("/api/servers", &auth)).await;
+        assert!(r.starts_with("HTTP/1.1 200") && r.contains('['), "{r}");
+        // Só derruba processo rastreado: um PID qualquer não é aceito.
+        let r = http(port, post("/api/servers/4294967295/kill", &auth, "")).await;
+        assert!(r.starts_with("HTTP/1.1 404"), "{r}");
+
+        // Conversa nova só em projeto conhecido.
+        let body = json!({ "project": root.path(), "provider": "claude", "prompt": "oi" }).to_string();
+        let r = http(port, post("/api/tasks", &auth, &body)).await;
+        assert!(r.starts_with("HTTP/1.1 400") && r.contains("projeto desconhecido"), "{r}");
+        let body = json!({ "project": alfa, "provider": "nenhum", "prompt": "oi" }).to_string();
+        let r = http(port, post("/api/tasks", &auth, &body)).await;
+        assert!(r.starts_with("HTTP/1.1 400") && r.contains("provedor desconhecido"), "{r}");
+
+        // Manifest e ícone acompanham o tema.
+        let r = http(port, get("/manifest.webmanifest", &auth)).await;
+        assert!(r.contains("#0d1b2a") && r.contains("icon.svg?tema=oceano") && !r.contains("__"), "{r}");
+        let r = http(port, get("/manifest.webmanifest?tema=brasa", &auth)).await;
+        assert!(r.contains("#0b090a") && r.contains("icon.svg?tema=brasa"), "{r}");
+        let r = http(port, get("/manifest.webmanifest?tema=%3Cx%3E", &auth)).await;
+        assert!(r.contains("#0d1b2a") && r.contains("tema=oceano"), "{r}");
+        let r = http(port, get("/icon.svg?tema=nebulosa", &auth)).await;
+        assert!(r.contains("#0d061c") && r.contains("<svg"), "{r}");
+        // A página não carrega nada de fora nem tem script ou estilo inline.
+        let r = http(port, get("/", &auth)).await;
+        assert!(r.contains("content-security-policy: default-src 'self'"), "{r}");
+        assert!(!r.contains("https://") && !r.contains("<style"), "página com recurso externo ou estilo inline");
+        srv.stop();
+    }
+
+    #[test]
+    fn hides_the_blocked_servers_notice() {
+        use crate::agents::provider::AgentEvent;
+        assert!(hidden_notice("Warning: claude.ai MCP servers blocked by policy of Fulana"));
+        assert!(hidden_notice("  [stderr] warning: claude.ai mcp servers blocked"));
+        assert!(!hidden_notice("Warning: outra coisa"));
+        let raw = AgentEvent::Raw("Warning: claude.ai MCP servers blocked x".into());
+        assert!(is_hidden_event(&raw));
+        assert!(is_hidden_event(&raw.clone().scoped(Some("toolu_1"))));
+        assert!(!is_hidden_event(&AgentEvent::Text("Warning: claude.ai MCP servers blocked x".into())));
     }
 }

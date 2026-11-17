@@ -50,6 +50,22 @@ pub struct ServerInfo {
     pub cwd: Option<PathBuf>,
 }
 
+/// Processo vivo da árvore de um dono (tarefas em segundo plano da sessão).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OwnedProc {
+    pub pid: u32,
+    /// Servidor MCP aberto pelo agente (a tela agrupa à parte).
+    #[serde(default)]
+    pub mcp: bool,
+    pub parent: Option<u32>,
+    pub name: String,
+    pub cmdline: String,
+    /// Segundos desde a época Unix.
+    pub started_at: u64,
+    /// Porta TCP em LISTEN, se o processo for um servidor conhecido.
+    pub port: Option<u16>,
+}
+
 /// Uma linha da tabela de processos (independente do `sysinfo`, para testes).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcRow {
@@ -109,11 +125,18 @@ pub fn parse_lsof(out: &str) -> Vec<(u32, u16)> {
 }
 
 /// PIDs descendentes de `root` (inclui o próprio, se existir).
+///
+/// No Windows o parent pid de um órfão continua apontando para o pai morto, e esse
+/// número pode ser reutilizado por outro processo. Um filho de verdade nunca começa
+/// antes do pai: a ligação só vale com `filho.started_at >= pai.started_at`. Sem isso
+/// a árvore do agente "adotava" processos alheios (WebView2, o próprio Argus, conhost).
 pub fn descendants(root: u32, rows: &[ProcRow]) -> HashSet<u32> {
+    let start: HashMap<u32, u64> = rows.iter().map(|r| (r.pid, r.started_at)).collect();
     let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
     for r in rows {
         if let Some(p) = r.parent {
-            if p != r.pid {
+            let older_parent = start.get(&p).is_some_and(|ps| *ps <= r.started_at);
+            if p != r.pid && older_parent {
                 children.entry(p).or_default().push(r.pid);
             }
         }
@@ -128,6 +151,60 @@ pub fn descendants(root: u32, rows: &[ProcRow]) -> HashSet<u32> {
             stack.extend(cs.iter().copied());
         }
     }
+    out
+}
+
+/// Caminho normalizado para comparação: sem `\\?\`, barras `/`, minúsculas,
+/// sem barra final.
+fn norm_path(s: &str) -> String {
+    let s = s.strip_prefix(r"\\?\").unwrap_or(s);
+    s.replace('\\', "/").to_lowercase().trim_end_matches('/').to_string()
+}
+
+/// `path` é `dir` ou está dentro dele (ambos normalizados).
+fn inside(path: &str, dir: &str) -> bool {
+    path == dir || path.strip_prefix(dir).is_some_and(|r| r.starts_with('/'))
+}
+
+/// A linha de comando (normalizada) cita `dir` ou algo dentro dele.
+fn cmdline_mentions(cmd: &str, dir: &str) -> bool {
+    let mut from = 0;
+    while let Some(i) = cmd[from..].find(dir) {
+        let end = from + i + dir.len();
+        match cmd[end..].chars().next() {
+            None | Some('/') | Some('"') | Some('\'') | Some(' ') | Some('\t') => return true,
+            _ => from = end,
+        }
+    }
+    false
+}
+
+/// Processos que prendem o worktree `dir` e podem ser encerrados:
+/// - PIDs já vinculados ao dono (`owned`, a árvore do processo da tarefa), exceto
+///   os que sabidamente rodam fora de `dir` (cwd conhecido e fora dele);
+/// - qualquer processo cujo cwd está dentro de `dir`;
+/// - qualquer processo cuja linha de comando cita `dir` (ou caminho dentro dele).
+///
+/// `exclude` (o próprio Argus) nunca entra. Caminho curto demais (raiz) não casa nada.
+pub fn worktree_pids(rows: &[ProcRow], owned: &HashSet<u32>, dir: &Path, exclude: u32) -> Vec<u32> {
+    let d = norm_path(&dir.to_string_lossy());
+    let depth = d.split('/').filter(|c| !c.is_empty()).count();
+    if depth < 2 {
+        return Vec::new();
+    }
+    let mut out: Vec<u32> = rows
+        .iter()
+        .filter(|r| r.pid != exclude && r.pid != 0)
+        .filter(|r| {
+            let cwd = r.cwd.as_ref().map(|c| norm_path(&c.to_string_lossy())).filter(|c| !c.is_empty());
+            let cwd_in = cwd.as_deref().is_some_and(|c| inside(c, &d));
+            let by_owner = owned.contains(&r.pid) && cwd.as_deref().map_or(true, |c| inside(c, &d));
+            cwd_in || by_owner || cmdline_mentions(&norm_path(&r.cmdline), &d)
+        })
+        .map(|r| r.pid)
+        .collect();
+    out.sort_unstable();
+    out.dedup();
     out
 }
 
@@ -192,16 +269,42 @@ impl ProcSource for SystemSource {
     }
 }
 
+/// Processos que nunca são tarefa do agente: a casca do console (conhost), o
+/// WebView2 e o próprio Argus. Se aparecerem na árvore é por vínculo errado.
+pub fn is_host_noise(name: &str) -> bool {
+    let n = name.to_lowercase();
+    let n = n.strip_suffix(".exe").unwrap_or(&n);
+    matches!(n, "conhost" | "msedgewebview2" | "argus-desktop" | "argus")
+}
+
+/// Linha de comando de um servidor MCP (ex.: `docker mcp gateway run`, `foo-mcp`).
+pub fn is_mcp(cmdline: &str) -> bool {
+    let c = cmdline.to_lowercase();
+    c.split(|ch: char| !ch.is_alphanumeric()).any(|w| w == "mcp" || w == "modelcontextprotocol")
+}
+
 // ---------------------------------------------------------------- rastreador
 
 #[derive(Default)]
 struct Inner {
-    /// Raízes registradas (pid -> dono).
-    roots: HashMap<u32, Owner>,
+    /// Raízes registradas (pid -> dono, start_time visto ao registrar ou no 1º poll).
+    roots: HashMap<u32, (Owner, Option<u64>)>,
     /// Todo PID já visto na árvore de um dono (com o start_time, contra reuso de PID).
     known: HashMap<u32, (Owner, u64)>,
     servers: Vec<ServerInfo>,
+    /// Processos vivos das árvores rastreadas, no último poll.
+    owned: Vec<TrackedProc>,
     rev: u64,
+}
+
+/// Processo vivo da árvore de um dono (para reconhecer builds rodando em terminais e sessões).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TrackedProc {
+    pub pid: u32,
+    pub owner: Owner,
+    pub cmdline: String,
+    pub cwd: Option<PathBuf>,
+    pub started_at: u64,
 }
 
 /// Rastreador de processos/servidores. Clonável (compartilhado).
@@ -222,7 +325,8 @@ impl ProcTracker {
 
     /// Vincula a árvore de `pid` a `owner`.
     pub fn track(&self, pid: u32, owner: Owner) {
-        self.lock().roots.insert(pid, owner);
+        let st = self.src.processes().into_iter().find(|r| r.pid == pid).map(|r| r.started_at);
+        self.lock().roots.insert(pid, (owner, st));
     }
 
     /// Contador que muda a cada alteração da lista de servidores.
@@ -235,11 +339,24 @@ impl ProcTracker {
         let rows = self.src.processes();
         let by_pid: HashMap<u32, &ProcRow> = rows.iter().map(|r| (r.pid, r)).collect();
         let mut g = self.lock();
-        // Raízes mortas saem; os PIDs conhecidos continuam valendo.
-        g.roots.retain(|pid, _| by_pid.contains_key(pid));
-        let roots: Vec<(u32, Owner)> = g.roots.iter().map(|(p, o)| (*p, *o)).collect();
+        // Raízes mortas (ou com o PID reutilizado) saem; os PIDs conhecidos continuam valendo.
+        g.roots.retain(|pid, (_, st)| match (by_pid.get(pid), *st) {
+            (None, _) => false,
+            (Some(r), Some(s)) => r.started_at == s,
+            (Some(_), None) => true,
+        });
+        for (pid, (_, st)) in g.roots.iter_mut() {
+            if st.is_none() {
+                *st = by_pid.get(pid).map(|r| r.started_at);
+            }
+        }
+        let me = std::process::id();
+        let roots: Vec<(u32, Owner)> = g.roots.iter().map(|(p, (o, _))| (*p, *o)).collect();
         for (root, owner) in roots {
             for pid in descendants(root, &rows) {
+                if pid == me {
+                    continue;
+                }
                 if let Some(r) = by_pid.get(&pid) {
                     g.known.entry(pid).or_insert((owner, r.started_at));
                 }
@@ -247,6 +364,15 @@ impl ProcTracker {
         }
         // Esquece PIDs mortos ou reutilizados (start_time diferente).
         g.known.retain(|pid, (_, st)| by_pid.get(pid).is_some_and(|r| r.started_at == *st));
+        let owned: Vec<TrackedProc> = g
+            .known
+            .iter()
+            .filter_map(|(pid, (owner, _))| {
+                let r = by_pid.get(pid)?;
+                Some(TrackedProc { pid: *pid, owner: *owner, cmdline: r.cmdline.clone(), cwd: r.cwd.clone(), started_at: r.started_at })
+            })
+            .collect();
+        g.owned = owned;
         drop(g);
 
         let listen = if self.lock().known.is_empty() { Vec::new() } else { self.src.listening() };
@@ -284,6 +410,56 @@ impl ProcTracker {
         self.lock().servers.iter().filter(|s| s.owner == owner).cloned().collect()
     }
 
+    /// Processos vivos de `owner`: descendentes atuais das raízes dele mais os
+    /// órfãos já vinculados (mesmo start_time). As raízes (o próprio processo
+    /// do agente/terminal) ficam de fora. Ordem: início, depois PID.
+    pub fn processes_of(&self, owner: Owner) -> Vec<OwnedProc> {
+        let rows = self.src.processes();
+        let g = self.lock();
+        let by_pid: HashMap<u32, &ProcRow> = rows.iter().map(|r| (r.pid, r)).collect();
+        let roots: HashSet<u32> = g
+            .roots
+            .iter()
+            .filter(|(p, (o, st))| *o == owner && by_pid.get(p).is_some_and(|r| st.map_or(true, |s| s == r.started_at)))
+            .map(|(p, _)| *p)
+            .collect();
+        let mut pids: HashSet<u32> = HashSet::new();
+        for root in &roots {
+            pids.extend(descendants(*root, &rows));
+        }
+        for r in &rows {
+            if g.known.get(&r.pid).is_some_and(|(o, st)| *o == owner && *st == r.started_at) {
+                pids.insert(r.pid);
+            }
+        }
+        let me = std::process::id();
+        let mut out: Vec<OwnedProc> = rows
+            .iter()
+            .filter(|r| pids.contains(&r.pid) && !roots.contains(&r.pid) && r.pid != me && !is_host_noise(&r.name))
+            .map(|r| OwnedProc {
+                pid: r.pid,
+                mcp: is_mcp(&r.cmdline),
+                parent: r.parent,
+                name: r.name.clone(),
+                cmdline: r.cmdline.clone(),
+                started_at: r.started_at,
+                port: g.servers.iter().find(|s| s.pid == r.pid).map(|s| s.port),
+            })
+            .collect();
+        out.sort_by_key(|p| (p.started_at, p.pid));
+        out
+    }
+
+    /// Processos vivos das árvores rastreadas (do último poll).
+    pub fn owned(&self) -> Vec<TrackedProc> {
+        self.lock().owned.clone()
+    }
+
+    /// PID raiz registrado para `owner` (ex.: o processo de um terminal).
+    pub fn root_of(&self, owner: Owner) -> Option<u32> {
+        self.lock().roots.iter().find(|(_, (o, _))| *o == owner).map(|(p, _)| *p)
+    }
+
     /// Dono de um PID conhecido.
     pub fn owner_of(&self, pid: u32) -> Option<Owner> {
         self.lock().known.get(&pid).map(|(o, _)| *o)
@@ -307,10 +483,28 @@ impl ProcTracker {
         pids.iter().filter(|p| self.kill(**p).is_ok()).count()
     }
 
+    /// Encerra os processos que prendem o worktree `dir` da sessão `owner`
+    /// (critério em `worktree_pids`). Devolve os PIDs encerrados.
+    pub fn kill_in_dir(&self, owner: Owner, dir: &Path) -> Vec<u32> {
+        self.poll();
+        let rows = self.src.processes();
+        let owned: HashSet<u32> =
+            self.lock().known.iter().filter(|(_, (o, _))| *o == owner).map(|(p, _)| *p).collect();
+        let pids = worktree_pids(&rows, &owned, dir, std::process::id());
+        // Um `taskkill /T` no pai já leva os filhos: o erro dos seguintes é esperado.
+        let killed: Vec<u32> = pids.into_iter().filter(|p| kill_tree(*p).is_ok()).collect();
+        if !killed.is_empty() {
+            let mut g = self.lock();
+            g.servers.retain(|s| !killed.contains(&s.pid));
+            g.rev += 1;
+        }
+        killed
+    }
+
     /// Esquece um dono (ex.: terminal fechado).
     pub fn forget(&self, owner: Owner) {
         let mut g = self.lock();
-        g.roots.retain(|_, o| *o != owner);
+        g.roots.retain(|_, (o, _)| *o != owner);
         g.known.retain(|_, (o, _)| *o != owner);
         g.servers.retain(|s| s.owner != owner);
         g.rev += 1;
@@ -424,7 +618,7 @@ fn allowed_file() -> Option<PathBuf> {
     let base = std::env::var_os("APPDATA")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
-    Some(base.join("argus").join("allowed_tools.json"))
+    Some(base.join(crate::paths::dir_name()).join("allowed_tools.json"))
 }
 
 fn load_allowed() -> Option<HashMap<String, Vec<String>>> {
@@ -532,6 +726,84 @@ Conexões ativas
     }
 
     #[test]
+    fn processes_of_owner() {
+        let fake = Arc::new(Fake {
+            rows: Mutex::new(vec![row(100, None, 1), row(101, Some(100), 2), row(102, Some(101), 3), row(200, None, 4), row(201, Some(200), 5)]),
+            listen: Mutex::new(vec![(102, 5173)]),
+        });
+        let t = ProcTracker::new(fake.clone());
+        t.track(100, Owner::Session(7));
+        t.track(200, Owner::Terminal(1));
+        t.poll();
+        let p = t.processes_of(Owner::Session(7));
+        // Sem a raiz (o próprio agente), ordenado pelo início.
+        assert_eq!(p.iter().map(|x| x.pid).collect::<Vec<_>>(), [101, 102]);
+        assert_eq!(p[1].port, Some(5173));
+        assert_eq!(p[0].port, None);
+        // Órfão continua listado depois que a raiz morre.
+        fake.rows.lock().unwrap().retain(|r| r.pid != 100 && r.pid != 101);
+        t.poll();
+        assert_eq!(t.processes_of(Owner::Session(7)).iter().map(|x| x.pid).collect::<Vec<_>>(), [102]);
+        assert!(t.processes_of(Owner::Session(8)).is_empty());
+    }
+
+    fn named(pid: u32, parent: Option<u32>, st: u64, name: &str, cmd: &str) -> ProcRow {
+        ProcRow { pid, parent, name: name.into(), cmdline: cmd.into(), started_at: st, cwd: None }
+    }
+
+    /// Bug real: apareciam msedgewebview2, o argus-desktop instalado e conhost na
+    /// sessão. Vinham de parent pid velho (reutilizado) e de PID de raiz reutilizado.
+    #[test]
+    fn session_never_lists_host_processes() {
+        let fake = Arc::new(Fake {
+            rows: Mutex::new(vec![
+                named(500, Some(1), 100, "claude.exe", "claude -p"),
+                named(501, Some(500), 101, "conhost.exe", "conhost.exe 0x4"),
+                named(502, Some(500), 102, "docker.exe", "docker mcp gateway run"),
+                named(503, Some(500), 105, "node.exe", "node server.js"),
+                // Órfãos antigos cujo parent pid morto (500) foi reutilizado pelo agente.
+                named(600, Some(500), 50, "msedgewebview2.exe", "msedgewebview2.exe --type=renderer"),
+                named(601, Some(500), 60, "argus-desktop.exe", "argus-desktop.exe"),
+                named(602, Some(500), 70, "node.exe", "node antigo.js"),
+                // conhost filho legítimo pelo horário, mas é ruído.
+                named(603, Some(503), 106, "conhost.exe", "conhost.exe"),
+            ]),
+            listen: Mutex::new(vec![]),
+        });
+        let t = ProcTracker::new(fake.clone());
+        t.track(500, Owner::Session(1));
+        t.poll();
+        let p = t.processes_of(Owner::Session(1));
+        assert_eq!(p.iter().map(|x| x.pid).collect::<Vec<_>>(), [502, 503]);
+        assert!(p[0].mcp && !p[1].mcp);
+        assert_eq!(t.owner_of(600), None);
+        assert_eq!(t.owner_of(601), None);
+        assert_eq!(t.owner_of(602), None);
+
+        // O agente termina e o PID 500 é reutilizado pelo WebView2: a raiz cai e
+        // os filhos do processo novo não entram na sessão.
+        {
+            let mut rows = fake.rows.lock().unwrap();
+            rows.retain(|r| r.pid != 500);
+            rows.push(named(500, Some(601), 200, "msedgewebview2.exe", "msedgewebview2.exe"));
+            rows.push(named(700, Some(500), 201, "node.exe", "node do-webview.js"));
+        }
+        t.poll();
+        let p = t.processes_of(Owner::Session(1));
+        assert_eq!(p.iter().map(|x| x.pid).collect::<Vec<_>>(), [502, 503]);
+        assert_eq!(t.owner_of(700), None);
+        assert_eq!(t.root_of(Owner::Session(1)), None);
+    }
+
+    #[test]
+    fn mcp_and_noise_detection() {
+        assert!(is_mcp("docker mcp gateway run"));
+        assert!(is_mcp("node screen-mirror-mcp/dist/cli.js"));
+        assert!(!is_mcp("node vite --port 5173"));
+        assert!(is_host_noise("Conhost.exe") && is_host_noise("msedgewebview2.exe") && !is_host_noise("node.exe"));
+    }
+
+    #[test]
     fn tree_descendants() {
         let rows = vec![row(1, None, 0), row(10, Some(1), 0), row(11, Some(10), 0), row(12, Some(11), 0), row(20, Some(2), 0)];
         let d = descendants(10, &rows);
@@ -552,6 +824,8 @@ Conexões ativas
         assert_eq!(t.servers_of(Owner::Session(7))[0].port, 5173);
         assert_eq!(t.servers_of(Owner::Session(7))[0].url, "http://localhost:5173");
         assert_eq!(t.servers_of(Owner::Terminal(1))[0].pid, 201);
+        assert_eq!(t.owned().len(), 5);
+        assert_eq!(t.root_of(Owner::Terminal(1)), Some(200));
 
         // O claude encerra o turno: 100 e 101 morrem, 102 fica órfão (parent antigo).
         fake.rows.lock().unwrap().retain(|r| r.pid != 100 && r.pid != 101);
@@ -571,6 +845,35 @@ Conexões ativas
     fn kill_refuses_untracked() {
         let t = ProcTracker::new(Arc::new(Fake { rows: Mutex::new(vec![]), listen: Mutex::new(vec![]) }));
         assert!(t.kill(4).is_err());
+    }
+
+    #[test]
+    fn worktree_pids_selects_only_worktree_processes() {
+        let wt = Path::new(r"C:\Proj\.argus-worktrees\app-7");
+        let mk = |pid: u32, cmd: &str, cwd: Option<&str>| ProcRow {
+            pid,
+            parent: None,
+            name: format!("p{pid}"),
+            cmdline: cmd.into(),
+            started_at: 0,
+            cwd: cwd.map(PathBuf::from),
+        };
+        let rows = vec![
+            mk(1, "opencode serve", Some(r"C:\Proj\.argus-worktrees\app-7")), // cwd = worktree
+            mk(2, "node x.js", Some(r"c:\proj\.argus-worktrees\APP-7\src\")), // cwd dentro (outra caixa)
+            mk(3, r#"node "C:\Proj\.argus-worktrees\app-7\srv.js""#, Some(r"C:\")), // linha de comando cita
+            mk(4, "node y.js", Some(r"C:\Proj\.argus-worktrees\app-70")), // prefixo parecido: fora
+            mk(5, r"code C:\Proj\.argus-worktrees\app-70\a", None), // idem na linha de comando
+            mk(6, "filho", None), // da sessão, cwd desconhecido
+            mk(7, "filho", Some(r"C:\Outro")), // da sessão, mas roda fora
+            mk(8, "explorer", Some(r"C:\Users")), // alheio
+            mk(9, "argus", Some(r"C:\Proj\.argus-worktrees\app-7")), // o próprio Argus
+            mk(10, r"\\?\C:\Proj\.argus-worktrees\app-7\bin\x.exe", None), // prefixo \\?\
+        ];
+        let owned: HashSet<u32> = [6, 7].into_iter().collect();
+        assert_eq!(worktree_pids(&rows, &owned, wt, 9), vec![1, 2, 3, 6, 10]);
+        // Raiz de disco nunca casa nada.
+        assert!(worktree_pids(&rows, &owned, Path::new(r"C:\"), 9).is_empty());
     }
 
     #[test]
