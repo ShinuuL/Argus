@@ -1,0 +1,14 @@
+/* Tela 07 · Servidores e portas. Cores só por tokens. */
+.srva-bar { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex: none; }
+.srva-bar .ui-sp { flex: 1; }
+.srva-tabs { padding: 0; border-bottom: 0; }
+.srva-q { width: 260px; height: 24px; padding: 0 9px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; }
+.srva-q:focus { outline: 1px solid var(--focus); }
+.ui-chip.srva-on { color: var(--text); background: var(--selection); }
+.srva-scroll { flex: 1; min-height: 0; overflow: auto; }
+.srva-err { padding: 6px 14px; color: var(--bad); font-size: 12px; border-bottom: 1px solid var(--border); }
+.srva-panel { width: 290px; flex: none; border-left: 1px solid var(--border); background: var(--surface); overflow-y: auto; }
+.srva-detail { padding: 14px; display: grid; gap: 10px; align-content: start; }
+.srva-h { margin: 0; font-size: 13px; font-weight: 600; color: var(--text); }
+.srva-cmd { word-break: break-all; }
+.srva-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

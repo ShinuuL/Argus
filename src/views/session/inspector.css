@@ -1,0 +1,21 @@
+/* Inspetor (tela 03): lista de arquivos, diff resumido e rodapé Descartar / Aplicar tudo. */
+.ins { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.ins-body { flex: 1; min-height: 0; overflow: auto; padding: 8px 0 0; gap: 6px; }
+.ins-body > .rp-head, .ins-body > .rp-hint, .ins-body > .err, .ins-body > .rp-empty, .ins-body > .rp-direct { margin: 0 10px; }
+.ins-files { display: grid; gap: 2px; }
+.ins-file { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 12px; background: none; border: 0; border-radius: 0; text-align: left; color: var(--text-2); min-width: 0; }
+.ins-file:hover { color: var(--text); }
+.ins-file.on { background: var(--selection); color: var(--text); }
+.ins-file-name { flex: 1; min-width: 0; font-family: var(--font-mono-family); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ins-add { font-size: 11px; color: var(--ok); font-variant-numeric: tabular-nums; }
+.ins-del { font-size: 11px; color: var(--bad); font-variant-numeric: tabular-nums; }
+.ins-diff { border-top: 1px solid var(--border); padding: 6px 0; overflow-x: auto; }
+.ins-diff > div { font-family: var(--font-mono-family); font-size: 11.5px; padding: 0 10px; white-space: pre; min-width: max-content; }
+.ins-diff .df-hunk, .ins-diff .df-meta { color: var(--text-2); }
+.ins-diff .df-add { color: var(--text); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.ins-diff .df-del { color: var(--text); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.ins-foot { flex: none; display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--border); }
+.ins-sp { flex: 1; }
+/* Largura do inspetor no mockup. */
+.sh-chat .rp { width: 340px; }
+.rp-scroll:has(> .ins) { overflow: hidden; display: flex; flex-direction: column; }

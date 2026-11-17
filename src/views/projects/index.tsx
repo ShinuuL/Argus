@@ -18,24 +18,27 @@ import {
   type Task,
 } from "@/api";
 import { ContextMenu, type MenuItem } from "@/shell/ContextMenu";
-import { Icon, type IconName } from "@/shell/icons";
-import { activeTab, PAGES, useApp, useLayout, useWorkbench, type PageId } from "@/store";
+import { Icon } from "@/shell/icons";
+import { activeTab, useApp, useLayout, useWorkbench } from "@/store";
 import { cancelTask, deleteClosedTasks, deleteTask, discardTask } from "@/views/session/actions";
 import { sessionTitle } from "@/views/session/events";
-import { StateDot } from "@/views/session";
-import { agentStateOf, agentStateTitle } from "@/views/session/AgentState";
+import { StatusDot } from "@/ui";
+import { agentStateLabel, agentStateOf, agentStateTitle, type AgentStateKind } from "@/views/session/AgentState";
+
+/** Cor do ponto de status (o neutro fica sem tom). */
+const DOT_TONE: Record<AgentStateKind, "ok" | "warn" | "bad" | "info" | undefined> = {
+  working: "ok",
+  queued: "info",
+  attention: "warn",
+  failed: "bad",
+  done: undefined,
+  applied: undefined,
+  interrupted: "warn",
+  idle: undefined,
+};
 import { devServerMenuItems, ProjectServerButton } from "@/views/servers/devservers";
 import "./projects.css";
 
-const PAGE_ICONS: Record<PageId, IconName> = {
-  deps: "box",
-  builds: "hammer",
-  connections: "globe",
-  devices: "devices",
-  metrics: "chart",
-  remote: "phone",
-  settings: "gear",
-};
 
 function onActivateKey(e: KeyboardEvent, action: () => void) {
   if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
@@ -100,7 +103,7 @@ function SessionRow({ task, current, onMenu }: SessionRowProps) {
       onKeyDown={(e) => onActivateKey(e, open)}
       onContextMenu={(e) => onMenu(e, task)}
     >
-      <StateDot task={task} />
+      <StatusDot tone={DOT_TONE[agentStateOf(task.state, denied)]} title={agentStateLabel(agentStateOf(task.state, denied))} />
       <span className="pj-session-title ellipsis">{sessionTitle(task.prompt)}</span>
       {auto && (
         <span
@@ -132,10 +135,6 @@ export default function ProjectsView() {
   const currentTask = useWorkbench((s) => {
     const kind = activeTab(s.groups.find((g) => g.id === s.activeGroup))?.kind;
     return kind?.type === "chat" ? kind.task : null;
-  });
-  const currentPage = useWorkbench((s) => {
-    const kind = activeTab(s.groups.find((g) => g.id === s.activeGroup))?.kind;
-    return kind?.type === "page" ? kind.page : null;
   });
 
   const [query, setQuery] = useState("");
@@ -241,65 +240,52 @@ export default function ProjectsView() {
   };
 
   return (
-    <aside className="pj" aria-label="Projetos e sessões">
-      {/* Linha de título: o botão de alternar a barra flutua por cima (TitleLead). */}
-      <div className="pj-title" data-tauri-drag-region>
-        <span className="pj-title-name">Argus</span>
-      </div>
+    <aside className="pj side" aria-label="Sessões por projeto">
       <div className="pj-search">
-        <Icon name="search" size={13} />
+        <Icon name="search" size={12} />
         <input
-          placeholder="Buscar projeto ou sessão…"
+          placeholder="Filtrar sessões…"
           aria-label="Buscar projeto ou sessão"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        {query && (
+        {query ? (
           <button className="pj-ibtn" title="Limpar a busca" aria-label="Limpar a busca" onClick={() => setQuery("")}>
             <Icon name="close" size={12} />
           </button>
+        ) : (
+          <>
+            <button
+              className="pj-ibtn"
+              aria-pressed={hideClosed}
+              title={hideClosed ? "Mostrar também as sessões encerradas" : "Ocultar as sessões encerradas (aplicadas e descartadas)"}
+              aria-label="Filtrar sessões encerradas"
+              onClick={() => setHideClosed((v) => !v)}
+            >
+              <Icon name="filter" size={13} />
+            </button>
+            <button
+              className="pj-ibtn"
+              title="Atualizar a lista de projetos, branches e alterados"
+              aria-label="Atualizar projetos"
+              disabled={!root || refreshing}
+              onClick={refresh}
+            >
+              <Icon name="refresh" size={13} className={refreshing ? "pj-spin" : undefined} />
+            </button>
+            <button className="pj-ibtn" title="Abrir pasta raiz" aria-label="Abrir pasta raiz" onClick={() => void pickRoot()}>
+              <Icon name="folderOpen" size={13} />
+            </button>
+            <button
+              className="pj-ibtn"
+              title={allCollapsed ? "Expandir todos os projetos" : "Recolher todos os projetos"}
+              aria-label={allCollapsed ? "Expandir tudo" : "Recolher tudo"}
+              onClick={toggleAll}
+            >
+              <Icon name="collapse" size={13} />
+            </button>
+          </>
         )}
-      </div>
-
-      <div className="pj-head">
-        <span className="pj-head-title">Projetos</span>
-        <button className="pj-ibtn" title="Abrir pasta raiz" aria-label="Abrir pasta raiz" onClick={() => void pickRoot()}>
-          <Icon name="folderOpen" size={15} />
-        </button>
-        <button
-          className="pj-ibtn"
-          title="Atualizar a lista de projetos, branches e alterados"
-          aria-label="Atualizar projetos"
-          disabled={!root || refreshing}
-          onClick={refresh}
-        >
-          <Icon name="refresh" size={15} className={refreshing ? "pj-spin" : undefined} />
-        </button>
-        <button
-          className="pj-ibtn"
-          title="Painel: status git de todos os projetos"
-          aria-label="Painel de projetos"
-          onClick={() => useWorkbench.getState().openDashboard()}
-        >
-          <Icon name="grid" size={15} />
-        </button>
-        <button
-          className="pj-ibtn"
-          aria-pressed={hideClosed}
-          title={hideClosed ? "Mostrar também as sessões encerradas" : "Ocultar as sessões encerradas (aplicadas e descartadas)"}
-          aria-label="Filtrar sessões encerradas"
-          onClick={() => setHideClosed((v) => !v)}
-        >
-          <Icon name="filter" size={15} />
-        </button>
-        <button
-          className="pj-ibtn"
-          title={allCollapsed ? "Expandir todos os projetos" : "Recolher todos os projetos"}
-          aria-label={allCollapsed ? "Expandir tudo" : "Recolher tudo"}
-          onClick={toggleAll}
-        >
-          <Icon name="collapse" size={15} />
-        </button>
       </div>
 
       <div className="pj-list" role="tree">
@@ -318,40 +304,39 @@ export default function ProjectsView() {
           const isSel = samePath(p.path, selected);
           const toggle = () => {
             useApp.getState().select(p.path);
-            // Projeto aberto mas não ativo: o clique só o torna ativo.
             if (open && !isSel) return;
             setCollapsed((c) => ({ ...c, [p.path]: open }));
           };
           return (
             <div key={p.path} className="pj-group">
-              <div
+              <h4
                 className={["pj-project", isSel && "sel", p.missing && "missing"].filter(Boolean).join(" ")}
                 role="treeitem"
                 aria-expanded={open}
                 tabIndex={0}
-                title={p.missing ? `${p.path}\n(pasta ausente)` : p.path}
+                title={p.missing ? `${p.path}
+(pasta ausente)` : p.path}
                 onClick={toggle}
                 onContextMenu={(e) => projectMenu(e, p)}
                 onKeyDown={(e) => onActivateKey(e, toggle)}
               >
-                <Icon name={open ? "chevronDown" : "chevronRight"} size={13} className="pj-chev" />
                 <span className="pj-name ellipsis">{p.name || baseName(p.path)}</span>
                 <GitInfo status={statuses[p.path]} kinds={p.kinds} missing={p.missing} />
                 {!p.missing && <ProjectServerButton project={p.path} />}
                 {!p.missing && (
-                <button
-                  className="pj-ibtn pj-add"
-                  title={`Nova conversa em ${p.name}`}
-                  aria-label={`Nova conversa em ${p.name}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    newChat(p.path);
-                  }}
-                >
-                  <Icon name="plus" size={14} />
-                </button>
+                  <button
+                    className="pj-ibtn pj-add"
+                    title={`Nova conversa em ${p.name}`}
+                    aria-label={`Nova conversa em ${p.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      newChat(p.path);
+                    }}
+                  >
+                    <Icon name="plus" size={13} />
+                  </button>
                 )}
-              </div>
+              </h4>
               {open && (
                 <div className="pj-sessions" role="group">
                   {sessions.map((t) => (
@@ -359,7 +344,7 @@ export default function ProjectsView() {
                   ))}
                   {sessions.length === 0 && !p.missing && (
                     <button className="pj-none" onClick={() => newChat(p.path)}>
-                      {total > 0 ? "Nenhuma sessão neste filtro" : "Nenhuma sessão ainda · começar uma conversa"}
+                      {total > 0 ? "Nenhuma sessão neste filtro" : "Nenhuma sessão · começar uma conversa"}
                     </button>
                   )}
                 </div>
@@ -368,21 +353,6 @@ export default function ProjectsView() {
           );
         })}
       </div>
-
-      <nav className="pj-foot" aria-label="Telas">
-        {PAGES.map((page) => (
-          <button
-            key={page.id}
-            className={currentPage === page.id ? "pj-nav on" : "pj-nav"}
-            title={page.title}
-            aria-label={page.label}
-            aria-current={currentPage === page.id ? "page" : undefined}
-            onClick={() => useWorkbench.getState().openPage(page.id)}
-          >
-            <Icon name={PAGE_ICONS[page.id]} size={16} />
-          </button>
-        ))}
-      </nav>
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
     </aside>
   );

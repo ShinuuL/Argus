@@ -286,3 +286,14 @@ button.chat-pill:hover:not(:disabled), .chat-pill-select:hover { background: var
 }
 .am-model-resolved { color: var(--text-dim, inherit); }
 @media (max-width: 900px) { .am-model-resolved { display: none; } }
+
+/* Redesign (mockup .composer): caixa de 12px de raio, chips de modelo/modo, estado, contexto e uso na mesma linha. */
+.chat-box { border-radius: 12px; box-shadow: none; }
+.chat-input { padding: 10px 12px 2px; font-size: 13px; }
+.chat-bar { padding: 4px 10px 8px; gap: 8px; color: var(--text-2); font-size: 11.5px; }
+.chat-pill { height: 20px; padding: 0 8px; border-color: var(--border-strong); border-radius: 99px; font-size: 11px; }
+.chat-hint { font-size: 10.5px; opacity: .7; }
+/* Redesign: os seletores (projeto, agente, modelo) não encolhem a ponto de sumir o nome. */
+.chat-pills > .sel-pill { min-width: 84px; flex: 0 0 auto; }
+.chat-pills { flex-wrap: nowrap; overflow: hidden; }
+.chat-pills > .chat-usage { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

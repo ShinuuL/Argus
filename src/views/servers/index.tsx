@@ -51,7 +51,7 @@ export function SessionServersBadge({ taskId }: SessionServersBadgeProps) {
 /** Botão da status bar: mostra quantos servidores estão rodando e abre/fecha o painel. */
 export function ServersStatusButton() {
   const count = useApp((s) => s.servers.length);
-  const open = useLayout((s) => s.rightOpen && s.rightTab === "servers");
+  const open = useLayout((s) => s.area === "servers");
   const toggle = useLayout((s) => s.toggleServersPanel);
   return (
     <button className="wb-sbtn sb-item" title="Servidores das sessões e dos terminais" aria-pressed={open} onClick={toggle}>

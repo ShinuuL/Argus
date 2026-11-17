@@ -1,13 +1,14 @@
 import { useRef } from "react";
 import { isTaskActive } from "@/api";
-import { useApp, useWorkbench } from "@/store";
-import { UsagePill } from "@/views/chat";
+import { useApp, useLayout, useWorkbench } from "@/store";
+import { useActiveContext } from "./useActiveContext";
 import { BuildsStatusButton } from "@/views/builds";
 import PetView from "@/views/pet";
 import PlayerView from "@/views/player";
 import { ServersStatusButton } from "@/views/servers";
 import { sessionTitle } from "@/views/session/events";
 import { Icon } from "./icons";
+import { AREA_STATUS_SLOT } from "@/ui/AreaStatus";
 
 /** "N agentes rodando": clicar foca a sessão (várias: cada clique vai para a próxima). */
 function AgentsRunning() {
@@ -35,20 +36,50 @@ function AgentsRunning() {
   );
 }
 
+/** Contexto da conversa em foco (mockup .sb): agente, branch e alterações do projeto. */
+function FocusInfo() {
+  const ctx = useActiveContext();
+  const task = useApp((s) => (ctx.taskId == null ? undefined : s.tasks.find((t) => t.id === ctx.taskId)));
+  const status = useApp((s) => (ctx.project ? s.statuses[ctx.project] : undefined));
+  const changed = status?.changed_files.length ?? 0;
+  return (
+    <>
+      {task && <span className="sb-item">● {task.provider}</span>}
+      {status?.branch && <span className="sb-item">{status.branch}</span>}
+      {changed > 0 && (
+        <button className="wb-sbtn sb-item" title="Ver as alterações no inspetor" onClick={() => useLayout.getState().showChanges()}>
+          {changed === 1 ? "1 alteração" : `${changed} alterações`}
+        </button>
+      )}
+    </>
+  );
+}
+
+/** Atalhos à direita, como no mockup; com o inspetor aberto, só o aviso. */
+function Hints() {
+  const area = useLayout((s) => s.area);
+  const inspector = useLayout((s) => s.inspectorOpen);
+  if (area !== "chat") return null;
+  return <span className="sb-item sb-hint">{inspector ? "inspetor aberto" : "Ctrl+J terminal · Ctrl+. inspetor"}</span>;
+}
+
 /** Barra de status: agentes rodando, servidores e uso de hoje à esquerda; player, divisão e pet à direita. */
 export function StatusBar() {
   const split = useWorkbench((s) => s.split);
   const toggleSplitDir = useWorkbench((s) => s.toggleSplitDir);
+  const area = useLayout((s) => s.area);
 
   return (
     <footer className="wb-status">
       <div className="wb-status-l">
+        {area === "chat" || area === "terminal" ? <FocusInfo /> : null}
+        <div id={AREA_STATUS_SLOT} className="sb-area" />
         <AgentsRunning />
         <ServersStatusButton />
         <BuildsStatusButton />
-        <UsagePill />
       </div>
       <div className="wb-status-r">
+        <Hints />
         <PlayerView />
         <button
           className="wb-sbtn sb-item"

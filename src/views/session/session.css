@@ -275,3 +275,8 @@ button.tl-diff-no:hover, button.tl-diff-no:focus-visible { opacity: 1; color: va
 .dt-note textarea:focus { outline: 0; border-color: var(--focus); }
 .dt-note-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .dt-sent { display: flex; align-items: center; gap: 5px; margin: 2px 12px 6px 74px; color: var(--ok); font-size: 11.5px; }
+
+/* Redesign telas 02/03: coluna de leitura de ~640px e linhas de ferramenta compactas. */
+.cv .cv-col { max-width: 688px; padding: 0 24px; }
+.cv .tl-tool { font-size: 11.5px; color: var(--text-2); }
+.cv .tl { gap: 14px; }

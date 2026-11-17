@@ -1,0 +1,35 @@
+/* Configurações (tela 12). Cores só por tokens. */
+.sa-search { display: flex; align-items: center; gap: 6px; margin: 10px 10px 2px; padding: 3px 8px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--bg); }
+.sa-search input { flex: 1; min-width: 0; border: 0; background: none; color: var(--text); font: inherit; font-size: 12px; outline: none; padding: 0; }
+.sa-search:focus-within { border-color: var(--focus); }
+.sa-main { position: relative; }
+.sa-head { display: flex; gap: 16px; align-items: flex-end; padding: 18px 22px 10px; flex-wrap: wrap; }
+.sa-head-text { flex: 1; min-width: 220px; }
+.sa-h { margin: 0; font-size: 16px; font-weight: 600; color: var(--text); }
+.sa-lead { margin: 2px 0 0; }
+.sa-body { padding: 0 22px 16px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+.sa-narrow { max-width: 760px; }
+.sa-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.sa-perm td { vertical-align: middle; }
+.sa-rule { display: inline-flex; align-items: center; gap: 8px; }
+.sa-off td:first-child { color: var(--text-2); }
+.sa-disabled { opacity: 0.45; pointer-events: none; }
+.sa-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.sa-link { border: 0; background: none; padding: 0; color: var(--accent-text); font: inherit; font-size: 11.5px; cursor: pointer; }
+.sa-link:hover { text-decoration: underline; }
+.sa-card { margin: 2px 0 0; }
+.sa-modes { display: flex; gap: 10px; align-items: center; }
+.sa-grow { flex: 1; min-width: 0; }
+.sa-mode { border: 0; background: none; padding: 0; font: inherit; font-weight: 500; color: var(--text); cursor: pointer; }
+.sa-mode:hover { text-decoration: underline; }
+.sa-mode.on { color: var(--accent-text); }
+.sa-sb { position: sticky; bottom: 0; margin-top: auto; display: flex; gap: 10px; padding: 4px 22px; font-size: 11px; color: var(--text-2); border-top: 1px solid var(--border); background: var(--bg); }
+.sa-panel { width: 270px; flex: none; border-left: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+.sa-panel-h { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.sa-panel-h b { font-weight: 600; }
+.sa-panel-empty { padding: 14px; }
+.sa-soon { display: flex; gap: 8px; align-items: center; }
+.sa .set-themes { max-width: 760px; }
+@media (max-width: 900px) { .sa-panel { display: none; } }
+.sa-modes > .sa-grow { flex: 1 1 auto; white-space: nowrap; }
+.sa-modes > :not(.sa-grow) { flex: 0 0 300px; width: 300px; max-width: 50%; }

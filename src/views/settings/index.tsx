@@ -71,7 +71,9 @@ function useAgentSettings(project: Path | null) {
       setError(errorMessage(e));
     }
   }, [project]);
-  useEffect(() => void load(), [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
   const save = async (action: Promise<void>) => {
     try {
       await action;

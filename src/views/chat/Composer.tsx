@@ -147,7 +147,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   const setText = useCallback((value: string) => useChat.getState().setDraft(key, value), [key]);
 
-  useEffect(() => chatAttachmentsCleanup(), []);
+  useEffect(() => {
+    chatAttachmentsCleanup();
+  }, []);
 
   useEffect(() => {
     let alive = true;

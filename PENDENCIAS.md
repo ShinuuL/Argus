@@ -113,8 +113,8 @@ O Screen-Mirror funciona e tem MCP pronto. Reescrever o protocolo do scrcpy de c
 
 ## Conversa (interface)
 
-- [ ] C1. Links clicáveis no chat: URLs na resposta do agente (ex.: link de PR) não abrem. Tornar links do markdown e URLs soltas clicáveis, abrindo no navegador padrão pelo opener do Tauri (nunca dentro do WebView); caminhos de arquivo (`arquivo:linha`) abrindo no editor do Argus.
-- [ ] C2. Rascunho por sessão: o texto digitado e não enviado (e os anexos) fica salvo por sessão/aba e volta ao trocar de aba, de sessão ou de janela e ao reabrir o app. Some só ao enviar ou apagar.
+- [x] C1. Links clicáveis no chat: URLs na resposta do agente (ex.: link de PR) não abrem. Tornar links do markdown e URLs soltas clicáveis, abrindo no navegador padrão pelo opener do Tauri (nunca dentro do WebView); caminhos de arquivo (`arquivo:linha`) abrindo no editor do Argus.
+- [x] C2. Rascunho por sessão: o texto digitado e não enviado (e os anexos) fica salvo por sessão/aba e volta ao trocar de aba, de sessão ou de janela e ao reabrir o app. Some só ao enviar ou apagar.
 
 ## 4. Ordem sugerida
 

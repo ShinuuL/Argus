@@ -1,0 +1,24 @@
+/* Tela 01 · Início (mockup docs/mockups/argus-telas.html #s1). */
+.hm { padding: 18px 22px; gap: 18px; }
+.hm-head { display: flex; align-items: flex-end; gap: 12px; }
+.hm-date { margin: 0; text-transform: lowercase; }
+.hm-hello { margin: 0; font-size: 20px; font-weight: 600; color: var(--text); }
+.hm-sp { flex: 1; }
+.hm-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.hm-cols { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; flex: 1; min-height: 0; }
+.hm-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; color: var(--text); }
+.hm-stat { display: grid; gap: 2px; text-align: left; font: inherit; cursor: pointer; min-width: 0; }
+.hm-stat:hover { border-color: var(--border-strong); }
+.hm-num { font-size: 22px; font-weight: 600; }
+.hm-ok { color: var(--ok); font-weight: 400; }
+.hm-ell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hm-list { display: grid; gap: 2px; align-content: start; overflow-y: auto; min-height: 0; }
+.hm-ttl { margin-bottom: 6px; }
+.hm-it { border-radius: 6px; padding: 5px 8px; }
+.hm-needs { gap: 8px; }
+.hm-need { padding: 4px 0; border-radius: 6px; }
+.hm-need .grow { white-space: normal; }
+@media (max-width: 900px) {
+  .hm-stats { grid-template-columns: repeat(2, 1fr); }
+  .hm-cols { grid-template-columns: 1fr; }
+}

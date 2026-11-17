@@ -5,6 +5,7 @@
  * As funções `*In` são puras (recebem e devolvem os grupos) e o store as aplica.
  */
 import { create } from "zustand";
+import { useLayout, type Area } from "./layout";
 import { api, baseName, samePath, type CmdSpec, type CommandSpec, type Path, type TaskId } from "@/api";
 
 export const MAX_GROUPS = 3;
@@ -47,6 +48,15 @@ export function normalizeKind(kind: TabKind): TabKind {
   if (kind.type === "page" && (kind.page as string) === "providers") return { type: "page", page: "settings" };
   return kind;
 }
+
+/** Páginas que agora abrem como área em tela cheia (barra de ícones). */
+/** Abrir algo no workbench traz a área de conversas para a frente. */
+function toChat(): void {
+  const l = useLayout.getState();
+  if (l.area !== "chat") l.setArea("chat");
+}
+
+const PAGE_AREAS: Partial<Record<PageId, Area>> = { devices: "devices", metrics: "metrics", settings: "settings", connections: "git" };
 
 export const PAGES: { id: PageId; label: string; short: string; title: string }[] = [
   { id: "deps", label: "Dependências", short: "Deps.", title: "Dependências dos projetos" },
@@ -278,10 +288,12 @@ export const useWorkbench = create<WorkbenchState>()((set, get) => {
     open: (kind, preview = false) => {
       if (kind.type === "page" && (kind.page as string) === "providers") set({ settingsSection: "providers" });
       kind = normalizeKind(kind);
+      toChat();
       set((s) => ({ groups: openIn(s.groups, activeIndex(), kind, preview, s.nextId), nextId: s.nextId + 1 }));
     },
     openFile: (path, preview = false) => get().open({ type: "file", path }, preview),
     openSession: (task) => {
+      toChat();
       const s = get();
       // Já aberta em algum grupo: foca lá em vez de duplicar.
       for (const g of s.groups) {
@@ -293,6 +305,7 @@ export const useWorkbench = create<WorkbenchState>()((set, get) => {
     openAgentMap: (task) => get().open({ type: "agentmap", task }),
     openDiff: (task) => get().open({ type: "diff", task }),
     openNewChat: (project = null) => {
+      toChat();
       const s = get();
       const g = s.groups[activeIndex()];
       const empty = g?.tabs.find((t) => t.kind.type === "chat" && t.kind.task == null);
@@ -318,16 +331,22 @@ export const useWorkbench = create<WorkbenchState>()((set, get) => {
           ),
         })),
       })),
-    openPage: (page) => (page === "providers" ? get().openSettings("providers") : get().open({ type: "page", page })),
+    openPage: (page) => {
+      if (page === "providers") return get().openSettings("providers");
+      // Telas que viraram áreas em tela cheia.
+      const area = PAGE_AREAS[page];
+      if (area) return useLayout.getState().setArea(area);
+      get().open({ type: "page", page });
+    },
     setSettingsSection: (settingsSection) => set({ settingsSection }),
     openSettings: (section) => {
       if (section) set({ settingsSection: section });
-      get().open({ type: "page", page: "settings" });
+      useLayout.getState().setArea("settings");
     },
     openTerminal: ({ title, cwd = null, command = null }) =>
       get().open({ type: "terminal", title: title ?? (cwd ? baseName(cwd) : "terminal"), cwd, command }),
     openDashboard: () => get().open({ type: "dashboard" }),
-    openMetrics: () => get().open({ type: "page", page: "metrics" }),
+    openMetrics: () => useLayout.getState().setArea("metrics"),
 
     activate: (gid, tab) =>
       set((s) => ({

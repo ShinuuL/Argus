@@ -16,6 +16,8 @@ import {
   type TaskId,
 } from "@/api";
 import { Icon } from "@/shell/icons";
+import { Btn, Chip } from "@/ui";
+import "./inspector.css";
 import { useApp, useLayout, useWorkbench } from "@/store";
 import { applyTask, discardTask } from "./actions";
 import { subagentTree } from "./events";
@@ -32,14 +34,32 @@ const STATUS_LETTER: Record<FileStatus, string> = {
   Conflicted: "!",
 };
 
+export interface DiffFile {
+  file: string;
+  add: number;
+  del: number;
+  /** A (novo), D (removido) ou M (alterado). */
+  kind: "A" | "D" | "M";
+  /** Linhas do diff deste arquivo (a partir do cabeçalho "diff --git"). */
+  lines: string[];
+}
+
 /** Arquivos citados num diff unificado, com linhas somadas e removidas. */
-function diffFiles(diff: string): { file: string; add: number; del: number }[] {
-  const out: { file: string; add: number; del: number }[] = [];
+export function diffFiles(diff: string): DiffFile[] {
+  const out: DiffFile[] = [];
   for (const line of diff.split("\n")) {
     const m = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
-    if (m) out.push({ file: m[2], add: 0, del: 0 });
-    else if (out.length && line.startsWith("+") && !line.startsWith("+++")) out[out.length - 1].add++;
-    else if (out.length && line.startsWith("-") && !line.startsWith("---")) out[out.length - 1].del++;
+    if (m) {
+      out.push({ file: m[2], add: 0, del: 0, kind: "M", lines: [line] });
+      continue;
+    }
+    const cur = out[out.length - 1];
+    if (!cur) continue;
+    cur.lines.push(line);
+    if (line.startsWith("new file mode")) cur.kind = "A";
+    else if (line.startsWith("deleted file mode")) cur.kind = "D";
+    else if (line.startsWith("+") && !line.startsWith("+++")) cur.add++;
+    else if (line.startsWith("-") && !line.startsWith("---")) cur.del++;
   }
   return out;
 }
@@ -167,7 +187,8 @@ export function ChangesPanel({ taskId, project }: { taskId: TaskId | null; proje
   };
 
   return (
-    <div className="rp-body">
+    <div className="ins">
+     <div className="rp-body ins-body">
       <div className="rp-head">
         <b className="ellipsis">Sessão #{taskId}</b>
         <span className="rp-head-actions">
@@ -182,33 +203,10 @@ export function ChangesPanel({ taskId, project }: { taskId: TaskId | null; proje
           <button className="wb-sbtn" title="Recarregar o diff" aria-label="Recarregar o diff" onClick={() => setReload((n) => n + 1)}>
             <Icon name="refresh" size={14} />
           </button>
+          <Btn variant="ghost" small title="Abrir a revisão completa na área Git" onClick={() => useLayout.getState().showChanges()}>
+            Revisar
+          </Btn>
         </span>
-      </div>
-      <div className="rp-actions">
-        <button
-          className="primary"
-          disabled={!canAct}
-          title="Aplica as alterações desta sessão no projeto"
-          onClick={() =>
-            void run("apply", ["Aplicar alterações", "Aplicar as alterações desta sessão no projeto?"], () => applyTask(taskId))
-          }
-        >
-          <Icon name="check" size={13} /> {busy === "apply" ? "Aplicando…" : "Aplicar"}
-        </button>
-        <button
-          className="danger-btn"
-          disabled={!canAct}
-          title="Descarta as alterações desta sessão (remove o worktree)"
-          onClick={() =>
-            void run(
-              "discard",
-              ["Descartar alterações", "Descartar as alterações desta sessão? Isso não pode ser desfeito."],
-              () => discardTask(taskId),
-            )
-          }
-        >
-          <Icon name="close" size={13} /> {busy === "discard" ? "Descartando…" : "Descartar"}
-        </button>
       </div>
       {!canAct && busy === null && (
         <p className="rp-hint">
@@ -231,34 +229,71 @@ export function ChangesPanel({ taskId, project }: { taskId: TaskId | null; proje
       {diff === null && !error && !closed && <p className="rp-empty">Calculando o diff…</p>}
       {diff !== null && !diff.trim() && <p className="rp-empty">Sem alterações nesta sessão.</p>}
       <DiffBody diff={diff} files={files} />
+     </div>
+      <div className="ins-foot">
+        <Btn
+          variant="ghost"
+          disabled={!canAct}
+          title="Descarta as alterações desta sessão (remove o worktree)"
+          onClick={() =>
+            void run(
+              "discard",
+              ["Descartar alterações", "Descartar as alterações desta sessão? Isso não pode ser desfeito."],
+              () => discardTask(taskId),
+            )
+          }
+        >
+          {busy === "discard" ? "Descartando…" : "Descartar"}
+        </Btn>
+        <span className="ins-sp" />
+        <Btn
+          variant="primary"
+          disabled={!canAct}
+          title="Aplica todas as alterações desta sessão no projeto"
+          onClick={() =>
+            void run("apply", ["Aplicar alterações", "Aplicar as alterações desta sessão no projeto?"], () => applyTask(taskId))
+          }
+        >
+          {busy === "apply" ? "Aplicando…" : "Aplicar tudo"}
+        </Btn>
+      </div>
     </div>
   );
 }
 
-/** Lista de arquivos do diff e o diff colorido. */
-function DiffBody({ diff, files }: { diff: string | null; files: { file: string; add: number; del: number }[] }) {
+/** Lista de arquivos (chip A/M/D, +/−) e o diff resumido do arquivo escolhido. */
+function DiffBody({ diff, files }: { diff: string | null; files: DiffFile[] }) {
+  const [pick, setPick] = useState<string | null>(null);
+  const cur = files.find((f) => f.file === pick) ?? files[0];
+  if (!diff?.trim() || !cur) return null;
+  // Resumido: sem as linhas de cabeçalho do git, só os trechos.
+  const body = cur.lines.filter((l) => !/^(diff --git|index |\+\+\+|---|new file mode|deleted file mode|similarity|rename )/.test(l));
   return (
     <>
-      {files.length > 0 && (
-        <div className="df-files">
-          {files.map((f) => (
-            <div key={f.file} className="df-file static" title={f.file}>
-              <span className="ellipsis">{f.file}</span>
-              <span className="df-add">+{f.add}</span>
-              <span className="df-del">−{f.del}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      {diff?.trim() && (
-        <pre className="df-pre">
-          {diff.split("\n").map((line, i) => (
-            <span key={i} className={lineClass(line)}>
-              {line + "\n"}
-            </span>
-          ))}
-        </pre>
-      )}
+      <div className="ins-files" role="listbox" aria-label="Arquivos alterados">
+        {files.map((f) => (
+          <button
+            key={f.file}
+            role="option"
+            aria-selected={f === cur}
+            className={f === cur ? "ins-file on" : "ins-file"}
+            title={f.file}
+            onClick={() => setPick(f.file)}
+          >
+            <Chip tone={f.kind === "A" ? "ok" : f.kind === "D" ? "bad" : undefined}>{f.kind}</Chip>
+            <span className="ins-file-name">{f.file.split("/").slice(-2).join("/")}</span>
+            {f.add > 0 && <span className="ins-add">+{f.add}</span>}
+            {f.del > 0 && <span className="ins-del">−{f.del}</span>}
+          </button>
+        ))}
+      </div>
+      <div className="ins-diff" aria-label={`Diff de ${cur.file}`}>
+        {body.map((line, i) => (
+          <div key={i} className={lineClass(line)}>
+            {line || " "}
+          </div>
+        ))}
+      </div>
     </>
   );
 }

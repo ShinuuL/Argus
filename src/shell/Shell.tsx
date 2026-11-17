@@ -1,33 +1,58 @@
 /**
- * Layout da IDE:
+ * Layout do app (docs/mockups/argus-telas.html):
  *
- *   (sem barra superior: as abas ocupam a linha de título; ver TopBar.tsx)
- *   barra esquerda (projetos e sessões) | centro (grupos de abas + terminais) | painel direito
- *   status bar
+ *   barra superior (.tb)
+ *   barra de ícones (48px) | área
+ *   barra de status (.sb)
  *
- * O chat é a aba principal do centro. Cada região monta a tela correspondente
- * de `src/views/<tela>`.
+ * A área "chat" (lista de sessões | workbench + terminal inferior | inspetor)
+ * fica SEMPRE montada (escondida nas outras áreas) para preservar abas,
+ * editores e processos dos terminais. Na área "terminal" o mesmo painel
+ * inferior é expandido em tela cheia. As demais áreas montam
+ * src/areas/<area>/index.tsx.
  */
-import { useEffect } from "react";
-import { useApp, useLayout, useWorkbench } from "@/store";
+import { useEffect, type ComponentType } from "react";
+import { useApp, useLayout, useWorkbench, type Area } from "@/store";
 import { InstallPrompt } from "@/views/deps";
-import { Tooltips } from "./Tooltips";
 import ProjectsView from "@/views/projects";
 import WorkbenchView from "@/views/workbench";
+import HomeArea from "@/areas/home";
+import GitArea from "@/areas/git";
+import ServersArea from "@/areas/servers";
+import DevicesArea from "@/areas/devices";
+import MetricsArea from "@/areas/metrics";
+import TerminalArea from "@/areas/terminal";
+import SettingsArea from "@/areas/settings";
+import AgentsArea from "@/areas/agents";
+import { Tooltips } from "./Tooltips";
 import { BottomPanel } from "./BottomPanel";
+import { CommandPalette } from "./CommandPalette";
 import { Icon } from "./icons";
+import { NavRail } from "./NavRail";
 import { RightPanel } from "./RightPanel";
 import { StatusBar } from "./StatusBar";
-import { TitleControls, TitleLead } from "./TopBar";
+import { TopBar } from "./TopBar";
 import { useSyncActiveProject } from "./useActiveContext";
 import { useGlobalShortcuts } from "./useGlobalShortcuts";
+
+/** Áreas em tela cheia ("chat" e "terminal" usam o layout da conversa). */
+const FULL: Partial<Record<Area, ComponentType>> = {
+  home: HomeArea,
+  git: GitArea,
+  servers: ServersArea,
+  devices: DevicesArea,
+  metrics: MetricsArea,
+  settings: SettingsArea,
+  agents: AgentsArea,
+};
 
 export function Shell() {
   const error = useApp((s) => s.error);
   const setError = useApp((s) => s.setError);
   const ready = useApp((s) => s.ready);
+  const area = useLayout((s) => s.area);
   const leftOpen = useLayout((s) => s.leftOpen);
-  const rightOpen = useLayout((s) => s.rightOpen);
+  const inspectorOpen = useLayout((s) => s.inspectorOpen);
   const ctx = useSyncActiveProject();
   useGlobalShortcuts();
 
@@ -38,8 +63,13 @@ export function Shell() {
     if (wb.groups.every((g) => g.tabs.length === 0)) wb.openNewChat(useApp.getState().selected);
   }, [ready]);
 
+  const Full = FULL[area];
+  const chatVisible = area === "chat" || area === "terminal";
+  const termFull = area === "terminal";
+
   return (
     <div className="shell">
+      <TopBar />
       {error && (
         <div className="banner" role="alert">
           <Icon name="alert" size={15} />
@@ -52,19 +82,25 @@ export function Shell() {
           </button>
         </div>
       )}
-      <div className={["sh-main", !leftOpen && "no-left", rightOpen && "rp-open"].filter(Boolean).join(" ")}>
-        <TitleLead />
-        <TitleControls />
-        {leftOpen && <ProjectsView />}
-        <main className="wb-center">
-          <div className="wb-area">
-            <WorkbenchView />
+      <div className="sh-body">
+        <NavRail />
+        <div className={termFull ? "sh-chat term-full" : "sh-chat"} hidden={!chatVisible}>
+          {termFull && <TerminalArea />}
+          <div className="sh-main">
+            {leftOpen && !termFull && <ProjectsView />}
+            <main className="wb-center">
+              <div className="wb-area">
+                <WorkbenchView />
+              </div>
+              <BottomPanel />
+            </main>
+            {inspectorOpen && !termFull && <RightPanel ctx={ctx} />}
           </div>
-          <BottomPanel />
-        </main>
-        {rightOpen && <RightPanel ctx={ctx} />}
+        </div>
+        {Full && <Full />}
       </div>
       <StatusBar />
+      <CommandPalette />
       <InstallPrompt />
       <Tooltips />
     </div>

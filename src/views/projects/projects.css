@@ -1,64 +1,52 @@
-/* Barra esquerda: projetos e sessões. */
-.pj { width: var(--sidebar-width); flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--border); }
-/* Cabeçalho da seção (abaixo da busca): título em caixa normal e ações discretas. */
-.pj-head { display: flex; align-items: center; gap: 2px; flex: none; height: 28px; padding: 0 6px 0 12px; }
-.pj-head-title { flex: 1; font-size: 12px; font-weight: 500; color: var(--text-2); }
-.pj-head .pj-ibtn { opacity: .75; }
-.pj-head:hover .pj-ibtn, .pj-head .pj-ibtn:focus-visible, .pj-head .pj-ibtn[aria-pressed="true"] { opacity: 1; }
-.pj-ibtn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; flex: none; background: none; border: 0; border-radius: var(--radius); color: var(--text-2); }
-.pj-ibtn:hover { background: var(--bg-active); color: var(--text); }
-.pj-ibtn[aria-pressed="true"] { background: var(--bg-active); color: var(--accent-text); }
+/* Lista de sessões agrupada por projeto (.side do mockup, telas 02/03). */
+.pj { width: 230px; flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--border); font-size: 12.5px; }
+.pj-ibtn { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; flex: none; background: none; border: 0; border-radius: 5px; color: var(--text-2); }
+.pj-ibtn:hover { background: var(--selection); color: var(--text); }
+.pj-ibtn[aria-pressed="true"] { color: var(--accent-text); }
+.pj-ibtn:disabled { opacity: .5; cursor: default; }
 
-.pj-search { display: flex; align-items: center; gap: 6px; flex: none; margin: 10px 8px 4px; padding: 0 4px 0 8px; height: 30px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text-2); }
+.pj-search { display: flex; align-items: center; gap: 4px; flex: none; margin: 10px 10px 2px; padding: 0 4px 0 8px; height: 24px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text-2); }
 .pj-search:focus-within { border-color: var(--focus); }
-.pj-search input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: none; color: var(--text); font-size: 12px; }
+.pj-search input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: none; color: var(--text); font-size: 11.5px; }
+.pj-search .pj-ibtn { opacity: .7; }
+.pj-search:hover .pj-ibtn { opacity: 1; }
 
-.pj-list { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 0 8px; }
+.pj-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 0 8px; }
 .pj-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 12px; color: var(--text-2); font-size: 12px; line-height: 1.5; }
 .pj-empty p { margin: 0; }
-.pj-empty button .ic { margin-right: 4px; vertical-align: -2px; }
 
-.pj-project { display: flex; align-items: center; gap: 5px; height: 28px; padding: 0 4px 0 8px; cursor: pointer; min-width: 0; }
-.pj-project:hover { background: var(--bg-hover); }
+/* Cabeçalho do projeto: h4 em caixa alta, discreto. */
+.pj-project { display: flex; align-items: center; gap: 6px; margin: 0; padding: 12px 8px 6px 12px; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); font-weight: 500; cursor: pointer; min-width: 0; }
+.pj-project:hover, .pj-project.sel { color: var(--text); }
 .pj-project:focus-visible, .pj-session:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
-.pj-chev { color: var(--text-2); }
-.pj-name { font-weight: 600; flex: 0 1 auto; }
-/* Projeto ativo: barra lateral de destaque (não muda a cor do nome, para não parecer erro no tema Brasa). */
-.pj-project.sel { box-shadow: inset 2px 0 0 var(--accent); }
-.pj-git { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 11px; white-space: nowrap; overflow: hidden; }
+.pj-name { flex: 0 1 auto; }
+.pj-git { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 6px; font-size: 10px; letter-spacing: 0; text-transform: none; white-space: nowrap; overflow: hidden; opacity: 0; }
+.pj-project:hover .pj-git, .pj-project:focus-visible .pj-git { opacity: 1; }
 .pj-changed { flex: none; color: var(--warn); font-variant-numeric: tabular-nums; }
 .pj-add { visibility: hidden; }
 .pj-project:hover .pj-add, .pj-project:focus-within .pj-add, .pj-add:focus-visible { visibility: visible; }
 
-.pj-sessions { display: flex; flex-direction: column; padding-bottom: 4px; }
-.pj-session { display: flex; align-items: center; gap: 7px; height: 28px; margin: 1px 6px 1px 14px; padding: 0 8px 0 7px; border-radius: var(--radius); cursor: pointer; min-width: 0; color: var(--text-2); font-size: 12.5px; }
-.pj-session:hover { background: var(--bg-hover); color: var(--text); }
-/* Sessão selecionada: cartão neutro (não usa --selection, que no Brasa é vermelho e apaga o ícone de erro). */
-.pj-session.sel { background: var(--bg-active); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
-.pj-session.unread { color: var(--text); font-weight: 700; }
+/* Sessão: linha .it do mockup (ponto de status + título). */
+.pj-sessions { display: flex; flex-direction: column; }
+.pj-session { display: flex; align-items: center; gap: 8px; padding: 5px 12px; cursor: pointer; min-width: 0; color: var(--text-2); }
+.pj-session:hover { color: var(--text); background: color-mix(in srgb, var(--selection) 50%, transparent); }
+.pj-session.sel { background: var(--selection); color: var(--text); }
+.pj-session.unread { color: var(--text); font-weight: 600; }
 .pj-session.closed .pj-session-title { text-decoration: line-through; text-decoration-color: var(--border-strong); }
-.pj-session-title { flex: 1; }
-.pj-provider { flex: 0 1 auto; max-width: 40%; font-size: 11px; font-weight: 400; color: var(--text-2); font-variant-numeric: tabular-nums; }
-.pj-tag { flex: none; display: inline-flex; align-items: center; gap: 3px; padding: 0 5px; height: 15px; border-radius: 8px; background: var(--bg-control); color: var(--text); font-size: 10px; font-weight: 400; }
-.pj-tag.run { background: var(--run-bg); color: var(--run); }
-.pj-tag.ok { background: var(--ok-bg); color: var(--ok); }
-.pj-none { display: block; width: calc(100% - 20px); margin: 0 6px 0 14px; padding: 3px 8px 3px 7px; border-radius: var(--radius); background: none; border: 0; border-radius: 0; text-align: left; color: var(--text-2); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pj-none:hover { background: var(--bg-hover); color: var(--text); }
+.pj-session-title { flex: 1; min-width: 0; }
+.pj-provider { display: none; }
+.pj-tag { flex: none; display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border: 1px solid var(--border-strong); border-radius: 99px; color: var(--text-2); font-size: 10px; font-weight: 400; }
+.pj-tag.run { color: var(--info); border-color: color-mix(in srgb, var(--info) 45%, transparent); }
+.pj-tag.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.pj-none { display: block; width: 100%; padding: 5px 12px; background: none; border: 0; border-radius: 0; text-align: left; color: var(--text-2); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pj-none:hover { color: var(--text); }
 
-/* Rodapé: só ícones; o nome vem do tooltip e do aria-label. */
-.pj-foot { flex: none; display: flex; align-items: center; gap: 2px; padding: 6px 8px; border-top: 1px solid var(--border); }
-.pj-nav { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; background: none; border: 0; border-radius: var(--radius); color: var(--text-2); }
-.pj-nav:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
-.pj-nav:hover { background: var(--bg-hover); color: var(--text); }
-.pj-nav.on { color: var(--text); background: var(--bg-active); }
-.pj-session.sel .pj-provider { color: var(--text); }
-
-/* Atualizar a lista de projetos */
-.pj-ibtn:disabled { opacity: .5; cursor: default; }
 .pj-spin { animation: pj-spin .8s linear infinite; }
 @keyframes pj-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .pj-spin { animation: none; } }
 
-/* Projeto cuja pasta sumiu do disco, mas que ainda tem sessões */
-.pj-project.missing .pj-name { color: var(--text-2); text-decoration: line-through; }
-.pj-missing { color: var(--warn, var(--text-2)); font-style: italic; }
+.pj-project.missing .pj-name { text-decoration: line-through; }
+.pj-missing { color: var(--warn); font-style: italic; }
+
+/* Tela 03: com o inspetor aberto em janela estreita, a lista recolhe para a conversa não espremer. */
+@media (max-width: 1280px) { .sh-chat:has(.rp) .pj { display: none; } }

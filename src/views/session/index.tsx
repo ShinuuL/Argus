@@ -61,6 +61,7 @@ import {
 } from "./events";
 import { AgentModelPill, ComposerOptions, DirectHold, hasGaps, IsolationHold, useWorkModeInfo, WORK_MODE_LABEL } from "./pills";
 import { ContextMeter } from "./ContextMeter";
+import { UsagePill } from "@/views/chat/UsagePill";
 import { Transcript } from "./Transcript";
 import { useTaskEvents } from "./useTaskEvents";
 import { AgentState, agentStateLabel, agentStateOf, lastTurnDenied } from "./AgentState";
@@ -371,8 +372,12 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   const newMode: WorkMode = !isGit ? "Direct" : (modeChoice ?? modeInfo?.effective ?? "Isolated");
   const newModel = modelChoice ?? providers.find((p) => p.id === providerId)?.default_model ?? "";
   // Trocar de projeto ou de provedor desfaz a escolha feita para o anterior.
-  useEffect(() => setModeChoice(null), [newProject]);
-  useEffect(() => setModelChoice(undefined), [providerId]);
+  useEffect(() => {
+    setModeChoice(null);
+  }, [newProject]);
+  useEffect(() => {
+    setModelChoice(undefined);
+  }, [providerId]);
 
   const nodes = useMemo(() => subagentTree(events, times), [events, times]);
   const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
@@ -660,6 +665,9 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
         )
       )}
       <span className="chat-pills-gap" />
+      {task && <AgentState task={task} label />}
+      {task?.context && <ContextMeter ctx={task.context} />}
+      <UsagePill />
       <ComposerOptions
         project={project}
         taskId={taskId}
@@ -685,7 +693,6 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
             <Icon name="plus" size={15} />
           </button>
           <span className="cv-head-space" />
-          {task && <AgentState task={task} label />}
           {task && (
             <span
               className="cv-agent"
@@ -695,7 +702,6 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
             </span>
           )}
           {taskId != null && <SessionServersBadge taskId={taskId} />}
-          {task?.context && <ContextMeter ctx={task.context} />}
           {taskId != null && (
             <button
               className="cv-hbtn"

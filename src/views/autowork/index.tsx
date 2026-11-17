@@ -211,7 +211,9 @@ function NumberField(props: {
   const { id, label, value, min, step, placeholder, disabled, onCommit } = props;
   const shown = value == null ? "" : String(value);
   const [text, setText] = useState(shown);
-  useEffect(() => setText(shown), [shown]);
+  useEffect(() => {
+    setText(shown);
+  }, [shown]);
 
   const commit = () => {
     const t = text.trim();

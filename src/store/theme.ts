@@ -4,12 +4,15 @@
  */
 import { create } from "zustand";
 
-export type ThemeId = "oceano" | "nebulosa" | "brasa";
+export type ThemeId = "oceano" | "nebulosa" | "brasa" | "ciano" | "ambar" | "violeta";
 
 export const THEMES: { id: ThemeId; label: string; hint: string }[] = [
   { id: "oceano", label: "Oceano", hint: "azul" },
   { id: "nebulosa", label: "Nebulosa", hint: "roxo" },
   { id: "brasa", label: "Brasa", hint: "preto e vermelho" },
+  { id: "ciano", label: "Ardósia", hint: "ardósia e ciano" },
+  { id: "ambar", label: "Grafite", hint: "grafite e âmbar" },
+  { id: "violeta", label: "Noite", hint: "noite e violeta" },
 ];
 
 const STORAGE_KEY = "argus.tema";
