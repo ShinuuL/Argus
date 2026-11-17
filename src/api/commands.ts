@@ -15,6 +15,7 @@ import type {
   CommandSpec,
   DepIssue,
   DeviceList,
+  Apk,
   MirrorStatus,
   DirEntry,
   FileStat,
@@ -375,6 +376,13 @@ export const devicesSetAgents = (on: boolean): Promise<MirrorStatus> => invoke("
 
 /** Aparelhos conectados por ADB. */
 export const devicesList = (): Promise<DeviceList> => invoke("devices_list");
+
+/** APKs gerados pelo projeto, o mais novo primeiro. */
+export const devicesApks = (project: Path): Promise<Apk[]> => invoke("devices_apks", { project });
+
+/** Instala um APK do projeto no aparelho; devolve a saída do adb. */
+export const devicesInstall = (project: Path, apk: Path, serial: string): Promise<string> =>
+  invoke("devices_install", { project, apk, serial });
 
 export const remoteInfo = (): Promise<RemoteInfo | null> => invoke("remote_info");
 

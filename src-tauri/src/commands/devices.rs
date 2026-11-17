@@ -2,7 +2,7 @@
 //! é embutido na aba Dispositivos. Ver `argus_core::devices`.
 use super::{blocking, err};
 use crate::state::AppCtx;
-use argus_core::devices::{DeviceList, MirrorStatus};
+use argus_core::devices::{Apk, DeviceList, MirrorStatus};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, State};
 
@@ -67,4 +67,20 @@ pub async fn devices_set_agents(app: AppHandle, on: bool) -> Result<MirrorStatus
 #[tauri::command]
 pub async fn devices_list(app: AppHandle) -> Result<DeviceList, String> {
     blocking(move || app.state::<AppCtx>().mirror.devices().map_err(err)).await
+}
+
+/// APKs gerados pelo projeto (pastas de saída do Gradle e do Flutter), o mais novo primeiro.
+#[tauri::command]
+pub async fn devices_apks(project: PathBuf) -> Result<Vec<Apk>, String> {
+    blocking(move || Ok(argus_core::devices::find_apks(&project))).await
+}
+
+/// Instala (ou atualiza) um APK do projeto no aparelho. Devolve a saída do adb.
+#[tauri::command]
+pub async fn devices_install(app: AppHandle, project: PathBuf, apk: PathBuf, serial: String) -> Result<String, String> {
+    blocking(move || {
+        let ctx = app.state::<AppCtx>();
+        ctx.mirror.install_apk(root(&ctx).as_deref(), &project, &apk, &serial).map_err(err)
+    })
+    .await
 }

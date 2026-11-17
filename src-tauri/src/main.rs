@@ -139,6 +139,8 @@ fn main() {
             devices::devices_set_dir,
             devices::devices_set_agents,
             devices::devices_list,
+            devices::devices_apks,
+            devices::devices_install,
             // dependências
             connections::connections_status,
             connections::connections_repo,

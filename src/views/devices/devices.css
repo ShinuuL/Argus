@@ -25,3 +25,10 @@
 .dv-row { display: flex; gap: 8px; }
 .dv-row input { flex: 1; min-width: 0; }
 .dv-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+.dv-apk {
+  display: flex; align-items: center; gap: var(--space-2, 8px); flex-wrap: wrap;
+  padding: 6px 14px; border-bottom: 1px solid var(--border); background: var(--bg);
+}
+.dv-apk > .ic { color: var(--text-2); }
+.dv-apk-pick { min-width: 240px; max-width: 520px; flex: 1; }
+.dv-apk-err { color: var(--err); white-space: pre-wrap; }

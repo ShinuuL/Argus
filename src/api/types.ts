@@ -686,3 +686,13 @@ export interface DeviceList {
   devices: Device[];
   mirroring: string[];
 }
+
+/** APK achado nas pastas de build do projeto (`argus_core::devices::Apk`). */
+export interface Apk {
+  path: Path;
+  /** Caminho relativo ao projeto. */
+  label: string;
+  size: number;
+  /** Segundos desde a época Unix. */
+  modified: number;
+}

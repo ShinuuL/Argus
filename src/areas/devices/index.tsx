@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage, type Device, type DeviceList, type MirrorStatus } from "@/api";
 import { AreaHeader, Btn, Chip, SideHeading, SideItem, SideList, StatusDot, Tab, Tabs, AreaStatus } from "@/ui";
+import { ApkBar } from "@/views/devices/ApkBar";
 import "./devices-area.css";
 
 const STATE_LABEL: Record<string, string> = {
@@ -148,9 +149,7 @@ export default function DevicesArea() {
           }
           actions={
             <>
-              <Btn variant="ghost" small disabled title="Ainda não há comando de instalação de APK no Argus.">
-                Instalar APK do projeto
-              </Btn>
+              {url && <ApkBar devices={devices} />}
               {url ? (
                 <Btn variant="ghost" small onClick={stop} disabled={busy}>
                   Parar
