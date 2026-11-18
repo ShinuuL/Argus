@@ -1,7 +1,7 @@
 [package]
 name = "argus-celular"
 description = "Argus Celular: aplicativo Android que abre as conversas do Argus no computador"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 
 # Fora do workspace (ver `exclude` no Cargo.toml da raiz): o aplicativo do celular
