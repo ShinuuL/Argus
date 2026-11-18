@@ -18,10 +18,14 @@ lugares, que precisam andar juntos: `package.json`, `src-tauri/tauri.conf.json` 
   local da própria ferramenta (nada sai da máquina). Dá para copiar o endereço, abrir e
   **fechar só o túnel**, sem derrubar o servidor. Vale no computador e no celular.
 
-- Permissões: nível novo **"Compilar e testar"**, ligado por padrão — `npm run`, `cargo test`,
-  `npx tsc`, `pytest`, `go test`, `dotnet build`, `make` e companhia deixam de ser negados ao
-  agente, inclusive no auto-work. Instalar dependência e publicar continuam de fora. Dá para
-  desligar no geral ou por projeto (Configurações › Permissões).
+- Permissões: nível novo **"Compilar e testar"**, ligado por padrão — `npm run`, `pnpm build`,
+  `cargo test`, `npx tsc`, `pytest`, `go test`, `dotnet build`, `make`, `node <script>` e
+  companhia deixam de ser negados ao agente, inclusive no auto-work. Instalar dependência e
+  publicar continuam de fora. Dá para desligar no geral ou por projeto (Configurações ›
+  Permissões).
+- Inspeção: `grep`, `rg`, `findstr`, `Select-String`, `sort`, `diff`, `file` e afins entram no
+  conjunto padrão. Procurar texto no projeto era negado, e o agente parava no meio do trabalho
+  (visto em tarefas reais). `find` do unix e `sed` ficam de fora: apagam e escrevem arquivo.
 - Celular: comando negado agora tem o botão **"Liberar neste projeto"**, como no computador
   (`POST /api/permissions/allow`); antes só dizia para liberar no computador.
 

@@ -45,10 +45,23 @@ pub const GIT_READ: &[&str] = &[
 /// `cd` entra porque o agente costuma escrever `cd <pasta>; git status`: sem ele o
 /// comando inteiro era negado (visto numa tarefa real). O que vem depois do `cd`
 /// continua precisando estar liberado.
-pub const INSPECT: &[&str] = &["cd:*", "ls:*", "dir:*", "pwd", "cat:*", "type:*", "head:*", "tail:*", "wc:*", "which:*", "where:*"];
+/// Procurar e ler também são inspeção: sem `grep`/`rg`/`find` o agente não
+/// consegue nem procurar um texto no projeto (visto numa tarefa real, com o
+/// comando negado no meio do trabalho). Só entram formas que leem; `sed` e
+/// `awk` ficam de fora porque escrevem arquivo (`sed -i`).
+pub const INSPECT: &[&str] = &[
+    "cd:*", "ls:*", "dir:*", "pwd", "cat:*", "type:*", "head:*", "tail:*", "wc:*", "which:*", "where:*", "grep:*", "rg:*",
+    // `findstr` (Windows) é busca de texto; o `find` do unix fica de fora, porque
+    // apaga e executa (`-delete`, `-exec`).
+    "findstr:*", "sort:*", "uniq:*", "cut:*", "tr:*", "echo:*", "basename:*", "dirname:*", "stat:*", "file:*",
+    "diff:*", "tree:*", "du:*", "df:*", "env", "date",
+];
 
 /// As formas do PowerShell para a mesma inspeção (só na ferramenta `PowerShell`).
-pub const INSPECT_POWERSHELL: &[&str] = &["Set-Location:*", "Get-ChildItem:*", "Get-Content:*", "Get-Location", "Get-Command:*", "Test-Path:*"];
+pub const INSPECT_POWERSHELL: &[&str] = &[
+    "Set-Location:*", "Get-ChildItem:*", "Get-Content:*", "Get-Location", "Get-Command:*", "Test-Path:*", "Select-String:*",
+    "Select-Object:*", "Measure-Object:*", "Where-Object:*", "Sort-Object:*", "Resolve-Path:*", "Get-Item:*", "Get-Date",
+];
 
 /// Nível "Git local": altera o repositório, sem falar com servidor nenhum.
 pub const GIT_LOCAL: &[&str] = &[
@@ -73,10 +86,42 @@ pub const FORCE_PUSH: &[&str] = &["git push --force:*", "git push -f:*", "git pu
 /// Nível "Compilar e testar": o que o agente roda para conferir o próprio
 /// trabalho (build, testes, tipos, formatação). Nada que instale dependência,
 /// publique pacote ou fale com servidor de produção — isso continua de fora.
+/// O `pnpm`/`yarn`/`bun` aceitam o nome do script direto (`pnpm build` em vez de
+/// `pnpm run build`), e é assim que o agente escreve. Sem estes, o comando de
+/// build do projeto continuava negado.
 pub const BUILD: &[&str] = &[
     "npm run:*",
     "npm test:*",
     "npm exec:*",
+    "pnpm build:*",
+    "pnpm dev:*",
+    "pnpm test:*",
+    "pnpm lint:*",
+    "pnpm typecheck:*",
+    "pnpm check:*",
+    "pnpm format:*",
+    "pnpm preview:*",
+    "pnpm -r:*",
+    "yarn build:*",
+    "yarn dev:*",
+    "yarn lint:*",
+    "yarn typecheck:*",
+    "corepack pnpm:*",
+    "corepack yarn:*",
+    "corepack enable:*",
+    "corepack --version",
+    "bun run:*",
+    "bun test:*",
+    "deno task:*",
+    "deno test:*",
+    // O agente roda script do próprio projeto (teste, gerador, verificação).
+    // Não é um poder novo: `npm run` já executa o que estiver no package.json.
+    "node:*",
+    "tsx:*",
+    "vitest:*",
+    "jest:*",
+    "eslint:*",
+    "prettier:*",
     "npx tsc:*",
     "npx vitest:*",
     "npx jest:*",
@@ -349,7 +394,22 @@ mod tests {
     #[test]
     fn read_only_set() {
         let t = allowed_tools(&[], GitLevels { local: false, remote: false, build: true });
-        for ok in ["Bash(git status:*)", "Bash(git log:*)", "Bash(git diff:*)", "Bash(git branch)", "Bash(git remote -v)", "Bash(git stash list:*)", "Bash(ls:*)", "Bash(pwd)", "PowerShell(git status:*)", "PowerShell(Get-ChildItem:*)"] {
+        for ok in [
+            "Bash(git status:*)",
+            "Bash(git log:*)",
+            "Bash(git diff:*)",
+            "Bash(git branch)",
+            "Bash(git remote -v)",
+            "Bash(git stash list:*)",
+            "Bash(ls:*)",
+            "Bash(pwd)",
+            // Procurar é inspeção: sem isto o agente não acha texto no projeto.
+            "Bash(grep:*)",
+            "Bash(rg:*)",
+            "PowerShell(git status:*)",
+            "PowerShell(Get-ChildItem:*)",
+            "PowerShell(Select-String:*)",
+        ] {
             assert!(has(&t, ok), "{ok}");
         }
         for no in ["git add", "git commit", "git push", "git pull", "git reset", "git clean", "git branch:*", "git stash:*", "Bash(*)", "Bash(git:*)", "Bash(git *)"] {
@@ -393,10 +453,23 @@ mod tests {
     #[test]
     fn build_level() {
         let on = allowed_tools(&[], GitLevels { local: false, remote: false, build: true });
-        for ok in ["Bash(npm run:*)", "Bash(cargo test:*)", "Bash(npx tsc:*)", "Bash(pytest:*)", "PowerShell(npm run:*)"] {
+        for ok in [
+            "Bash(npm run:*)",
+            "Bash(cargo test:*)",
+            "Bash(npx tsc:*)",
+            "Bash(pytest:*)",
+            "PowerShell(npm run:*)",
+            // Atalho do pnpm/yarn (o jeito que o agente escreve) e o node de script.
+            "Bash(pnpm build:*)",
+            "Bash(pnpm test:*)",
+            "Bash(yarn build:*)",
+            "Bash(corepack pnpm:*)",
+            "Bash(node:*)",
+            "PowerShell(pnpm build:*)",
+        ] {
             assert!(has(&on, ok), "{ok}");
         }
-        for no in ["npm install", "npm publish", "cargo publish", "pip install"] {
+        for no in ["npm install", "npm publish", "cargo publish", "pip install", "pnpm install", "pnpm add"] {
             assert!(!on.iter().any(|x| x.contains(no)), "{no} não devia entrar: {on:?}");
         }
         let off = allowed_tools(&[], GitLevels { local: false, remote: false, build: false });

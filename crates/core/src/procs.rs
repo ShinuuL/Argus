@@ -344,9 +344,13 @@ pub struct TrackedProc {
     pub started_at: u64,
 }
 
-/// Forma comparável de um caminho (barras iguais; no Windows, sem caixa).
+/// Forma comparável de um caminho: barras iguais, sem barra no fim e, no
+/// Windows, sem diferença de caixa e sem o prefixo `\\?\` que o `canonicalize`
+/// acrescenta (sem tirar isso, a pasta registrada nunca batia com o `cwd` que o
+/// sistema informa — era o motivo de o servidor do projeto não ser adotado).
 fn dir_key(p: &Path) -> String {
     let s = p.to_string_lossy().replace('\\', "/");
+    let s = s.strip_prefix("//?/UNC/").map(|r| format!("//{r}")).unwrap_or_else(|| s.strip_prefix("//?/").unwrap_or(&s).to_string());
     let s = s.trim_end_matches('/').to_string();
     if cfg!(windows) {
         s.to_lowercase()
