@@ -15,6 +15,10 @@
 .PARAMETER Aab
   Gera também o .aab (formato da Play Store) além do APK.
 
+.PARAMETER Release
+  Força o APK de release. Sem assinatura configurada ele sai sem assinar, e o
+  Android recusa instalar: serve só para quem vai assinar depois.
+
 .EXAMPLE
   .\gerar-apk.ps1
   .\gerar-apk.ps1 -Instalar
@@ -22,7 +26,8 @@
 [CmdletBinding()]
 param(
     [switch]$Instalar,
-    [switch]$Aab
+    [switch]$Aab,
+    [switch]$Release
 )
 
 $ErrorActionPreference = 'Stop'
@@ -106,20 +111,31 @@ try {
 
     # ------------------------------------------------------------- assinatura
 
+    # O release sem `key.properties` sai SEM ASSINATURA, e o Android recusa
+    # instalar. Então, sem assinatura configurada, o padrão é o debug — que já
+    # vem assinado com a chave de depuração e instala por USB.
     $chaves = Join-Path $gen 'key.properties'
     $assinado = Test-Path $chaves
+    $debug = -not ($assinado -or $Release)
     if ($assinado) {
         Passo 'Assinatura de release encontrada (gen\android\key.properties)'
     }
+    elseif ($Release) {
+        Passo 'Release pedido sem assinatura configurada'
+        Aviso 'O APK vai sair SEM ASSINAR: o aparelho recusa instalar até ele ser assinado.'
+    }
     else {
-        Passo 'Sem assinatura configurada: o APK vai sair em debug'
+        Passo 'Sem assinatura configurada: gerando em debug'
         Aviso 'Instala por USB, mas não serve para publicar. Para assinar, veja "Publicar" no README.'
     }
 
     # ----------------------------------------------------------------- compilar
 
-    Passo 'Compilando'
-    if ($Aab) { npx tauri android build } else { npx tauri android build --apk }
+    Passo ('Compilando (' + $(if ($debug) { 'debug' } else { 'release' }) + ')')
+    $argumentos = @('tauri', 'android', 'build')
+    if (-not $Aab) { $argumentos += '--apk' }
+    if ($debug) { $argumentos += '--debug' }
+    npx @argumentos
     if ($LASTEXITCODE -ne 0) { throw 'A compilação falhou. A saída acima diz o motivo.' }
 
     $saidas = Join-Path $gen 'app\build\outputs'

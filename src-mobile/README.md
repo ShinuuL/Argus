@@ -24,6 +24,7 @@ cd src-mobile
 .\gerar-apk.ps1                 # confere tudo, compila e mostra onde ficou o APK
 .\gerar-apk.ps1 -Instalar       # instala no aparelho ligado por USB
 .\gerar-apk.ps1 -Aab            # gera também o .aab (Play Store)
+.\gerar-apk.ps1 -Release        # força release (sem assinatura, sai sem assinar)
 ```
 
 O script faz, nesta ordem: confere requisitos e variáveis, instala os alvos Rust
@@ -31,6 +32,10 @@ que faltarem, roda `tauri android init` na primeira vez, garante o
 `android:usesCleartextTraffic="true"` no `AndroidManifest.xml` (sem isso o
 Android bloqueia o `http://` da rede local e o aplicativo só conecta em
 servidores `https://`), compila e lista os arquivos gerados.
+
+Sem `key.properties` configurado ele gera em **debug**, de propósito: o release
+sem assinatura sai sem assinar e o Android recusa instalar. O debug já vem
+assinado com a chave de depuração e instala por USB normalmente.
 
 À mão, se preferir — os mesmos passos estão nos scripts do `package.json` da
 raiz (`npm run celular:init | celular:dev | celular:apk`):
