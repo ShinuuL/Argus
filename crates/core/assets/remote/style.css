@@ -575,6 +575,23 @@ textarea.field { resize: vertical; min-height: 140px; line-height: 1.45; }
 .srv-top { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .srv-port { flex: none; font: 650 18px var(--mono); }
 .srv-name { min-width: 0; color: var(--text-2); font-size: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.srv-top { flex-wrap: wrap; }
+/* Selo da linha do servidor: origem ("pela pasta") e exposição na internet. */
+.srv-tag {
+  flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 10px;
+  border: 1px solid var(--border-strong); color: var(--text-2); font-size: 11.500px;
+}
+.srv-tag.warn { border-color: var(--warn); color: var(--warn); }
+/* Caixa do túnel: endereço público e o que isso significa. */
+.srv-exposed {
+  display: grid; gap: 6px; padding: 10px; border: 1px solid var(--warn); border-radius: 12px;
+  background: var(--bg); font-size: 13px; line-height: 1.45;
+}
+.srv-exposed-head { display: flex; align-items: center; gap: 6px; color: var(--warn); }
+.srv-exposed-head b { color: var(--text); font-size: 13px; }
+.srv-exposed-url { color: var(--accent-text, var(--text)); overflow-wrap: anywhere; }
+.srv-exposed-url.dim { color: var(--text-2); }
+.srv-exposed-why { color: var(--text-2); font-size: 12.500px; }
 .srv-cmd { padding: 8px 10px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); font: 12.500px/1.45 var(--mono); color: var(--text-2); overflow-wrap: anywhere; max-height: 84px; overflow: auto; }
 
 /* ------------------------------------------------------------ ajustes: temas */

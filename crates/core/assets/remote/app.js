@@ -2354,6 +2354,50 @@ VIEWS.autowork = (_r, top, view) => {
 
 /* ============================================================ tela: servidores */
 
+/** Por que um servidor fora da árvore da sessão aparece na lista. */
+const FOLDER_HINT =
+  "Está rodando na pasta do projeto da sessão, mas fora da árvore dela (agente que executa por daemon, ou servidor que você mesmo subiu).";
+
+/**
+ * Servidor publicado na internet por um túnel: o endereço público, que do
+ * celular abre de qualquer rede, e o botão de fechar só o túnel.
+ */
+function exposureBox(s, kill) {
+  const e = s.exposure;
+  const box = h(
+    "div",
+    { class: "srv-exposed", role: "status" },
+    h("div", { class: "srv-exposed-head" }, icon("globe", 16), h("b", { text: "Exposto na internet pelo " + e.label })),
+    e.url
+      ? h("a", { class: "srv-exposed-url", href: e.url, target: "_blank", rel: "noopener noreferrer", text: e.url })
+      : h("div", { class: "srv-exposed-url dim", text: "Endereço público desconhecido." }),
+    h("div", { class: "srv-exposed-why", text: "Quem tiver o endereço alcança esta porta do computador, sem senha." }),
+  );
+  const acoes = h("div", { class: "run-actions" });
+  if (e.url) {
+    acoes.append(
+      h(
+        "button",
+        {
+          type: "button",
+          class: "btn",
+          onclick: async () => {
+            const ok = await copyText(e.url);
+            toast(ok ? "Endereço copiado." : "Não foi possível copiar.", ok ? "ok" : "err");
+          },
+        },
+        icon("link", 18),
+        "Copiar",
+      ),
+    );
+  }
+  acoes.append(
+    h("button", { type: "button", class: "btn danger", onclick: () => kill({ pid: e.pid, port: s.port, name: e.label, cmdline: "", tunnel: true }) }, icon("close", 18), "Fechar o túnel"),
+  );
+  box.append(acoes);
+  return box;
+}
+
 VIEWS.servers = (_r, top, view) => {
   const bar = topBar(top, { title: "Servidores" });
   bar.right.append(h("button", { type: "button", class: "ibtn", "aria-label": "Atualizar", title: "Atualizar", onclick: () => loadServers() }, icon("refresh", 22)));
@@ -2363,16 +2407,18 @@ VIEWS.servers = (_r, top, view) => {
 
   async function kill(s) {
     const ok = await confirmSheet({
-      title: "Derrubar o servidor da porta " + s.port + "?",
-      text: "O processo " + s.name + " (pid " + s.pid + ") e os filhos dele são encerrados no computador.",
+      title: s.tunnel ? "Fechar o túnel da porta " + s.port + "?" : "Derrubar o servidor da porta " + s.port + "?",
+      text: s.tunnel
+        ? "O endereço público para de funcionar na hora. O servidor continua rodando no computador."
+        : "O processo " + s.name + " (pid " + s.pid + ") e os filhos dele são encerrados no computador.",
       detail: s.cmdline || null,
-      ok: "Derrubar",
+      ok: s.tunnel ? "Fechar o túnel" : "Derrubar",
       danger: true,
     });
     if (!ok) return;
     try {
       S.servers = (await post("/api/servers/" + s.pid + "/kill")) || [];
-      toast("Servidor da porta " + s.port + " derrubado.", "ok");
+      toast(s.tunnel ? "Túnel fechado." : "Servidor da porta " + s.port + " derrubado.", "ok");
     } catch (e) {
       toast("Não foi possível derrubar: " + e.message, "err");
       loadServers();
@@ -2417,8 +2463,16 @@ VIEWS.servers = (_r, top, view) => {
             h(
               "div",
               { class: "srv", "data-pid": s.pid },
-              h("div", { class: "srv-top" }, h("span", { class: "srv-port", text: ":" + s.port }), h("span", { class: "srv-name", text: s.name + " · pid " + s.pid })),
+              h(
+                "div",
+                { class: "srv-top" },
+                h("span", { class: "srv-port", text: ":" + s.port }),
+                h("span", { class: "srv-name", text: s.name + " · pid " + s.pid }),
+                s.source === "folder" ? h("span", { class: "srv-tag", title: FOLDER_HINT, text: "pela pasta" }) : null,
+                s.exposure ? h("span", { class: "srv-tag warn" }, icon("globe", 12), "exposto") : null,
+              ),
               s.cmdline ? h("div", { class: "srv-cmd", text: s.cmdline }) : null,
+              s.exposure ? exposureBox(s, kill) : null,
               h(
                 "div",
                 { class: "run-actions" },

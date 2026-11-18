@@ -35,6 +35,27 @@ impl Owner {
     }
 }
 
+/// Como o servidor foi ligado ao dono.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ServerSource {
+    /// Descende do processo que o Argus lançou: é da sessão/terminal, sem dúvida.
+    Session,
+    /// Está rodando na pasta do projeto de uma sessão, mas fora da árvore dela.
+    /// Acontece com agente que executa por daemon (opencode) e com servidor que
+    /// você mesmo subiu na pasta. Por isso a lista mostra a diferença.
+    Folder,
+}
+
+impl ServerSource {
+    pub fn label(self) -> &'static str {
+        match self {
+            ServerSource::Session => "da sessão",
+            ServerSource::Folder => "detectado pela pasta",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerInfo {
     pub pid: u32,
@@ -48,6 +69,18 @@ pub struct ServerInfo {
     /// Diretório de trabalho (para reiniciar), se conhecido.
     #[serde(default)]
     pub cwd: Option<PathBuf>,
+    /// De onde veio o vínculo com o dono.
+    #[serde(default = "ServerSource::session")]
+    pub source: ServerSource,
+    /// Túnel publicando esta porta na internet, quando houver.
+    #[serde(default)]
+    pub exposure: Option<crate::tunnels::Exposure>,
+}
+
+impl ServerSource {
+    fn session() -> Self {
+        ServerSource::Session
+    }
 }
 
 /// Processo vivo da árvore de um dono (tarefas em segundo plano da sessão).
@@ -291,6 +324,10 @@ struct Inner {
     roots: HashMap<u32, (Owner, Option<u64>)>,
     /// Todo PID já visto na árvore de um dono (com o start_time, contra reuso de PID).
     known: HashMap<u32, (Owner, u64)>,
+    /// Pasta de trabalho de cada dono: adota servidor que roda nela mesmo fora da árvore.
+    dirs: HashMap<Owner, PathBuf>,
+    /// Endereço público já descoberto de cada túnel, por PID (evita bater na API a cada poll).
+    tunnel_urls: HashMap<u32, String>,
     servers: Vec<ServerInfo>,
     /// Processos vivos das árvores rastreadas, no último poll.
     owned: Vec<TrackedProc>,
@@ -305,6 +342,67 @@ pub struct TrackedProc {
     pub cmdline: String,
     pub cwd: Option<PathBuf>,
     pub started_at: u64,
+}
+
+/// Forma comparável de um caminho (barras iguais; no Windows, sem caixa).
+fn dir_key(p: &Path) -> String {
+    let s = p.to_string_lossy().replace('\\', "/");
+    let s = s.trim_end_matches('/').to_string();
+    if cfg!(windows) {
+        s.to_lowercase()
+    } else {
+        s
+    }
+}
+
+/// Dono cuja pasta contém `cwd`: a mais específica (pasta dentro de pasta) e,
+/// com duas sessões na mesma pasta, a mais recente — o empate precisa ser
+/// sempre o mesmo, senão o servidor trocaria de dono a cada poll.
+fn owner_of_dir(dirs: &HashMap<Owner, PathBuf>, cwd: Option<&Path>) -> Option<Owner> {
+    let cwd = dir_key(cwd?);
+    dirs.iter()
+        .filter(|(_, dir)| {
+            let d = dir_key(dir);
+            cwd == d || cwd.starts_with(&format!("{d}/"))
+        })
+        .max_by_key(|(owner, dir)| {
+            let id = match owner {
+                Owner::Session(id) | Owner::Terminal(id) => *id,
+            };
+            (dir_key(dir).len(), id)
+        })
+        .map(|(owner, _)| *owner)
+}
+
+/// Túneis no ar, por porta local publicada. `urls` guarda o endereço já
+/// descoberto de cada PID: a API local só é consultada enquanto não se sabe.
+fn find_tunnels(
+    rows: &[ProcRow],
+    listen: &[(u32, u16)],
+    urls: &mut HashMap<u32, String>,
+) -> HashMap<u16, crate::tunnels::Exposure> {
+    use crate::tunnels;
+    let mut out: HashMap<u16, tunnels::Exposure> = HashMap::new();
+    for r in rows {
+        let Some(kind) = tunnels::kind_of(&r.cmdline) else { continue };
+        let local = tunnels::target_port(&r.cmdline);
+        // A porta que o próprio túnel escuta é por onde a API dele responde.
+        let metrics = listen.iter().find(|(pid, _)| *pid == r.pid).map(|(_, port)| *port);
+        let url = match urls.get(&r.pid) {
+            Some(u) => Some(u.clone()),
+            None => {
+                let found = tunnels::public_url(kind, metrics, local);
+                if let Some(u) = &found {
+                    urls.insert(r.pid, u.clone());
+                }
+                found
+            }
+        };
+        if let Some(port) = local {
+            out.insert(port, tunnels::Exposure { kind, label: kind.label().to_string(), pid: r.pid, url });
+        }
+    }
+    out
 }
 
 /// Rastreador de processos/servidores. Clonável (compartilhado).
@@ -327,6 +425,16 @@ impl ProcTracker {
     pub fn track(&self, pid: u32, owner: Owner) {
         let st = self.src.processes().into_iter().find(|r| r.pid == pid).map(|r| r.started_at);
         self.lock().roots.insert(pid, (owner, st));
+    }
+
+    /// Diz em que pasta `owner` trabalha. Com isso o rastreador também adota
+    /// servidor que escuta rodando dentro dela, mesmo fora da árvore do dono —
+    /// é o caso do agente que executa comandos por um daemon próprio (opencode),
+    /// cujos processos não são descendentes do que o Argus lançou.
+    pub fn track_dir(&self, owner: Owner, dir: impl Into<PathBuf>) {
+        let dir = dir.into();
+        let dir = dir.canonicalize().unwrap_or(dir);
+        self.lock().dirs.insert(owner, dir);
     }
 
     /// Contador que muda a cada alteração da lista de servidores.
@@ -375,13 +483,21 @@ impl ProcTracker {
         g.owned = owned;
         drop(g);
 
-        let listen = if self.lock().known.is_empty() { Vec::new() } else { self.src.listening() };
+        let has_work = {
+            let g = self.lock();
+            !g.known.is_empty() || !g.dirs.is_empty()
+        };
+        let listen = if has_work { self.src.listening() } else { Vec::new() };
         let mut g = self.lock();
         let mut servers: Vec<ServerInfo> = listen
-            .into_iter()
-            .filter_map(|(pid, port)| {
-                let (owner, _) = *g.known.get(&pid)?;
+            .iter()
+            .filter_map(|&(pid, port)| {
                 let r = by_pid.get(&pid)?;
+                let (owner, source) = match g.known.get(&pid) {
+                    Some((owner, _)) => (*owner, ServerSource::Session),
+                    // Fora da árvore: vale se estiver rodando na pasta de alguém.
+                    None => (owner_of_dir(&g.dirs, r.cwd.as_deref())?, ServerSource::Folder),
+                };
                 Some(ServerInfo {
                     pid,
                     name: r.name.clone(),
@@ -391,10 +507,18 @@ impl ProcTracker {
                     owner,
                     started_at: r.started_at,
                     cwd: r.cwd.clone(),
+                    source,
+                    exposure: None,
                 })
             })
             .collect();
         servers.sort_by_key(|s| (s.port, s.pid));
+        let tunnels = find_tunnels(&rows, &listen, &mut g.tunnel_urls);
+        for s in servers.iter_mut() {
+            s.exposure = tunnels.get(&s.port).cloned();
+        }
+        // Esquece o endereço de túnel que já morreu.
+        g.tunnel_urls.retain(|pid, _| by_pid.contains_key(pid));
         if servers != g.servers {
             g.servers = servers.clone();
             g.rev += 1;
@@ -465,14 +589,32 @@ impl ProcTracker {
         self.lock().known.get(&pid).map(|(o, _)| *o)
     }
 
-    /// Mata a árvore de `pid` (só PIDs rastreados, por segurança).
+    /// `kill(pid)` seria aceito (a interface usa para não oferecer o que falharia).
+    pub fn can_kill(&self, pid: u32) -> bool {
+        self.owner_of(pid).is_some() || self.listed(pid)
+    }
+
+    /// O PID aparece na lista de servidores: o próprio servidor (inclusive o
+    /// adotado pela pasta) ou o túnel que publica um deles.
+    fn listed(&self, pid: u32) -> bool {
+        self.lock().servers.iter().any(|s| s.pid == pid || s.exposure.as_ref().is_some_and(|e| e.pid == pid))
+    }
+
+    /// Mata a árvore de `pid` (só PIDs rastreados ou listados, por segurança).
     pub fn kill(&self, pid: u32) -> anyhow::Result<()> {
-        if self.owner_of(pid).is_none() {
+        if self.owner_of(pid).is_none() && !self.listed(pid) {
             anyhow::bail!("processo {pid} não pertence a nenhuma sessão");
         }
         kill_tree(pid)?;
         let mut g = self.lock();
         g.servers.retain(|s| s.pid != pid);
+        // Túnel derrubado: o servidor continua, sem o selo de exposto.
+        for s in g.servers.iter_mut() {
+            if s.exposure.as_ref().is_some_and(|e| e.pid == pid) {
+                s.exposure = None;
+            }
+        }
+        g.tunnel_urls.remove(&pid);
         g.rev += 1;
         Ok(())
     }
@@ -506,6 +648,7 @@ impl ProcTracker {
         let mut g = self.lock();
         g.roots.retain(|_, (o, _)| *o != owner);
         g.known.retain(|_, (o, _)| *o != owner);
+        g.dirs.remove(&owner);
         g.servers.retain(|s| s.owner != owner);
         g.rev += 1;
     }
@@ -516,7 +659,7 @@ impl ProcTracker {
         let _ = std::thread::Builder::new().name("procs-poll".into()).spawn(move || loop {
             let has_work = {
                 let g = me.lock();
-                !g.roots.is_empty() || !g.known.is_empty() || !g.servers.is_empty()
+                !g.roots.is_empty() || !g.known.is_empty() || !g.dirs.is_empty() || !g.servers.is_empty()
             };
             if has_work {
                 me.poll();
@@ -749,6 +892,63 @@ Conexões ativas
 
     fn named(pid: u32, parent: Option<u32>, st: u64, name: &str, cmd: &str) -> ProcRow {
         ProcRow { pid, parent, name: name.into(), cmdline: cmd.into(), started_at: st, cwd: None }
+    }
+
+    fn in_dir(mut r: ProcRow, dir: &Path) -> ProcRow {
+        r.cwd = Some(dir.to_path_buf());
+        r
+    }
+
+    /// Caso real (opencode): o agente manda os comandos para um daemon próprio,
+    /// que já existia antes do Argus. O servidor e o túnel nascem na árvore do
+    /// daemon, não na do processo lançado aqui — a pasta do projeto é o que
+    /// permite reconhecê-los, e eles entram marcados como "pela pasta".
+    #[test]
+    fn adopts_the_server_running_in_the_project_folder() {
+        let proj = std::path::PathBuf::from(if cfg!(windows) { r"C:\dev\manga-engine" } else { "/dev/manga-engine" });
+        let fora = proj.parent().unwrap().join("outro");
+        let fake = Arc::new(Fake {
+            rows: Mutex::new(vec![
+                // A árvore que o Argus lançou (o cliente do agente).
+                named(100, None, 10, "opencode.exe", "opencode run --format json"),
+                // A árvore do daemon, que nasceu antes e não desce da raiz acima.
+                named(900, None, 1, "opencode.exe", "opencode serve --service"),
+                in_dir(named(901, Some(900), 20, "node.exe", "node apps/web/dist/server.js"), &proj),
+                named(902, Some(900), 21, "cloudflared.exe", "cloudflared.exe tunnel --url http://127.0.0.1:4173"),
+                // Servidor de outra pasta: não é desta sessão.
+                in_dir(named(950, Some(900), 22, "node.exe", "node outro.js"), &fora),
+            ]),
+            listen: Mutex::new(vec![(901, 4173), (950, 9999), (902, 20242)]),
+        });
+        let t = ProcTracker::new(fake.clone());
+        t.track(100, Owner::Session(7));
+        t.track_dir(Owner::Session(7), proj.clone());
+        t.poll();
+
+        let s = t.servers_of(Owner::Session(7));
+        assert_eq!(s.iter().map(|x| x.port).collect::<Vec<_>>(), [4173], "só o servidor da pasta do projeto");
+        assert_eq!(s[0].source, ServerSource::Folder);
+        // O túnel é reconhecido pela linha de comando e vira selo da porta 4173.
+        let e = s[0].exposure.as_ref().expect("túnel na porta 4173");
+        assert_eq!((e.kind, e.pid), (crate::tunnels::TunnelKind::Cloudflared, 902));
+        // Sem API local no teste, o endereço público fica desconhecido — mas a
+        // exposição em si continua visível.
+        assert_eq!(e.url, None);
+        // A porta de métricas do próprio túnel não vira "servidor" da sessão.
+        assert!(t.servers().iter().all(|x| x.port != 20242));
+
+        // Servidor na árvore da sessão continua marcado como dela.
+        fake.rows.lock().unwrap().push(in_dir(named(101, Some(100), 30, "node.exe", "node dev.js"), &proj));
+        fake.listen.lock().unwrap().push((101, 5173));
+        t.poll();
+        let s = t.servers_of(Owner::Session(7));
+        let dela = s.iter().find(|x| x.port == 5173).unwrap();
+        assert_eq!(dela.source, ServerSource::Session);
+
+        // Fim da sessão: nada dela fica para trás.
+        t.forget(Owner::Session(7));
+        t.poll();
+        assert!(t.servers().is_empty());
     }
 
     /// Bug real: apareciam msedgewebview2, o argus-desktop instalado e conhost na

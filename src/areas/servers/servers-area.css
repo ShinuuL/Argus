@@ -12,3 +12,13 @@
 .srva-h { margin: 0; font-size: 13px; font-weight: 600; color: var(--text); }
 .srva-cmd { word-break: break-all; }
 .srva-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+/* Servidor publicado na internet por um túnel (cloudflared, ngrok…). */
+.srva-exposed {
+  display: grid; gap: 8px; padding: 10px; border: 1px solid var(--warn, var(--border-strong));
+  border-radius: var(--radius); background: var(--warn-bg, var(--surface)); font-size: 12.5px; line-height: 1.45;
+}
+.srva-exposed-link {
+  border: 0; background: none; padding: 0; color: var(--accent-text); font: inherit; cursor: pointer;
+  word-break: break-all; text-align: left;
+}
+.srva-exposed-link:hover { text-decoration: underline; }

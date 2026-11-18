@@ -396,6 +396,25 @@ export interface ServerInfo {
   /** Segundos desde a época Unix. */
   started_at: number;
   cwd: Path | null;
+  /** Como foi ligado ao dono: descende do processo lançado, ou roda na pasta do projeto. */
+  source: ServerSource;
+  /** Túnel publicando esta porta na internet, se houver. */
+  exposure: Exposure | null;
+}
+
+export type ServerSource = "session" | "folder";
+
+/** Ferramenta que publica um servidor local na internet. */
+export type TunnelKind = "cloudflared" | "ngrok" | "tailscalefunnel";
+
+export interface Exposure {
+  kind: TunnelKind;
+  /** Nome da ferramenta, já pronto para a tela ("Cloudflare", "ngrok"). */
+  label: string;
+  /** PID do túnel: dá para derrubar só ele, sem parar o servidor. */
+  pid: number;
+  /** Endereço público, quando a ferramenta sabe dizer qual é. */
+  url: string | null;
 }
 
 // --------------------------------------------------------------- dependências

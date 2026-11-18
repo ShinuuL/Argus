@@ -8,6 +8,16 @@ lugares, que precisam andar juntos: `package.json`, `src-tauri/tauri.conf.json` 
 
 ## Não lançado
 
+- Servidores: a lista agora enxerga servidor que roda na pasta do projeto da sessão mesmo fora
+  da árvore de processos dela — é o caso do opencode, que executa os comandos por um daemon
+  próprio, anterior ao Argus (por isso o dev server do projeto não aparecia nem no computador
+  nem no celular). Esses entram marcados como **"pela pasta"**, para não se confundirem com os
+  que descendem do processo lançado pelo Argus.
+- Túneis: `cloudflared`, `ngrok` e `tailscale funnel` são reconhecidos pela linha de comando e
+  viram o selo **"exposto"** no servidor da porta publicada, com o endereço público lido da API
+  local da própria ferramenta (nada sai da máquina). Dá para copiar o endereço, abrir e
+  **fechar só o túnel**, sem derrubar o servidor. Vale no computador e no celular.
+
 - Permissões: nível novo **"Compilar e testar"**, ligado por padrão — `npm run`, `cargo test`,
   `npx tsc`, `pytest`, `go test`, `dotnet build`, `make` e companhia deixam de ser negados ao
   agente, inclusive no auto-work. Instalar dependência e publicar continuam de fora. Dá para

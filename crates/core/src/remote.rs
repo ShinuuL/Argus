@@ -564,7 +564,8 @@ async fn servers_list() -> Response {
 /// Derruba um servidor rastreado (o processo e os filhos). Devolve a lista atualizada.
 async fn server_kill(Path(pid): Path<u32>) -> Response {
     let tracker = crate::procs::tracker();
-    if tracker.owner_of(pid).is_none() {
+    // Vale para o servidor e para o túnel que publica a porta dele.
+    if !tracker.can_kill(pid) {
         return err(StatusCode::NOT_FOUND, "servidor não encontrado");
     }
     match tokio::task::spawn_blocking(move || crate::procs::tracker().kill(pid)).await {

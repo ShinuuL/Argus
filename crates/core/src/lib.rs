@@ -15,5 +15,6 @@ pub mod procs;
 pub mod pty;
 pub mod remote;
 pub mod runs;
+pub mod tunnels;
 pub mod usage;
 pub mod workspace;

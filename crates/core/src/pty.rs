@@ -131,6 +131,8 @@ impl PtyManager {
         if let Some(pid) = child.lock().ok().and_then(|c| c.process_id()) {
             crate::procs::tracker().track(pid, crate::procs::Owner::Terminal(id));
         }
+        // O terminal roda os comandos na própria árvore: não precisa (nem deve)
+        // adotar por pasta, senão disputaria com a sessão o servidor do projeto.
         let (tx, rx) = unbounded_channel();
 
         // Thread de leitura: bloqueante, envia para o canal; ao EOF, aguarda o processo.

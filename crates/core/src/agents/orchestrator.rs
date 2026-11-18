@@ -811,6 +811,10 @@ impl Orchestrator {
         if let Some(pid) = child.id() {
             crate::procs::tracker().track(pid, crate::procs::Owner::Session(id));
         }
+        // Agente que executa comandos por um daemon próprio (opencode) deixa o
+        // servidor fora da árvore do processo lançado aqui: a pasta de trabalho
+        // é o que permite reconhecê-lo mesmo assim.
+        crate::procs::tracker().track_dir(crate::procs::Owner::Session(id), workdir);
 
         if let (Some(mut sin), Some(text)) = (child.stdin.take(), spec.stdin.clone()) {
             tokio::spawn(async move {

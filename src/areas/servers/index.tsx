@@ -15,6 +15,10 @@ import "./servers-area.css";
 type PortTab = "mine" | "all" | "conflicts" | "reserved";
 const keyOf = (s: ServerInfo) => `${s.pid}-${s.port}`;
 
+/** Por que um servidor fora da árvore da sessão aparece aqui. */
+const FOLDER_HINT =
+  "Está rodando na pasta do projeto desta sessão, mas fora da árvore dela. Acontece com agente que executa por um daemon próprio (opencode) e com servidor que você mesmo subiu na pasta.";
+
 function fmtMem(b: number): string {
   if (b >= 1 << 30) return `${(b / (1 << 30)).toFixed(1)} GB`;
   return `${Math.round(b / (1 << 20))} MB`;
@@ -36,9 +40,9 @@ const EMPTY_TEXT: Record<Exclude<PortTab, "mine">, string> = {
 };
 
 function Detail({ server, memory, onError }: { server: ServerInfo; memory: number | null; onError(msg: string | null): void }) {
-  const [busy, setBusy] = useState<"restart" | "kill" | null>(null);
+  const [busy, setBusy] = useState<"restart" | "kill" | "tunnel" | null>(null);
   const now = useNow(1000);
-  const run = async (kind: "restart" | "kill", action: () => Promise<unknown>) => {
+  const run = async (kind: "restart" | "kill" | "tunnel", action: () => Promise<unknown>) => {
     setBusy(kind);
     try {
       await action();
@@ -70,11 +74,45 @@ function Detail({ server, memory, onError }: { server: ServerInfo; memory: numbe
           <div className="ui-mut ui-sm">No ar há</div>
           {formatUptime(server.started_at, now)}
         </div>
-        <div className="ui-card">
+        <div className="ui-card" title={server.source === "folder" ? FOLDER_HINT : "Descende do processo que o Argus lançou."}>
           <div className="ui-mut ui-sm">Dono</div>
           {ownerLabel(server.owner)}
+          {server.source === "folder" && <span className="ui-mut ui-sm"> · pela pasta</span>}
         </div>
       </div>
+      {server.exposure && (
+        <div className="srva-exposed" role="status">
+          <div>
+            <b>Exposto na internet</b> pelo {server.exposure.label}
+            {server.exposure.url ? (
+              <>
+                {" · "}
+                <button
+                  type="button"
+                  className="srva-exposed-link"
+                  onClick={() => api.systemOpenUrl(server.exposure!.url!).then(() => onError(null), (e) => onError(errorMessage(e)))}
+                >
+                  {server.exposure.url}
+                </button>
+              </>
+            ) : (
+              " · endereço público desconhecido"
+            )}
+            <div className="ui-mut ui-sm">Quem tiver o endereço alcança esta porta da sua máquina, sem senha.</div>
+          </div>
+          <Btn
+            variant="bad"
+            disabled={busy !== null}
+            onClick={() =>
+              void run("tunnel", async () => {
+                useApp.setState({ servers: await api.serverKill(server.exposure!.pid) });
+              })
+            }
+          >
+            {busy === "tunnel" ? "Fechando…" : "Fechar o túnel"}
+          </Btn>
+        </div>
+      )}
       <Btn variant="ghost" onClick={() => api.systemOpenUrl(server.url).then(() => onError(null), (e) => onError(errorMessage(e)))}>
         Abrir no navegador
       </Btn>
@@ -128,7 +166,21 @@ export default function ServersArea() {
     { key: "proto", header: "Proto", width: 60, render: () => "TCP" },
     { key: "proc", header: "Processo", render: (s) => <span title={s.cmdline}>{s.name}</span> },
     { key: "proj", header: "Projeto", render: (s) => (s.cwd ? baseName(s.cwd) : ownerLabel(s.owner)) },
-    { key: "state", header: "Estado", width: 90, render: () => <Chip tone="ok">no ar</Chip> },
+    {
+      key: "state",
+      header: "Estado",
+      width: 150,
+      render: (s) => (
+        <>
+          <Chip tone="ok">no ar</Chip>
+          {s.exposure && (
+            <Chip tone="warn" title={`Publicado na internet pelo ${s.exposure.label}${s.exposure.url ? `: ${s.exposure.url}` : ""}`}>
+              exposto
+            </Chip>
+          )}
+        </>
+      ),
+    },
     {
       key: "cpu",
       header: "CPU",
