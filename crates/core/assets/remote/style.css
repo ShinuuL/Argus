@@ -355,6 +355,9 @@ a { color: inherit; text-decoration: none; }
 .denied > span { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; min-width: 0; }
 .denied code { padding: 1px 6px; border-radius: 5px; background: var(--bg); border: 1px solid var(--border); font-size: 12.5px; overflow-wrap: anywhere; }
 .denied-why { flex-basis: 100%; color: var(--text-2); font-size: 12.5px; }
+.denied { flex-wrap: wrap; }
+.denied-allow { margin-left: auto; }
+.btn.small { min-height: 40px; padding: 0 14px; font-size: 13.500px; }
 .working { display: flex; align-items: center; gap: 8px; color: var(--run); font-size: 13.500px; }
 .fail { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--err); border-radius: 12px; background: var(--err-bg); color: var(--err); line-height: 1.45; }
 .fail .ic { margin-top: 1px; }
@@ -380,6 +383,32 @@ details[open] > summary > .chev { transform: rotate(90deg); }
   margin: 2px 0 4px; padding: 10px 12px; max-height: 300px; overflow: auto; border: 1px solid var(--border); border-radius: 10px;
   background: var(--bg); font: 12.500px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
 }
+.tool > summary > .mark { flex: none; }
+/* Blocos da ferramenta aberta: o comando rodado e o resultado. */
+.io { display: flex; flex-direction: column; margin: 2px 0 4px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); overflow: hidden; }
+.io + .io { margin-top: 6px; }
+.io-label {
+  padding: 7px 12px 0; font-size: 11px; letter-spacing: 0.040em; text-transform: uppercase; color: var(--text-2);
+}
+.io > pre {
+  margin: 0; padding: 6px 12px 10px; max-height: 300px; overflow: auto;
+  font: 12.500px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text);
+}
+.io.err { border-color: var(--err); }
+.io.err > pre { color: var(--err); }
+.io-note { padding: 6px 2px 2px; color: var(--text-2); font-size: 12.500px; }
+/* Lista de tarefas (TodoWrite) */
+.todos { list-style: none; margin: 6px 0 2px; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13.500px; }
+.todo { display: flex; align-items: flex-start; gap: 8px; color: var(--text); }
+.todo .ic { flex: none; margin-top: 2px; color: var(--text-2); }
+.todo.completed { color: var(--text-2); text-decoration: line-through; }
+.todo.completed .ic { color: var(--ok); }
+.todo.in_progress { font-weight: 650; }
+.todo.in_progress .ic { color: var(--run); }
+/* Raciocínio */
+.think-label { font-style: italic; }
+.think-text { margin: 4px 0 2px; font-size: 13px; line-height: 1.55; font-style: italic; color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
+.working-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .notice > summary { color: var(--warn); }
 .notice > summary .notice-sum { color: var(--text-2); }
 .steps > summary {
@@ -444,6 +473,34 @@ details[open] > summary > .chev { transform: rotate(90deg); }
   border: 1px solid var(--border-strong); border-radius: 24px; background: var(--surface);
 }
 .composer-box:focus-within { border-color: var(--focus); }
+.composer-box { padding-left: 6px; }
+/* Clipe: abre a galeria do aparelho (input de arquivo escondido). */
+.clip {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: var(--touch); height: var(--touch);
+  padding: 0; border: 0; border-radius: 22px; background: none; color: var(--text-2);
+}
+.clip:active { background: var(--bg-hover); color: var(--text); }
+.clip:disabled { opacity: 0.4; }
+
+/* Anexos ainda na caixa (antes de enviar): miniatura, nome e o X para tirar. */
+.atts-edit { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 2px 8px; }
+.att-edit {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 4px 3px 3px;
+  border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); font-size: 12.500px;
+}
+.att-edit.saving { opacity: 0.75; }
+.att-edit.error { border-color: var(--err); color: var(--err); }
+.att-thumb { width: 32px; height: 32px; border-radius: 9px; object-fit: cover; display: block; }
+.att-edit .ic { margin-left: 6px; }
+.att-name { max-width: 10rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.att-x {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px;
+  padding: 0; border: 0; border-radius: 14px; background: none; color: var(--text-2);
+}
+.att-x:active { background: var(--bg-hover); color: var(--text); }
+.spinner.tiny { width: 13px; height: 13px; border-width: 2px; }
+/* Botão "Anexar da galeria" da tela de conversa nova. */
+.form .btn.wide .ic { margin-right: 2px; }
 .composer-input {
   flex: 1; min-width: 0; display: block; resize: none; min-height: var(--touch); max-height: 150px; padding: 11px 0;
   border: 0; outline: 0; background: transparent; color: var(--text); font-size: 16px; line-height: 1.4;

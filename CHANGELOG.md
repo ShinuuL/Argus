@@ -6,6 +6,33 @@ lugares, que precisam andar juntos: `package.json`, `src-tauri/tauri.conf.json` 
 `[workspace.package]` no `Cargo.toml`. Cada release tem uma tag `vX.Y.Z` e o instalador
 `Argus_X.Y.Z_x64-setup.exe` anexado no GitHub.
 
+## Não lançado
+
+- Permissões: nível novo **"Compilar e testar"**, ligado por padrão — `npm run`, `cargo test`,
+  `npx tsc`, `pytest`, `go test`, `dotnet build`, `make` e companhia deixam de ser negados ao
+  agente, inclusive no auto-work. Instalar dependência e publicar continuam de fora. Dá para
+  desligar no geral ou por projeto (Configurações › Permissões).
+- Celular: comando negado agora tem o botão **"Liberar neste projeto"**, como no computador
+  (`POST /api/permissions/allow`); antes só dizia para liberar no computador.
+
+- Aplicativo do celular (APK) em Tauri 2, em `src-mobile/`: a casca nativa traz só a tela de
+  pareamento e abre a interface servida pelo computador, então o aplicativo acompanha as
+  atualizações do Argus sem gerar outro APK. Ajustes ganham "Trocar de servidor" quando o
+  acesso vem do aplicativo. Como gerar: `src-mobile/README.md`.
+- Celular: as linhas de ferramenta abrem como no computador — comando rodado, resultado,
+  estado (rodando, concluída, falhou), lista de tarefas e o raciocínio do modelo. Antes só
+  mostravam a entrada em JSON e nunca a saída.
+
+- Celular: o app agora anexa imagens da galeria (ou da câmera) ao pedido, tanto numa conversa
+  nova quanto na resposta a uma em andamento. A foto é reduzida no aparelho, gravada na pasta
+  de anexos do Argus por `POST /api/uploads` e vai ao agente pelo caminho, como no computador.
+- Conversa: enquanto o turno roda, só os últimos passos ficam à vista; os anteriores recolhem
+  em "N passos antes". Caminhos compridos nas linhas de ferramenta são encurtados pelo meio
+  (o caminho inteiro continua no tooltip).
+- Animações: a linha "trabalhando" mostra o passo atual (ferramenta, raciocínio ou resposta)
+  com pontos em onda; cada passo novo entra com um deslize curto e a bolinha de "rodando" ganha
+  um halo. Tudo desligado com `prefers-reduced-motion`.
+
 ## 0.1.1 (2026-11-17)
 
 - Interface reorganizada pelo mockup `docs/mockups/argus-telas.html`: barra de ícones com áreas

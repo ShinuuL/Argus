@@ -82,10 +82,12 @@ export default function PermissionsPage() {
   const workMode: WorkMode = (project ? mode?.project : null) ?? mode?.global ?? "Isolated";
   const localSet = own(perms?.project_local, perms?.global_local);
   const remoteSet = own(perms?.project_remote, perms?.global_remote);
+  const buildSet = own(perms?.project_build, perms?.global_build);
   const localOn = localSet ?? workMode === "Isolated";
   const remoteOn = remoteSet ?? false;
+  const buildOn = buildSet ?? true;
 
-  const setOnOff = (level: "local" | "remote") => (v: PolicyValue) => void run(api.permissionsSet(project, level, v === "allow"));
+  const setOnOff = (level: "local" | "remote" | "build") => (v: PolicyValue) => void run(api.permissionsSet(project, level, v === "allow"));
   const inherit = (projVal: unknown) => (project ? projVal == null : false);
 
   const rows: Row[] = [
@@ -116,6 +118,20 @@ export default function PermissionsPage() {
             )}
           </span>
         ),
+    },
+    {
+      id: "build",
+      label: "Compilar e testar (build, testes, tipos)",
+      value: perms ? (buildOn ? "allow" : "deny") : null,
+      options: TWO,
+      onChange: setOnOff("build"),
+      inherited: project ? perms?.project_build == null : perms?.global_build == null,
+      onReset: () => void run(api.permissionsSet(project, "build", null)),
+      note: (
+        <span className="ui-mut">
+          ligado por padrão: npm run, cargo test, npx tsc, pytest… · instalar dependência e publicar continuam de fora
+        </span>
+      ),
     },
     { id: "net", label: "Acessar a internet", value: null, note: "Sem regra própria ainda." },
     {
@@ -153,7 +169,12 @@ export default function PermissionsPage() {
     void run(api.permissionModeSet(project, m.mode), api.permissionsSet(project, "local", m.local), api.permissionsSet(project, "remote", m.remote));
   const activeMode = MODES.find((m) => m.mode === permMode && m.local === localOn && m.remote === remoteOn)?.id;
   const restore = () =>
-    void run(api.permissionModeSet(project, null), api.permissionsSet(project, "local", null), api.permissionsSet(project, "remote", null));
+    void run(
+      api.permissionModeSet(project, null),
+      api.permissionsSet(project, "local", null),
+      api.permissionsSet(project, "remote", null),
+      api.permissionsSet(project, "build", null),
+    );
 
   return (
     <>

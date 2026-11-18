@@ -2,6 +2,9 @@
 resolver = "2"
 # crates/app (UI antiga em Dioxus) fica só como referência e está fora do workspace.
 members = ["crates/core", "src-tauri"]
+# src-mobile (aplicativo Android em Tauri) fica fora: compila para outro alvo,
+# com o SDK/NDK do Android, pelo `cargo tauri android` de dentro da pasta dele.
+exclude = ["src-mobile", "crates/app"]
 
 [workspace.package]
 version = "0.1.1"

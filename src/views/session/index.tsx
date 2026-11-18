@@ -62,7 +62,7 @@ import {
 import { AgentModelPill, ComposerOptions, DirectHold, hasGaps, IsolationHold, useWorkModeInfo, WORK_MODE_LABEL } from "./pills";
 import { ContextMeter } from "./ContextMeter";
 import { UsagePill } from "@/views/chat/UsagePill";
-import { Transcript } from "./Transcript";
+import { liveActivity, Transcript, WorkingLine } from "./Transcript";
 import { useTaskEvents } from "./useTaskEvents";
 import { AgentState, agentStateLabel, agentStateOf, lastTurnDenied } from "./AgentState";
 import "./session.css";
@@ -777,14 +777,12 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                     <div className="ses-sub-box">{current.result || "(sem texto)"}</div>
                   </div>
                 ) : busy ? (
-                  <div className="cv-working">o subagente está trabalhando…</div>
+                  <WorkingLine activity={liveActivity(entries, project)} />
                 ) : (
                   <div className="cv-note">O turno parou antes de o subagente terminar.</div>
                 )
               ) : busy ? (
-                <div className="cv-working">
-                  <span className="ses-dot running" aria-hidden="true" /> o agente está trabalhando…
-                </div>
+                <WorkingLine activity={liveActivity(entries, project)} />
               ) : null
             }
           />

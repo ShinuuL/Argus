@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Argus</title>
+<link rel="stylesheet" href="pair.css">
+</head>
+<body>
+<main class="wrap">
+  <h1>Argus</h1>
+  <p class="sub">Conecte este aparelho ao Argus que está rodando no computador.</p>
+
+  <form id="form" novalidate>
+    <label for="link">Link do pareamento</label>
+    <input id="link" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
+           placeholder="http://192.168.0.10:8787/pair?token=…">
+    <p class="hint">No computador, abra o Argus, vá em <b>Remoto</b> e ligue o servidor. Leia o QR code com a câmera e cole aqui o endereço que ela mostrar — ou digite o endereço e o token.</p>
+    <p id="erro" class="erro" role="alert" hidden></p>
+    <button id="ok" type="submit">Conectar</button>
+  </form>
+
+  <section id="ultimo" hidden>
+    <p class="hint">Último computador usado:</p>
+    <button id="voltar" type="button" class="ghost"></button>
+    <button id="esquecer" type="button" class="ghost small">Esquecer este computador</button>
+  </section>
+
+  <p class="rodape">A conexão é direta com o seu computador, pela rede local ou por VPN. O aplicativo não manda nada para a internet.</p>
+</main>
+<script src="pair.js"></script>
+</body>
+</html>

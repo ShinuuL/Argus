@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { api, errorMessage, formatTokens, formatUsd, type Path, type Pricing, type TokenUsage } from "@/api";
 import { Icon } from "@/shell/icons";
 import { MessageView } from "@/views/chat";
-import { Dot, ThinkingRow, TimelineItem, ToolRow } from "./ToolRow";
+import { Dot, ThinkingRow, TimelineItem, ToolRow, toolSummary } from "./ToolRow";
 import {
   noticeSummary,
   splitTurns,
@@ -124,6 +124,40 @@ export function SubagentCard({ node, taskActive, now, onOpen }: SubagentCardProp
   );
 }
 
+/**
+ * O que o agente está fazendo agora, em uma linha: a última ferramenta sem
+ * saída, o raciocínio ou a resposta sendo escrita.
+ */
+export function liveActivity(entries: ChatEntry[], base: string | null): string {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const e = entries[i];
+    if (e.type === "user") break;
+    if (e.type === "tool") {
+      if (e.result) break;
+      const sum = toolSummary(e.name, e.input, base);
+      return sum ? `${e.name} · ${sum}` : e.name;
+    }
+    if (e.type === "thinking") return "pensando…";
+    if (e.type === "text") return "escrevendo a resposta…";
+    if (e.type === "subagent") return "esperando o subagente…";
+  }
+  return "trabalhando…";
+}
+
+/** Linha "o agente está trabalhando…", com o passo atual e as reticências animadas. */
+export function WorkingLine({ activity }: { activity?: string }) {
+  return (
+    <div className="cv-working" role="status" aria-live="polite">
+      <span className="cv-working-wave" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
+      <span className="cv-working-text">{activity ?? "trabalhando…"}</span>
+    </div>
+  );
+}
+
 export interface TranscriptProps {
   entries: ChatEntry[];
   /** Subagentes por id, para os cartões. */
@@ -143,6 +177,17 @@ export interface TranscriptProps {
   providerName?(id: string): string;
   /** Projeto da conversa (para liberar um comando negado). */
   project?: Path | null;
+}
+
+/** Passos que ficam à vista enquanto o turno roda. */
+const LIVE_KEEP = 8;
+
+/**
+ * Turno em andamento: índice a partir do qual os itens ficam à vista. -1
+ * enquanto couber tudo (não vale recolher 1 ou 2 linhas).
+ */
+function liveCut(items: ChatEntry[]): number {
+  return items.length > LIVE_KEEP + 2 ? items.length - LIVE_KEEP : -1;
 }
 
 export function Transcript(props: TranscriptProps) {
@@ -238,7 +283,10 @@ export function Transcript(props: TranscriptProps) {
         {turns.map((turn, t) => {
           const finished = t < turns.length - 1 || !taskActive;
           const live = !finished;
-          const cut = group && finished ? stepsCut(turn.items) : -1;
+          // Turno terminado: tudo antes da resposta final vira "N passos".
+          // Turno em andamento: só os últimos passos ficam à vista; o resto
+          // recolhe, para a conversa não virar uma lista sem fim.
+          const cut = group ? (finished ? stepsCut(turn.items) : liveCut(turn.items)) : -1;
           const steps = cut > 0 ? turn.items.slice(0, cut) : [];
           const rest = cut > 0 ? turn.items.slice(cut) : turn.items;
           return (
@@ -249,8 +297,8 @@ export function Transcript(props: TranscriptProps) {
                   {steps.length > 0 && (
                     <TimelineItem dot={<Dot status="text" />} className="tl-steps">
                       <details className="cv-steps">
-                        <summary title="Mostrar o que o agente fez antes de responder">
-                          {stepsLabel(steps)}
+                        <summary title={live ? "Mostrar os passos anteriores deste turno" : "Mostrar o que o agente fez antes de responder"}>
+                          {live ? `${stepsLabel(steps)} antes` : stepsLabel(steps)}
                           <Icon name="chevronRight" size={12} className="cv-steps-chev" />
                         </summary>
                         <div className="cv-steps-body tl">{steps.map((e, i) => item(e, `s${i}`, false, false))}</div>

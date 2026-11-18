@@ -10,7 +10,10 @@
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
     "app:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
-    "app:instalador": "tauri build"
+    "app:instalador": "tauri build",
+    "celular:init": "cd src-mobile && tauri android init",
+    "celular:dev": "cd src-mobile && tauri android dev",
+    "celular:apk": "cd src-mobile && tauri android build"
   },
   "dependencies": {
     "@fontsource-variable/geist": "5.3.0",

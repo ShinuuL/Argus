@@ -208,8 +208,8 @@ export const workmodeSet = (project: Path | null, mode: WorkMode | null): Promis
 export const permissionsGet = (project?: Path | null): Promise<PermissionsInfo> =>
   invoke("permissions_get", { project: project ?? null });
 
-/** Liga/desliga um nível de git no geral (`project` null) ou no projeto; `on` null apaga a preferência. */
-export const permissionsSet = (project: Path | null, level: "local" | "remote", on: boolean | null): Promise<void> =>
+/** Liga/desliga um nível no geral (`project` null) ou no projeto; `on` null apaga a preferência. */
+export const permissionsSet = (project: Path | null, level: "local" | "remote" | "build", on: boolean | null): Promise<void> =>
   invoke("permissions_set", { project, level, on });
 
 /** Grava o modo de permissão no geral (`project` null) ou no projeto; `mode` null apaga a do projeto. */

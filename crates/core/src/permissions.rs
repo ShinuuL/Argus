@@ -3,10 +3,10 @@
 //! O claude roda com `--permission-mode acceptEdits`: edições de arquivo passam,
 //! mas todo comando de shell é negado, a não ser o que for listado em
 //! `--allowedTools`. Sem um conjunto padrão, nem `git status` funcionava. Aqui
-//! ficam: o conjunto padrão (git somente leitura e inspeção básica), os dois
-//! níveis de git que alteram o repositório ("Git local" e "Git remoto", cada um
-//! com liga/desliga) e a montagem dos argumentos, somando a lista "Comandos
-//! permitidos ao agente" do projeto.
+//! ficam: o conjunto padrão (git somente leitura e inspeção básica), os níveis
+//! com liga/desliga ("Git local", "Git remoto" e "Compilar e testar") e a
+//! montagem dos argumentos, somando a lista "Comandos permitidos ao agente" do
+//! projeto.
 //!
 //! Sintaxe conferida no claude 2.1.220 (`claude --help`: `--allowedTools
 //! "Bash(git *)"`): `Ferramenta(prefixo:*)` libera o comando e os argumentos;
@@ -70,22 +70,65 @@ pub const GIT_REMOTE: &[&str] = &["git push:*", "git pull:*", "git fetch:*", "gi
 /// Com o "Git remoto" ligado, o push forçado continua negado.
 pub const FORCE_PUSH: &[&str] = &["git push --force:*", "git push -f:*", "git push --force-with-lease:*", "git push * --force*", "git push * -f"];
 
+/// Nível "Compilar e testar": o que o agente roda para conferir o próprio
+/// trabalho (build, testes, tipos, formatação). Nada que instale dependência,
+/// publique pacote ou fale com servidor de produção — isso continua de fora.
+pub const BUILD: &[&str] = &[
+    "npm run:*",
+    "npm test:*",
+    "npm exec:*",
+    "npx tsc:*",
+    "npx vitest:*",
+    "npx jest:*",
+    "npx eslint:*",
+    "npx prettier:*",
+    "pnpm run:*",
+    "pnpm test:*",
+    "yarn run:*",
+    "yarn test:*",
+    "cargo build:*",
+    "cargo check:*",
+    "cargo test:*",
+    "cargo clippy:*",
+    "cargo fmt:*",
+    "go build:*",
+    "go test:*",
+    "go vet:*",
+    "dotnet build:*",
+    "dotnet test:*",
+    "mvn -B test:*",
+    "mvn -B package:*",
+    "gradle build:*",
+    "gradlew build:*",
+    "./gradlew build:*",
+    "make:*",
+    "pytest:*",
+    "python -m pytest:*",
+    "python -m unittest:*",
+    "ruff check:*",
+    "tsc:*",
+];
+
 /// Nunca entram no padrão (só pela lista do projeto, por decisão do usuário).
 pub const NEVER_BY_DEFAULT: &[&str] = &["git push --force", "git reset --hard", "git clean", "shell genérico (qualquer comando)"];
 
-/// Os dois níveis de git que alteram o repositório.
+/// Os níveis que o usuário liga e desliga: os dois de git que alteram o
+/// repositório e o de compilar e testar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GitLevels {
     pub local: bool,
     pub remote: bool,
+    /// Build, testes e checagem de tipos (`BUILD`).
+    pub build: bool,
 }
 
 impl GitLevels {
     /// Padrão sem nenhuma preferência gravada: "Git local" ligado na cópia isolada
     /// (o usuário revisa antes de aplicar) e desligado direto na pasta; "Git
-    /// remoto" desligado nos dois.
+    /// remoto" desligado nos dois; "Compilar e testar" ligado, para o agente
+    /// conferir o próprio trabalho sem precisar pedir.
     pub fn defaults(mode: WorkMode) -> Self {
-        Self { local: mode == WorkMode::Isolated, remote: false }
+        Self { local: mode == WorkMode::Isolated, remote: false, build: true }
     }
 }
 
@@ -97,6 +140,7 @@ pub struct DefaultSet {
     pub inspect_powershell: Vec<String>,
     pub git_local: Vec<String>,
     pub git_remote: Vec<String>,
+    pub build: Vec<String>,
     pub never: Vec<String>,
 }
 
@@ -108,6 +152,7 @@ pub fn default_set() -> DefaultSet {
         inspect_powershell: v(INSPECT_POWERSHELL),
         git_local: v(GIT_LOCAL),
         git_remote: v(GIT_REMOTE),
+        build: v(BUILD),
         never: v(NEVER_BY_DEFAULT),
     }
 }
@@ -120,6 +165,9 @@ fn shell_patterns(levels: GitLevels) -> Vec<&'static str> {
     }
     if levels.remote {
         v.extend(GIT_REMOTE);
+    }
+    if levels.build {
+        v.extend(BUILD);
     }
     v
 }
@@ -293,14 +341,14 @@ mod tests {
 
     #[test]
     fn defaults_by_mode() {
-        assert_eq!(GitLevels::defaults(WorkMode::Isolated), GitLevels { local: true, remote: false });
-        assert_eq!(GitLevels::defaults(WorkMode::Direct), GitLevels { local: false, remote: false });
+        assert_eq!(GitLevels::defaults(WorkMode::Isolated), GitLevels { local: true, remote: false, build: true });
+        assert_eq!(GitLevels::defaults(WorkMode::Direct), GitLevels { local: false, remote: false, build: true });
     }
 
     /// Sem nível nenhum (o padrão de "Direto na pasta"): leitura e inspeção, nada que altere.
     #[test]
     fn read_only_set() {
-        let t = allowed_tools(&[], GitLevels { local: false, remote: false });
+        let t = allowed_tools(&[], GitLevels { local: false, remote: false, build: true });
         for ok in ["Bash(git status:*)", "Bash(git log:*)", "Bash(git diff:*)", "Bash(git branch)", "Bash(git remote -v)", "Bash(git stash list:*)", "Bash(ls:*)", "Bash(pwd)", "PowerShell(git status:*)", "PowerShell(Get-ChildItem:*)"] {
             assert!(has(&t, ok), "{ok}");
         }
@@ -308,7 +356,7 @@ mod tests {
             assert!(!t.iter().any(|x| x.contains(no)), "{no} não devia estar liberado: {t:?}");
         }
         assert!(!t.iter().any(|x| x == "Bash" || x == "PowerShell"), "nunca o shell genérico");
-        assert!(disallowed_tools(&[], GitLevels { local: false, remote: false }).is_empty());
+        assert!(disallowed_tools(&[], GitLevels { local: false, remote: false, build: true }).is_empty());
     }
 
     /// "Git local" (padrão da cópia isolada): altera o repositório, sem rede.
@@ -326,7 +374,7 @@ mod tests {
     /// "Git remoto": push/pull/fetch/clone, com o push forçado negado.
     #[test]
     fn remote_level_keeps_force_push_denied() {
-        let lv = GitLevels { local: false, remote: true };
+        let lv = GitLevels { local: false, remote: true, build: true };
         let t = allowed_tools(&[], lv);
         assert!(has(&t, "Bash(git push:*)") && has(&t, "Bash(git fetch:*)") && has(&t, "PowerShell(git pull:*)"));
         assert!(!t.iter().any(|x| x.contains("git commit")));
@@ -340,14 +388,31 @@ mod tests {
         assert!(disallowed_tools(&["git push --force:*".into()], lv).is_empty());
     }
 
+    /// "Compilar e testar" (ligado por padrão): build, testes e tipos passam;
+    /// instalar dependência e publicar, não.
+    #[test]
+    fn build_level() {
+        let on = allowed_tools(&[], GitLevels { local: false, remote: false, build: true });
+        for ok in ["Bash(npm run:*)", "Bash(cargo test:*)", "Bash(npx tsc:*)", "Bash(pytest:*)", "PowerShell(npm run:*)"] {
+            assert!(has(&on, ok), "{ok}");
+        }
+        for no in ["npm install", "npm publish", "cargo publish", "pip install"] {
+            assert!(!on.iter().any(|x| x.contains(no)), "{no} não devia entrar: {on:?}");
+        }
+        let off = allowed_tools(&[], GitLevels { local: false, remote: false, build: false });
+        assert!(!off.iter().any(|x| x.contains("npm run") || x.contains("cargo test")));
+        // O padrão de qualquer modo de trabalho já vem com o nível ligado.
+        assert!(GitLevels::defaults(WorkMode::Direct).build && GitLevels::defaults(WorkMode::Isolated).build);
+    }
+
     /// A lista do projeto soma ao padrão, sem repetir.
     #[test]
     fn project_list_is_added() {
         let cmds = vec!["npm run dev:*".to_string(), " ".to_string(), "Read(//c/dados/**)".to_string(), "git status:*".to_string()];
-        let t = allowed_tools(&cmds, GitLevels { local: false, remote: false });
+        let t = allowed_tools(&cmds, GitLevels { local: false, remote: false, build: true });
         assert!(has(&t, "Bash(npm run dev:*)") && has(&t, "Read(//c/dados/**)"));
         assert_eq!(t.iter().filter(|x| *x == "Bash(git status:*)").count(), 1);
-        assert!(!args(&cmds, GitLevels { local: false, remote: false }).contains(&"--disallowedTools".to_string()));
+        assert!(!args(&cmds, GitLevels { local: false, remote: false, build: true }).contains(&"--disallowedTools".to_string()));
     }
 
     #[test]

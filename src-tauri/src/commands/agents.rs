@@ -106,7 +106,7 @@ pub async fn workmode_set(ctx: State<'_, AppCtx>, project: Option<PathBuf>, mode
     blocking(move || orch.set_work_mode_setting(project.as_deref(), mode).map_err(err)).await
 }
 
-/// Permissões de comando do agente: o conjunto padrão e os níveis de git.
+/// Permissões de comando do agente: o conjunto padrão e os níveis liga/desliga.
 #[derive(Debug, Clone, Serialize)]
 pub struct PermissionsInfo {
     /// O que está liberado sem configurar nada, e o que cada nível acrescenta.
@@ -114,15 +114,17 @@ pub struct PermissionsInfo {
     /// Preferência geral de cada nível (None = padrão do modo de trabalho).
     pub global_local: Option<bool>,
     pub global_remote: Option<bool>,
+    pub global_build: Option<bool>,
     /// Preferência do projeto (None = segue a geral).
     pub project_local: Option<bool>,
     pub project_remote: Option<bool>,
+    pub project_build: Option<bool>,
     /// Modo de permissão ("auto" | "restricted"): geral e do projeto (None = segue).
     pub global_mode: Option<argus_core::permissions::PermissionMode>,
     pub project_mode: Option<argus_core::permissions::PermissionMode>,
 }
 
-/// Conjunto padrão de comandos liberados e as preferências dos níveis de git.
+/// Conjunto padrão de comandos liberados e as preferências dos níveis.
 #[tauri::command]
 pub async fn permissions_get(ctx: State<'_, AppCtx>, project: Option<PathBuf>) -> Result<PermissionsInfo, String> {
     let orch = ctx.orch.clone();
@@ -132,8 +134,10 @@ pub async fn permissions_get(ctx: State<'_, AppCtx>, project: Option<PathBuf>) -
             defaults: argus_core::permissions::default_set(),
             global_local: orch.git_setting(None, "local"),
             global_remote: orch.git_setting(None, "remote"),
+            global_build: orch.git_setting(None, "build"),
             project_local: p.and_then(|p| orch.git_setting(Some(p), "local")),
             project_remote: p.and_then(|p| orch.git_setting(Some(p), "remote")),
+            project_build: p.and_then(|p| orch.git_setting(Some(p), "build")),
             global_mode: orch.permission_mode_setting(None),
             project_mode: p.and_then(|p| orch.permission_mode_setting(Some(p))),
         })
@@ -141,12 +145,12 @@ pub async fn permissions_get(ctx: State<'_, AppCtx>, project: Option<PathBuf>) -
     .await
 }
 
-/// Liga ou desliga um nível de git ("local" ou "remote"), no geral (`project`
+/// Liga ou desliga um nível ("local", "remote" ou "build"), no geral (`project`
 /// ausente) ou num projeto. `on` ausente apaga a preferência.
 #[tauri::command]
 pub async fn permissions_set(ctx: State<'_, AppCtx>, project: Option<PathBuf>, level: String, on: Option<bool>) -> Result<(), String> {
-    if level != "local" && level != "remote" {
-        return Err("Nível de git desconhecido.".into());
+    if level != "local" && level != "remote" && level != "build" {
+        return Err("Nível de permissão desconhecido.".into());
     }
     let orch = ctx.orch.clone();
     blocking(move || orch.set_git_setting(project.as_deref(), &level, on).map_err(err)).await

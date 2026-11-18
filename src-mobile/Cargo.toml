@@ -1,0 +1,20 @@
+[package]
+name = "argus-celular"
+description = "Argus Celular: aplicativo Android que abre as conversas do Argus no computador"
+version = "0.1.1"
+edition = "2021"
+
+# Fora do workspace (ver `exclude` no Cargo.toml da raiz): o aplicativo do celular
+# é compilado para Android pelo `cargo tauri android`, com outro alvo e outro SDK.
+
+[lib]
+name = "argus_celular_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

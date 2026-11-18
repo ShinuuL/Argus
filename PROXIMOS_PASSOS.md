@@ -68,6 +68,9 @@ src-tauri/    crate argus-desktop (Tauri 2, identificador dev.argus.app)
   src/commands/  workspace, monitor, fs, pty, agents, autowork, servers, deps, metrics,
                  remote, media, system, extra_agents, extra_chat  (84 comandos)
   src/events.rs  repassa os eventos do orquestrador e dos servidores para a interface
+src-mobile/   crate argus-celular (Tauri 2 Android, dev.argus.celular): casca do aplicativo do
+              celular. Só a tela de pareamento (web/); depois disso a webview abre a interface
+              servida pelo computador. Fora do workspace; gerar com `gerar-apk.ps1` (ver README)
 crates/core   (argus-core): workspace, monitor, pty, procs, deps, metrics, db, remote, autowork,
               isolation (o que a cópia isolada não teria), permissions (comandos liberados ao agente),
               agents/{provider, claude, opencode, codex, gemini, orchestrator, handoff (resumo na troca de agente)}

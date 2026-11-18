@@ -28,14 +28,34 @@ function relative(path: string, base: string | null): string {
   return p.toLowerCase().startsWith(b.toLowerCase() + "/") ? p.slice(b.length + 1) : path;
 }
 
+/**
+ * Caminho comprido (anexo, pasta fora do projeto) encurtado pelo meio: o que
+ * importa na linha é o fim. "C:\...\anexos\novo\x\print.png" → "…/x/print.png".
+ */
+export function shortPath(path: string, max = 52): string {
+  if (path.length <= max) return path;
+  const sep = path.includes("\\") && !path.includes("/") ? "\\" : "/";
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  for (let keep = 3; keep >= 1; keep--) {
+    if (parts.length <= keep) break;
+    const tail = `…${sep}${parts.slice(-keep).join(sep)}`;
+    if (tail.length <= max) return tail;
+  }
+  // Um trecho único e comprido (nome de arquivo enorme): corta o meio dele.
+  const last = parts[parts.length - 1] ?? path;
+  return last.length <= max ? `…${sep}${last}` : `${last.slice(0, max - 12)}…${last.slice(-9)}`;
+}
+
 /** Resumo de uma linha da entrada, por ferramenta (comando, caminho, padrão...). */
-export function toolSummary(name: string, input: unknown, base: string | null = null): string {
+export function toolSummary(name: string, input: unknown, base: string | null = null, short = true): string {
   if (input == null) return "";
   if (typeof input !== "object") return String(input);
   const raw = asInput(input);
   const o: Input = { ...raw };
   for (const k of ["file_path", "path", "filePath", "notebook_path"]) {
-    if (typeof o[k] === "string") o[k] = relative(o[k] as string, base);
+    if (typeof o[k] !== "string") continue;
+    const rel = relative(o[k] as string, base);
+    o[k] = short ? shortPath(rel) : rel;
   }
   const t = name.toLowerCase();
   if (t === "read") {
@@ -241,11 +261,13 @@ export function ToolRow({ name, input, result, live, base = null }: ToolRowProps
   const [open, setOpen] = useState(isTodo);
   const status: ToolStatus = result ? (result.ok ? "ok" : "error") : live ? "running" : "none";
   const summary = isTodo ? "" : toolSummary(name, input, base);
+  // No tooltip o caminho vai inteiro; na linha, encurtado pelo meio.
+  const full = isTodo ? "" : toolSummary(name, input, base, false);
   const diff = open ? toolDiff(name, input) : null;
   const label = isTodo ? "Tarefas" : name;
   return (
     <TimelineItem dot={<Dot status={status} title={STATUS_TITLE[status]} />} className={`tl-tool${open ? " open" : ""}`}>
-      <button type="button" className="tl-row" aria-expanded={open} onClick={() => setOpen((v) => !v)} title={summary || undefined}>
+      <button type="button" className="tl-row" aria-expanded={open} onClick={() => setOpen((v) => !v)} title={full || undefined}>
         <Icon name={toolIcon(name)} size={13} className="tl-row-ic" />
         <b>{label}</b>
         {summary && <span className="tl-row-sum">{summary}</span>}

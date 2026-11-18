@@ -246,23 +246,26 @@ export interface ContextUsage {
   window: number | null;
 }
 
-/** Conjunto padrão de comandos liberados ao agente e o que cada nível de git acrescenta. */
+/** Conjunto padrão de comandos liberados ao agente e o que cada nível acrescenta. */
 export interface DefaultPermissions {
   git_read: string[];
   inspect: string[];
   inspect_powershell: string[];
   git_local: string[];
   git_remote: string[];
+  build: string[];
   never: string[];
 }
 
-/** Permissões de comando: o padrão e as preferências dos níveis de git (null = segue o padrão). */
+/** Permissões de comando: o padrão e as preferências dos níveis (null = segue o padrão). */
 export interface PermissionsInfo {
   defaults: DefaultPermissions;
   global_local: boolean | null;
   global_remote: boolean | null;
+  global_build: boolean | null;
   project_local: boolean | null;
   project_remote: boolean | null;
+  project_build: boolean | null;
   global_mode: PermissionMode | null;
   project_mode: PermissionMode | null;
 }

@@ -12,7 +12,7 @@ use crate::agents::orchestrator::{Orchestrator, OrchestratorEvent, TaskId};
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Path, Query, Request, State,
+        DefaultBodyLimit, Path, Query, Request, State,
     },
     http::{header, HeaderMap, StatusCode},
     middleware::{self, Next},
@@ -39,7 +39,8 @@ const GEIST_WOFF2: &[u8] = include_bytes!("../assets/remote/geist.woff2");
 const UNAUTHORIZED_HTML: &str = include_str!("../assets/remote/unauthorized.html");
 
 /// Política de conteúdo das páginas: só arquivos do próprio servidor, sem script inline.
-const CSP: &str = "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+/// `blob:` em `img-src` é a miniatura da foto escolhida na galeria (fica só no aparelho).
+const CSP: &str = "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 const CSP_UNAUTHORIZED: &str = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'";
 
 /// Cores de cada tema (as mesmas de `src/styles/tokens.css`): (fundo, superfície,
@@ -252,10 +253,16 @@ async fn auth(State(st): State<AppState>, req: Request, next: Next) -> Response 
 #[derive(Deserialize)]
 struct PairQuery {
     token: Option<String>,
+    /// `1` quando quem pareou é o aplicativo do celular (e não o navegador).
+    #[serde(default)]
+    app: Option<String>,
 }
 
 async fn pair(State(st): State<AppState>, q: Result<Query<PairQuery>, axum::extract::rejection::QueryRejection>) -> Response {
-    let token = q.ok().and_then(|Query(q)| q.token).unwrap_or_default();
+    let q = q.ok().map(|Query(q)| q);
+    let token = q.as_ref().and_then(|q| q.token.clone()).unwrap_or_default();
+    // Só o valor exato "1" segue adiante: nada da URL entra na página.
+    let from_app = q.as_ref().and_then(|q| q.app.as_deref()) == Some("1");
     if !st.check(&token) {
         return unauthorized_page();
     }
@@ -272,9 +279,15 @@ async fn pair(State(st): State<AppState>, q: Result<Query<PairQuery>, axum::extr
             (header::CONTENT_SECURITY_POLICY, CSP_UNAUTHORIZED),
             (header::REFERRER_POLICY, "no-referrer"),
         ],
-        PAIRED_PAGE,
+        paired_page(from_app),
     )
         .into_response()
+}
+
+/// Página de "aparelho pareado", que segue sozinha para a tela inicial.
+/// `app` marca que quem abriu foi o aplicativo do celular (muda só os Ajustes).
+fn paired_page(app: bool) -> String {
+    PAIRED_PAGE.replace("__DESTINO__", if app { "/?pareado=1&app=1" } else { "/?pareado=1" })
 }
 
 /// Quantas portas acima da pedida são tentadas antes de desistir.
@@ -300,10 +313,10 @@ async fn bind_nearest(port: u16) -> anyhow::Result<tokio::net::TcpListener> {
 const PAIRED_PAGE: &str = r#"<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="0;url=/?pareado=1">
+<meta http-equiv="refresh" content="0;url=__DESTINO__">
 <title>Argus</title></head>
 <body style="font-family:system-ui,sans-serif;background:#0d1b2a;color:#e0e1dd;padding:24px">
-<p>Aparelho pareado.</p><p><a href="/?pareado=1" style="color:#e0e1dd">Abrir o Argus</a></p>
+<p>Aparelho pareado.</p><p><a href="__DESTINO__" style="color:#e0e1dd">Abrir o Argus</a></p>
 </body></html>"#;
 
 fn asset(ct: &'static str, body: impl Into<String>) -> Response {
@@ -427,6 +440,80 @@ async fn create_task(State(st): State<AppState>, Json(b): Json<NewTask>) -> Resp
     match st.orch.submit(p, &b.provider, &b.prompt) {
         Ok(id) => (StatusCode::CREATED, Json(json!({ "id": id }))).into_response(),
         Err(e) => orch_err(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct AllowDenied {
+    project: String,
+    tool: String,
+    command: String,
+}
+
+/// "Liberar este comando neste projeto", pelo celular: acrescenta o comando
+/// negado à lista "Comandos permitidos ao agente" do projeto, como no
+/// computador. Só projetos que a IDE já conhece, e só comandos de shell de uma
+/// linha (`pattern_for_denied`). Vale a partir do próximo turno.
+async fn allow_denied(State(st): State<AppState>, Json(b): Json<AllowDenied>) -> Response {
+    let wanted = path_key(std::path::Path::new(&b.project));
+    let Some(p) = known_projects(&st).into_iter().find(|k| path_key(k) == wanted) else {
+        return err(StatusCode::BAD_REQUEST, "projeto desconhecido");
+    };
+    let Some(pattern) = crate::permissions::pattern_for_denied(&b.tool, &b.command) else {
+        return err(StatusCode::BAD_REQUEST, "este tipo de ferramenta não pode ser liberado por aqui");
+    };
+    let res = tokio::task::spawn_blocking(move || {
+        let mut list = crate::procs::allowed_commands(&p);
+        if !list.contains(&pattern) {
+            list.push(pattern);
+            crate::procs::set_allowed_commands(&p, list)?;
+        }
+        anyhow::Ok(crate::procs::allowed_commands(&p))
+    })
+    .await;
+    match res {
+        Ok(Ok(list)) => Json(json!({ "commands": list })).into_response(),
+        Ok(Err(e)) => err(StatusCode::INTERNAL_SERVER_ERROR, e),
+        Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e),
+    }
+}
+
+#[derive(Deserialize)]
+struct Upload {
+    /// Conversa já existente; vazio = anexo de uma conversa nova (vai para `novo/<draft>`).
+    #[serde(default)]
+    task: Option<TaskId>,
+    #[serde(default)]
+    draft: Option<String>,
+    name: String,
+    /// Conteúdo em base64.
+    data: String,
+}
+
+/// Grava um anexo vindo do celular na pasta de anexos do Argus e devolve o
+/// caminho, que o aparelho cita no bloco de anexos do pedido. O agente só
+/// recebe a pasta daquela conversa (`attachments::dirs_for`).
+async fn upload(State(st): State<AppState>, Json(b): Json<Upload>) -> Response {
+    if b.task.is_some_and(|id| st.orch.task(id).is_none()) {
+        return err(StatusCode::NOT_FOUND, "tarefa não encontrada");
+    }
+    let max = crate::attachments::MAX_BYTES;
+    // 4 caracteres de base64 = 3 bytes: recusa antes de decodificar.
+    if b.data.len() / 4 * 3 > max + 3 {
+        return err(StatusCode::PAYLOAD_TOO_LARGE, format!("{}: anexo acima de {} MB.", b.name, max / 1024 / 1024));
+    }
+    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b.data.trim()) else {
+        return err(StatusCode::BAD_REQUEST, format!("{}: conteúdo inválido.", b.name));
+    };
+    let name = b.name.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        crate::attachments::save(&crate::attachments::root(), b.task, b.draft.as_deref(), &name, &bytes)
+    })
+    .await;
+    match res {
+        Ok(Ok((path, size))) => (StatusCode::CREATED, Json(json!({ "path": path, "size": size }))).into_response(),
+        Ok(Err(e)) => err(StatusCode::BAD_REQUEST, e),
+        Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e),
     }
 }
 
@@ -628,6 +715,9 @@ fn router(st: AppState) -> Router {
         .route("/api/stream", get(stream))
         .route("/api/autowork", get(autowork_get).post(autowork_set))
         .route("/api/tasks/{id}/autowork/{action}", post(autowork_action))
+        // Anexo do celular: base64 de até 8 MB cabe em ~11 MB de corpo.
+        .route("/api/uploads", post(upload).layer(DefaultBodyLimit::max(12 * 1024 * 1024)))
+        .route("/api/permissions/allow", post(allow_denied))
         .route_layer(middleware::from_fn_with_state(st.clone(), auth));
     Router::new().route("/pair", get(pair)).merge(protected).with_state(st)
 }
@@ -878,6 +968,7 @@ mod tests {
         }
         let posts = [
             "/api/tasks", "/api/tasks/1/reply", "/api/tasks/1/cancel", "/api/autowork", "/api/tasks/1/autowork/pause", "/api/servers/1/kill",
+            "/api/uploads", "/api/permissions/allow",
         ];
         for path in posts {
             let r = http(port, post(path, "", "{}")).await;
@@ -936,6 +1027,12 @@ mod tests {
         // Pareamento certo: cookie e redirecionamento sem o token no endereço.
         let ok = http(port, get(&format!("/pair?token={token}"), "")).await;
         assert!(ok.starts_with("HTTP/1.1 200") && ok.contains("url=/?pareado=1") && ok.contains("SameSite=Lax"), "{ok}");
+        assert!(!ok.contains("app=1"), "pareamento pelo navegador não marca o aplicativo");
+        // Pareamento pelo aplicativo do celular: só o valor exato "1" é aceito.
+        let app = http(port, get(&format!("/pair?token={token}&app=1"), "")).await;
+        assert!(app.contains("url=/?pareado=1&app=1"), "{app}");
+        let outro = http(port, get(&format!("/pair?token={token}&app=%3Cx%3E"), "")).await;
+        assert!(outro.contains("url=/?pareado=1\"") && !outro.contains("app="), "{outro}");
         srv.stop();
     }
 
@@ -982,6 +1079,59 @@ mod tests {
         let r = http(port, get("/", &auth)).await;
         assert!(r.contains("content-security-policy: default-src 'self'"), "{r}");
         assert!(!r.contains("https://") && !r.contains("<style"), "página com recurso externo ou estilo inline");
+        srv.stop();
+    }
+
+    /// Anexo do celular: recusa o que não daria para guardar, sem tocar no disco.
+    #[tokio::test]
+    async fn rejects_bad_uploads() {
+        let srv = RemoteServer::new();
+        let port = srv.start(Orchestrator::new(vec![], 1), 0).await.unwrap().port;
+        let auth = format!("Authorization: Bearer {}\r\n", srv.token.read().unwrap());
+
+        let body = json!({ "task": 404, "name": "a.png", "data": "" }).to_string();
+        let r = http(port, post("/api/uploads", &auth, &body)).await;
+        assert!(r.starts_with("HTTP/1.1 404"), "{r}");
+
+        let body = json!({ "draft": "cel1", "name": "a.png", "data": "não é base64 %%" }).to_string();
+        let r = http(port, post("/api/uploads", &auth, &body)).await;
+        assert!(r.starts_with("HTTP/1.1 400") && r.contains("inv"), "{r}");
+
+        // Sem tarefa e sem rascunho não há pasta onde guardar.
+        let body = json!({ "name": "a.png", "data": "" }).to_string();
+        let r = http(port, post("/api/uploads", &auth, &body)).await;
+        assert!(r.starts_with("HTTP/1.1 400"), "{r}");
+
+        // Acima de 8 MB de conteúdo (ainda dentro do limite de corpo do servidor).
+        let body = json!({ "draft": "cel1", "name": "a.png", "data": "A".repeat(11_500_000) }).to_string();
+        let r = http(port, post("/api/uploads", &auth, &body)).await;
+        assert!(r.starts_with("HTTP/1.1 413"), "{r}");
+        srv.stop();
+    }
+
+    /// "Liberar este comando neste projeto" pelo celular: projeto desconhecido e
+    /// ferramenta que não é shell não passam.
+    #[tokio::test]
+    async fn allow_denied_only_for_known_projects_and_shell() {
+        let root = tempfile::tempdir().unwrap();
+        let alfa = root.path().join("alfa");
+        std::fs::create_dir(&alfa).unwrap();
+        let srv = RemoteServer::new();
+        srv.set_projects(vec![alfa.clone()]);
+        let port = srv.start(Orchestrator::new(vec![], 1), 0).await.unwrap().port;
+        let auth = format!("Authorization: Bearer {}\r\n", srv.token.read().unwrap());
+
+        let body = json!({ "project": root.path(), "tool": "Bash", "command": "npm run build" }).to_string();
+        let r = http(port, post("/api/permissions/allow", &auth, &body)).await;
+        assert!(r.starts_with("HTTP/1.1 400") && r.contains("projeto desconhecido"), "{r}");
+
+        let body = json!({ "project": alfa, "tool": "Read", "command": "x" }).to_string();
+        let r = http(port, post("/api/permissions/allow", &auth, &body)).await;
+        assert!(r.starts_with("HTTP/1.1 400"), "{r}");
+
+        let body = json!({ "project": alfa, "tool": "Bash", "command": "a\nb" }).to_string();
+        let r = http(port, post("/api/permissions/allow", &auth, &body)).await;
+        assert!(r.starts_with("HTTP/1.1 400"), "{r}");
         srv.stop();
     }
 

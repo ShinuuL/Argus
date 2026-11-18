@@ -120,6 +120,7 @@ const ICONS = {
   lock: "M6 11h12v9H6zM9 11V8a3 3 0 016 0v3",
   wifiOff: "M3 3l18 18M5 12a10 10 0 014-2.500M19 12a10 10 0 00-5-3M8.500 15.500a5 5 0 017 0M12 19v.500",
   file: "M6 3h8l4 4v14H6zM14 3v4h4",
+  image: "M4 5h16v14H4zM4 16l4.500-4.500 4 4L16 12l4 4M15 9h.500",
 };
 const SVG_NS = "http://www.w3.org/2000/svg";
 function icon(name, size, cls, filled) {
@@ -403,6 +404,165 @@ async function copyText(text) {
     return ok;
   }
 }
+/* ============================================================ anexos (galeria do aparelho)
+
+   O aparelho escolhe imagens na galeria (ou na câmera), reduz o tamanho e as
+   envia ao computador por POST /api/uploads. O arquivo fica na pasta de anexos
+   do Argus; o pedido só leva o CAMINHO, no mesmo bloco que o desktop monta, e
+   o agente recebe a liberação de leitura daquela pasta. */
+
+/** Limite por anexo (o mesmo do computador). */
+const MAX_UPLOAD = 8 * 1024 * 1024;
+/** Maior lado de uma foto enviada: acima disso a imagem é reduzida no aparelho. */
+const MAX_SIDE = 1600;
+
+/** Id de rascunho da conversa nova: a pasta de anexos só dela. */
+function draftFor(key) {
+  const id = loadKey("argus.anexos." + key, "");
+  if (id) return id;
+  const novo = "cel" + Math.random().toString(36).slice(2, 10);
+  saveKey("argus.anexos." + key, novo);
+  return novo;
+}
+
+/** Foto da galeria reduzida a `MAX_SIDE` (JPEG); o que já é pequeno vai como está. */
+async function shrinkImage(file) {
+  const keep = file.size <= 400 * 1024 && /^image\/(png|jpeg|webp|gif)$/.test(file.type);
+  if (keep) return { blob: file, name: file.name || "imagem.png" };
+  let bmp;
+  try {
+    bmp = await createImageBitmap(file);
+  } catch (_) {
+    return { blob: file, name: file.name || "imagem.png" };
+  }
+  const scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(bmp.width * scale));
+  c.height = Math.max(1, Math.round(bmp.height * scale));
+  c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+  bmp.close();
+  const blob = await new Promise((res) => c.toBlob(res, "image/jpeg", 0.85));
+  c.width = c.height = 0;
+  if (!blob) return { blob: file, name: file.name || "imagem.png" };
+  const base = (file.name || "foto").replace(/\.\w+$/, "");
+  return { blob, name: base + ".jpg" };
+}
+
+function toBase64(blob) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(",")[1] || "");
+    r.onerror = () => rej(new Error("não foi possível ler o arquivo"));
+    r.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Faixa de anexos de uma caixa de composição. `target()` devolve
+ * `{ task }` (conversa existente) ou `{ draft }` (conversa nova).
+ */
+function attachStrip(target, onChange) {
+  const items = [];
+  const strip = h("div", { class: "atts-edit", hidden: true });
+  const file = h("input", { type: "file", accept: "image/*", multiple: true, class: "offscreen", "aria-hidden": "true", tabindex: "-1" });
+  const button = h("button", { type: "button", class: "clip", "aria-label": "Anexar imagens da galeria", title: "Anexar imagens da galeria" }, icon("image", 22));
+  button.addEventListener("click", () => file.click());
+  file.addEventListener("change", () => {
+    add(Array.from(file.files || []));
+    file.value = "";
+  });
+
+  function paint() {
+    strip.hidden = items.length === 0;
+    strip.replaceChildren(
+      ...items.map((it) =>
+        h(
+          "span",
+          { class: "att-edit " + it.status, title: it.error || it.name },
+          it.url ? h("img", { src: it.url, alt: "", class: "att-thumb" }) : icon("file", 16),
+          h("span", { class: "att-name", text: it.name }),
+          it.status === "saving" ? h("span", { class: "spinner tiny" }) : null,
+          it.status === "error" ? icon("alert", 14) : null,
+          h(
+            "button",
+            {
+              type: "button",
+              class: "att-x",
+              "aria-label": "Tirar " + it.name,
+              onclick: () => {
+                const at = items.indexOf(it);
+                if (at >= 0) items.splice(at, 1);
+                if (it.url) URL.revokeObjectURL(it.url);
+                paint();
+                if (onChange) onChange();
+              },
+            },
+            icon("close", 14),
+          ),
+        ),
+      ),
+    );
+  }
+
+  async function add(files) {
+    for (const f of files.slice(0, 10)) {
+      if (!f.type.startsWith("image/")) {
+        toast("Só dá para anexar imagens por aqui: " + (f.name || "arquivo"), "err");
+        continue;
+      }
+      const it = { name: f.name || "imagem", status: "saving", url: null, path: null, error: "" };
+      items.push(it);
+      paint();
+      if (onChange) onChange();
+      try {
+        const { blob, name } = await shrinkImage(f);
+        if (blob.size > MAX_UPLOAD) throw new Error("acima de " + MAX_UPLOAD / 1024 / 1024 + " MB");
+        it.name = name;
+        it.url = URL.createObjectURL(blob);
+        const where = target();
+        const res = await post("/api/uploads", {
+          task: where.task == null ? null : where.task,
+          draft: where.draft || null,
+          name,
+          data: await toBase64(blob),
+        });
+        it.path = res.path;
+        it.status = "ready";
+      } catch (err) {
+        it.status = "error";
+        it.error = err.message;
+        toast("Não foi possível anexar " + it.name + ": " + err.message, "err");
+      }
+      paint();
+      if (onChange) onChange();
+    }
+  }
+
+  return {
+    strip,
+    button,
+    file,
+    /** Algum anexo ainda está subindo (o envio espera). */
+    get busy() {
+      return items.some((i) => i.status === "saving");
+    },
+    get count() {
+      return items.length;
+    },
+    /** O bloco de caminhos que vai no fim do pedido ("" se não houver anexo pronto). */
+    block() {
+      const ready = items.filter((i) => i.status === "ready" && i.path);
+      if (!ready.length) return "";
+      return "\n\n" + PATHS_HEADER + "\n" + ready.map((i) => "- " + i.path + " (imagem)").join("\n");
+    },
+    clear() {
+      for (const it of items) if (it.url) URL.revokeObjectURL(it.url);
+      items.length = 0;
+      paint();
+    },
+  };
+}
+
 document.addEventListener("click", (e) => {
   const btn = e.target.closest && e.target.closest("button.md-copy");
   if (!btn) return;
@@ -448,6 +608,8 @@ function pushNotice(out, line) {
 function chatEntries(events, owner) {
   const out = [];
   const spawnTools = [];
+  /** Ferramentas ainda sem saída, em ordem: o próximo `ToolResult` é da primeira. */
+  const pending = [];
   for (const raw of events) {
     const u = unwrap(raw);
     const event = u.event;
@@ -462,12 +624,21 @@ function chatEntries(events, owner) {
     }
     if ("SubagentEnd" in event) continue;
     if (u.owner !== owner) continue;
+    // Um turno novo descarta saídas que nunca vieram (turno interrompido).
+    if ("User" in event) pending.length = 0;
     if ("User" in event) out.push({ type: "user", text: String(event.User) });
     else if ("Text" in event) {
       if (String(event.Text).trim()) out.push({ type: "text", text: String(event.Text) });
+    } else if ("Thinking" in event) {
+      if (String(event.Thinking).trim()) out.push({ type: "thinking", text: String(event.Thinking) });
     } else if ("ToolUse" in event) {
-      if (SPAWN_TOOLS.has(String(event.ToolUse.name).toLowerCase())) spawnTools.push(out.length);
-      out.push({ type: "tool", name: String(event.ToolUse.name), input: event.ToolUse.input });
+      const tool = { type: "tool", name: String(event.ToolUse.name), input: event.ToolUse.input, result: null };
+      if (SPAWN_TOOLS.has(tool.name.toLowerCase())) spawnTools.push(out.length);
+      else pending.push(tool);
+      out.push(tool);
+    } else if ("ToolResult" in event) {
+      const tool = pending.shift();
+      if (tool) tool.result = { ok: !!event.ToolResult.ok, output: String(event.ToolResult.output || "") };
     } else if ("Result" in event) out.push({ type: "result", ok: !!event.Result.ok, summary: String(event.Result.summary || "") });
     else if ("Usage" in event) out.push({ type: "usage", usage: event.Usage });
     else if ("Raw" in event) pushNotice(out, event.Raw);
@@ -580,20 +751,87 @@ function stepsCut(items) {
   if (last <= 0) return -1;
   return items.slice(0, last).some((e) => e.type === "tool" || e.type === "subagent") ? last : -1;
 }
+/** Passos à vista enquanto o turno roda; -1 enquanto couber tudo. */
+const LIVE_KEEP = 8;
+function liveCut(items) {
+  return items.length > LIVE_KEEP + 2 ? items.length - LIVE_KEEP : -1;
+}
 function stepsLabel(items) {
   const steps = items.filter((e) => e.type === "tool" || e.type === "text" || e.type === "subagent").length;
   const subs = items.filter((e) => e.type === "subagent").length;
   const label = plural(steps, "passo", "passos");
   return subs > 0 ? label + " · " + plural(subs, "subagente", "subagentes") : label;
 }
-function toolSummary(input) {
+/** Caminho comprido encurtado pelo meio: na tela do celular, o fim é o que importa. */
+function shortPath(path, max) {
+  const limit = max || 38;
+  if (path.length <= limit) return path;
+  const sep = path.includes("\\") && !path.includes("/") ? "\\" : "/";
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  for (let keep = 3; keep >= 1; keep--) {
+    if (parts.length <= keep) break;
+    const tail = "…" + sep + parts.slice(-keep).join(sep);
+    if (tail.length <= limit) return tail;
+  }
+  const last = parts.length ? parts[parts.length - 1] : path;
+  return last.length <= limit ? "…" + sep + last : last.slice(0, limit - 12) + "…" + last.slice(-9);
+}
+
+/** Resumo de uma linha da entrada, por ferramenta (o mesmo do computador). */
+function toolSummary(name, input) {
   if (input == null) return "";
   if (typeof input !== "object") return String(input);
-  for (const k of ["file_path", "path", "filePath", "command", "pattern", "query", "url", "description", "prompt"]) {
-    const v = input[k];
-    if (typeof v === "string" && v.trim()) return v.trim().split("\n")[0];
+  const str = (...keys) => {
+    for (const k of keys) {
+      const v = input[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    return "";
+  };
+  const t = String(name || "").toLowerCase();
+  const path = () => shortPath(str("file_path", "path", "filePath", "notebook_path"));
+  if (t === "read") {
+    const off = typeof input.offset === "number" ? input.offset : null;
+    const lim = typeof input.limit === "number" ? input.limit : null;
+    if (off == null && lim == null) return path();
+    const from = off == null ? 1 : off;
+    return lim != null ? path() + " (linhas " + from + "–" + (from + lim - 1) + ")" : path() + " (a partir da linha " + from + ")";
   }
-  return "";
+  if (t === "grep" || t === "glob") {
+    const where = shortPath(str("path", "glob"));
+    return where ? str("pattern") + "  em " + where : str("pattern");
+  }
+  const first = str("command", "pattern", "query", "url", "description", "prompt");
+  if (first) return first.split("\n")[0];
+  return path();
+}
+
+/** O que o agente está fazendo agora, em uma linha (o mesmo do computador). */
+function liveActivity(entries) {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const e = entries[i];
+    if (e.type === "user") break;
+    if (e.type === "tool") {
+      if (e.result) break;
+      const sum = toolSummary(e.name, e.input);
+      return sum ? e.name + " · " + sum : e.name;
+    }
+    if (e.type === "thinking") return "pensando…";
+    if (e.type === "text") return "escrevendo a resposta…";
+    if (e.type === "subagent") return "esperando o subagente…";
+  }
+  return "trabalhando…";
+}
+
+/** Texto do bloco "comando rodado": o comando do shell, ou "chave: valor" por linha. */
+function toolInputText(name, input) {
+  if (input == null) return "";
+  if (typeof input !== "object") return String(input);
+  const cmd = input.command;
+  if (typeof cmd === "string" && cmd.trim() && /bash|shell|powershell/i.test(String(name))) return cmd;
+  return Object.keys(input)
+    .map((k) => k + ": " + (typeof input[k] === "string" ? input[k] : JSON.stringify(input[k], null, 2)))
+    .join("\n");
 }
 
 /* ============================================================ estado e API */
@@ -1330,7 +1568,15 @@ function userMessage(text) {
   return h(
     "div",
     { class: "msg-user" },
-    split.attachments.length ? h("div", { class: "atts" }, split.attachments.map((name) => h("span", { class: "att" }, icon("file", 14), name))) : null,
+    split.attachments.length
+      ? h(
+          "div",
+          { class: "atts" },
+          split.attachments.map((name) =>
+            h("span", { class: "att" }, icon(/\.(png|jpe?g|gif|webp|bmp)$/i.test(name) ? "image" : "file", 14), name),
+          ),
+        )
+      : null,
     split.text ? h("div", { class: "msg-user-text", text: split.text }) : null,
   );
 }
@@ -1343,6 +1589,31 @@ function keepOpen(details, key) {
   });
   return details;
 }
+const STATUS_TITLE = { run: "Rodando", ok: "Concluída", err: "Falhou", off: "Sem saída registrada" };
+
+/** Bloco rotulado da ferramenta: o comando rodado e o resultado. */
+function ioBlock(label, text, error) {
+  return h("div", { class: "io" + (error ? " err" : "") }, h("span", { class: "io-label", text: label }), h("pre", { text: text || "(vazio)" }));
+}
+
+/** Lista de tarefas (TodoWrite) como checklist, igual à do computador. */
+function todoList(input) {
+  const todos = (input && input.todos) || [];
+  if (!Array.isArray(todos) || !todos.length) return null;
+  return h(
+    "ul",
+    { class: "todos" },
+    todos.map((t) =>
+      h(
+        "li",
+        { class: "todo " + (t.status || "") },
+        icon(t.status === "completed" ? "check" : "chevronRight", 15),
+        h("span", { text: t.status === "in_progress" && t.activeForm ? t.activeForm : t.content || "" }),
+      ),
+    ),
+  );
+}
+
 function entryNode(entry, key, ctx) {
   switch (entry.type) {
     case "user":
@@ -1350,23 +1621,47 @@ function entryNode(entry, key, ctx) {
     case "text":
       return h("div", { class: "md", html: md(entry.text) });
     case "tool": {
-      const summary = toolSummary(entry.input);
-      let json = "";
-      try {
-        json = JSON.stringify(entry.input, null, 2);
-      } catch (_) {
-        json = String(entry.input);
-      }
+      const isTodo = /todo/i.test(entry.name);
+      const summary = isTodo ? "" : toolSummary(entry.name, entry.input);
+      const result = entry.result || null;
+      // Sem saída e com o turno rodando = ainda está rodando.
+      const status = result ? (result.ok ? "ok" : "err") : ctx.live ? "run" : "off";
+      const body = isTodo
+        ? [todoList(entry.input)]
+        : [
+            ioBlock("Comando rodado", toolInputText(entry.name, entry.input), false),
+            result && (result.output.trim() || !result.ok)
+              ? ioBlock("Resultado", result.output.trim() || "(sem saída)", !result.ok)
+              : h("div", { class: "io-note", text: result ? "(sem saída)" : ctx.live ? "Rodando…" : "Sem saída registrada." }),
+          ];
       return keepOpen(
         h(
           "details",
-          { class: "tool" },
-          h("summary", null, icon(toolIcon(entry.name), 16, "tool-ic"), h("b", { text: entry.name }), summary ? h("span", { class: "tool-sum", text: summary }) : null, icon("chevronRight", 16, "chev")),
-          h("pre", { text: json }),
+          { class: "tool" + (isTodo ? " todo" : ""), open: isTodo },
+          h(
+            "summary",
+            null,
+            statusMark(status, STATUS_TITLE[status]),
+            icon(toolIcon(entry.name), 16, "tool-ic"),
+            h("b", { text: isTodo ? "Tarefas" : entry.name }),
+            summary ? h("span", { class: "tool-sum", text: summary }) : null,
+            icon("chevronRight", 16, "chev"),
+          ),
+          ...body,
         ),
         key,
       );
     }
+    case "thinking":
+      return keepOpen(
+        h(
+          "details",
+          { class: "tool think" },
+          h("summary", null, icon("bot", 16, "tool-ic"), h("span", { class: "think-label", text: ctx.live ? "Pensando…" : "Pensou" }), icon("chevronRight", 16, "chev")),
+          h("div", { class: "think-text", text: entry.text }),
+        ),
+        key,
+      );
     case "result":
       if (entry.ok) return ctx.showSummary && entry.summary.trim() ? h("div", { class: "md", html: md(entry.summary) }) : null;
       return h(
@@ -1379,7 +1674,11 @@ function entryNode(entry, key, ctx) {
       return h("div", { class: "switch-line", role: "separator" }, h("span", { text: "Agente trocado: " + providerName(entry.from) + " → " + providerName(entry.to) }));
     case "denied": {
       const shell = entry.tool === "Bash" || entry.tool === "PowerShell";
-      return h(
+      // Dá para liberar daqui o que o computador também libera com um toque:
+      // comando de shell de uma linha, num projeto que a IDE conhece.
+      const liberavel = shell && !!entry.command && !entry.command.includes("\n") && !!ctx.project;
+      const porque = h("span", { class: "denied-why", text: "Não está entre os comandos liberados ao agente." });
+      const box = h(
         "div",
         { class: "denied", role: "status" },
         icon("alert", 16),
@@ -1388,9 +1687,29 @@ function entryNode(entry, key, ctx) {
           null,
           h("b", { text: shell ? "Comando negado" : "Ferramenta negada: " + entry.tool }),
           entry.command ? h("code", { text: entry.command }) : null,
-          h("span", { class: "denied-why", text: "Não está entre os comandos liberados ao agente. Libere no computador, na aba Configurações." }),
+          porque,
         ),
       );
+      if (!liberavel) {
+        porque.textContent += " Libere no computador, na aba Configurações.";
+        return box;
+      }
+      const botao = h("button", { type: "button", class: "btn small denied-allow" }, icon("shield", 16), "Liberar neste projeto");
+      botao.addEventListener("click", async () => {
+        botao.disabled = true;
+        botao.lastChild.textContent = "Liberando…";
+        try {
+          await post("/api/permissions/allow", { project: ctx.project, tool: entry.tool, command: entry.command });
+          botao.remove();
+          porque.textContent = "Liberado neste projeto. Vale a partir do próximo turno: peça de novo.";
+        } catch (e) {
+          botao.disabled = false;
+          botao.lastChild.textContent = "Liberar neste projeto";
+          toast("Não foi possível liberar: " + e.message, "err");
+        }
+      });
+      box.append(botao);
+      return box;
     }
     case "usage": {
       const u = entry.usage;
@@ -1440,23 +1759,36 @@ function transcriptNodes(taskId, owner, active, group) {
   const subs = new Map(subagentTree(chat.events).map((n) => [n.id, n]));
   const turns = splitTurns(entries);
   const out = [];
+  // Projeto da sessão: é dele a lista de comandos liberados ao agente.
+  const tarefa = taskById(taskId);
   turns.forEach((turn, t) => {
     const finished = t < turns.length - 1 || !active;
-    const cut = group && finished ? stepsCut(turn.items) : -1;
+    // Turno terminado: tudo antes da resposta vira "N passos". Em andamento:
+    // só os últimos passos ficam à vista, o resto recolhe em "N passos antes".
+    const cut = group ? (finished ? stepsCut(turn.items) : liveCut(turn.items)) : -1;
     const steps = cut > 0 ? turn.items.slice(0, cut) : [];
     const rest = cut > 0 ? turn.items.slice(cut) : turn.items;
     // O resumo do Result só aparece quando o turno não trouxe texto nenhum (ex.: comando da própria CLI).
-    const ctx = { task: taskId, subs, active, showSummary: !turn.items.some((e) => e.type === "text") };
+    const ctx = {
+      task: taskId,
+      project: tarefa ? tarefa.project : null,
+      subs,
+      active,
+      live: !finished,
+      showSummary: !turn.items.some((e) => e.type === "text"),
+    };
+    const ctxDone = Object.assign({}, ctx, { live: false });
     const box = h("div", { class: "turn" });
     if (turn.user != null) box.append(userMessage(turn.user));
     if (steps.length) {
       const key = owner + ":" + t + ":steps";
       const body = h("div", { class: "steps-body" });
       steps.forEach((e, i) => {
-        const n = entryNode(e, owner + ":" + t + ":s" + i, ctx);
+        const n = entryNode(e, owner + ":" + t + ":s" + i, ctxDone);
         if (n) body.append(n);
       });
-      box.append(keepOpen(h("details", { class: "steps" }, h("summary", null, icon("chevronRight", 16, "chev"), stepsLabel(steps)), body), key));
+      const label = finished ? stepsLabel(steps) : stepsLabel(steps) + " antes";
+      box.append(keepOpen(h("details", { class: "steps" }, h("summary", null, icon("chevronRight", 16, "chev"), label), body), key));
     }
     rest.forEach((e, i) => {
       const n = entryNode(e, owner + ":" + t + ":r" + i, ctx);
@@ -1504,7 +1836,14 @@ VIEWS.chat = (r, top, view, foot) => {
   input.value = loadKey("argus.rascunho." + id, "");
   const send = h("button", { type: "submit", class: "send" });
   const closedNote = h("div", { class: "readonly-bar", hidden: true });
-  const form = h("form", { class: "composer" }, h("div", { class: "composer-box" }, input, send), closedNote);
+  const atts = attachStrip(() => ({ task: id }), () => paintComposer());
+  const form = h(
+    "form",
+    { class: "composer" },
+    atts.strip,
+    h("div", { class: "composer-box" }, atts.button, input, send, atts.file),
+    closedNote,
+  );
   foot.append(form);
   let sending = false;
   let first = true;
@@ -1537,6 +1876,8 @@ VIEWS.chat = (r, top, view, foot) => {
     const closed = isClosed(kind);
     const failed = !!chat.error && !chat.loaded;
     form.querySelector(".composer-box").hidden = closed || !t || failed;
+    atts.strip.hidden = atts.count === 0 || closed || !t || failed;
+    atts.button.disabled = active || sending;
     closedNote.hidden = !closed;
     form.hidden = !closed && (!t || failed);
     if (closed) closedNote.replaceChildren(icon("lock", 16), h("span", { text: "Sessão encerrada (" + stateInfo(t.state).label.toLowerCase() + "): não aceita novas mensagens." }));
@@ -1547,7 +1888,7 @@ VIEWS.chat = (r, top, view, foot) => {
     send.title = active ? "Parar o turno" : "Enviar";
     send.dataset.mode = active ? "stop" : "send";
     send.replaceChildren(active ? icon("stop", 20, null, true) : icon("send", 22), h("span", { class: "send-label", text: active ? "Parar" : "Enviar" }));
-    send.disabled = sending || (!active && !input.value.trim());
+    send.disabled = sending || (!active && (atts.busy || (!input.value.trim() && !atts.count)));
   }
 
   form.addEventListener("submit", async (e) => {
@@ -1562,9 +1903,10 @@ VIEWS.chat = (r, top, view, foot) => {
         await post("/api/tasks/" + id + "/cancel");
         toast("Parando o turno…");
       } else {
-        const message = input.value.trim();
-        if (!message) return;
+        const message = input.value.trim() + atts.block();
+        if (!message.trim()) return;
         await post("/api/tasks/" + id + "/reply", { message });
+        atts.clear();
         input.value = "";
         saveKey("argus.rascunho." + id, "");
         grow();
@@ -1640,7 +1982,10 @@ VIEWS.chat = (r, top, view, foot) => {
       nodes.push(h("div", { class: "fail", role: "alert" }, icon("alert", 18), h("span", null, h("b", { text: "Erro: a sessão falhou." }), h("span", { class: "fail-text", text: " " + String(variant(t.state).data || "") }))));
     }
     if (kind === "Cancelled") nodes.push(h("div", { class: "line-note" }, "Turno cancelado."));
-    if (active) nodes.push(h("div", { class: "working", role: "status" }, h("span", { class: "spinner small" }), kind === "Queued" ? "na fila…" : "trabalhando…"));
+    if (active) {
+      const what = kind === "Queued" ? "na fila…" : liveActivity(chatEntries(chat.events, null));
+      nodes.push(h("div", { class: "working", role: "status" }, h("span", { class: "spinner small" }), h("span", { class: "working-text", text: what })));
+    }
     if (!nodes.length) nodes.push(emptyBox("chat", "Nenhuma mensagem ainda", "O histórico desta sessão está vazio."));
     const stuck = paintLog(view, log, nodes, first);
     if (!stuck && lastCount >= 0 && chat.events.length > lastCount) jump.hidden = false;
@@ -1791,6 +2136,11 @@ VIEWS.new = (r, top, view) => {
   let sending = false;
   let wanted = r.project || loadKey("argus.projeto", "");
   let filled = "";
+  // A conversa ainda não existe: os anexos vão para a pasta do rascunho.
+  const draft = draftFor("nova");
+  const atts = attachStrip(() => ({ draft }), () => paintSubmit());
+  const attach = h("button", { type: "button", class: "btn wide" }, icon("image", 20), "Anexar da galeria");
+  attach.addEventListener("click", () => atts.file.click());
 
   const form = h(
     "form",
@@ -1801,6 +2151,9 @@ VIEWS.new = (r, top, view) => {
     provBox,
     h("label", { class: "flabel", for: "nf-prompt", text: "Pedido" }),
     prompt,
+    atts.strip,
+    attach,
+    atts.file,
     error,
     submit,
     h("p", { class: "hint", text: "O agente roda no computador, numa cópia isolada do projeto. Enviar inicia um turno de verdade, que consome a sua cota." }),
@@ -1808,8 +2161,8 @@ VIEWS.new = (r, top, view) => {
   view.append(form);
 
   const paintSubmit = () => {
-    submit.disabled = sending || !prompt.value.trim() || !select.value || !provider;
-    submit.lastChild.textContent = sending ? "Enviando…" : "Enviar";
+    submit.disabled = sending || atts.busy || !prompt.value.trim() || !select.value || !provider;
+    submit.lastChild.textContent = sending ? "Enviando…" : atts.busy ? "Anexando…" : "Enviar";
   };
   prompt.addEventListener("input", () => {
     saveKey("argus.rascunho.nova", prompt.value);
@@ -1827,10 +2180,13 @@ VIEWS.new = (r, top, view) => {
     error.hidden = true;
     paintSubmit();
     try {
-      const res = await post("/api/tasks", { project: select.value, provider, prompt: prompt.value.trim() });
+      const res = await post("/api/tasks", { project: select.value, provider, prompt: prompt.value.trim() + atts.block() });
       saveKey("argus.projeto", select.value);
       saveKey("argus.provedor", provider);
       saveKey("argus.rascunho.nova", "");
+      // Rascunho usado: o próximo pedido ganha uma pasta de anexos própria.
+      saveKey("argus.anexos.nova", "");
+      atts.clear();
       await loadTasks();
       // Troca a tela do formulário pela conversa criada (voltar cai na lista).
       navReplace = true;
@@ -2138,8 +2494,20 @@ VIEWS.settings = (_r, top, view) => {
         h("p", { class: "kv", text: "Este aparelho entra pelo QR code da aba Remoto. Para revogar o acesso de todos os aparelhos, use “Gerar novo token” no computador." }),
         h("p", { class: "kv dim", text: "A conexão pela rede local não é criptografada: use só em redes de confiança, ou por VPN." }),
       ),
-      h("h2", { class: "sect", text: "Tela inicial" }),
-      h("div", { class: "card pad" }, h("p", { class: "kv", text: "No menu do navegador, toque em “Adicionar à tela inicial” para abrir o Argus como um aplicativo." })),
+      ...(loadKey("argus.app", "") === "1"
+        ? [
+            h("h2", { class: "sect", text: "Servidor" }),
+            h(
+              "div",
+              { class: "card pad" },
+              h("p", { class: "kv", text: "Este é o aplicativo do Argus. Para apontar para outro computador, volte à tela de pareamento." }),
+              h("button", { type: "button", class: "btn", onclick: () => history.back() }, icon("back", 18), "Trocar de servidor"),
+            ),
+          ]
+        : [
+            h("h2", { class: "sect", text: "Tela inicial" }),
+            h("div", { class: "card pad" }, h("p", { class: "kv", text: "No menu do navegador, toque em “Adicionar à tela inicial” para abrir o Argus como um aplicativo." })),
+          ]),
     );
   }
   return { update };
@@ -2178,6 +2546,9 @@ function start() {
     refreshAll();
   });
 
+  // Pareado pelo aplicativo do celular (Tauri): a tela de pareamento dele fica
+  // no histórico, então os Ajustes ganham "Trocar de servidor".
+  if (/[?&]app=1/.test(location.search)) saveKey("argus.app", "1");
   if (/[?&]pareado=1/.test(location.search)) {
     try {
       history.replaceState(null, "", "/" + location.hash);

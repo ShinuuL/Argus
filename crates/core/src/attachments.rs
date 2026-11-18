@@ -70,6 +70,68 @@ fn subdir_of(root: &Path, path: &Path) -> Option<PathBuf> {
     Some(root.join(first))
 }
 
+/// Tamanho máximo de um anexo gravado (o mesmo no desktop e no celular).
+pub const MAX_BYTES: usize = 8 * 1024 * 1024;
+
+/// Cabeçalho do bloco de anexos do pedido (o mesmo texto do `buildPrompt` da interface).
+pub const PATHS_HEADER: &str = "Arquivos anexados pelo caminho (abra com as ferramentas se precisar):";
+
+/// Nome de arquivo seguro: só o último trecho, sem caracteres de caminho ou de
+/// controle, com no máximo 80 caracteres.
+pub fn sanitize_name(name: &str) -> String {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    let clean: String = base
+        .chars()
+        .map(|c| if c.is_alphanumeric() || matches!(c, '.' | '-' | '_' | ' ' | '(' | ')') { c } else { '_' })
+        .collect();
+    let clean = clean.trim().trim_matches('.').trim().to_string();
+    let clean: String = if clean.chars().count() > 80 {
+        // mantém a extensão ao cortar
+        let ext = clean.rsplit_once('.').map(|(_, e)| e).filter(|e| e.chars().count() <= 8).map(|e| format!(".{e}"));
+        let ext = ext.unwrap_or_default();
+        clean.chars().take(80 - ext.chars().count()).collect::<String>() + &ext
+    } else {
+        clean
+    };
+    if clean.is_empty() {
+        "anexo".into()
+    } else {
+        clean
+    }
+}
+
+/// Primeiro caminho livre em `dir` para `name` ("a.png", "a-2.png", ...).
+fn free_path(dir: &Path, name: &str) -> PathBuf {
+    let first = dir.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((s, e)) if !s.is_empty() => (s.to_string(), format!(".{e}")),
+        _ => (name.to_string(), String::new()),
+    };
+    (2..10_000).map(|n| dir.join(format!("{stem}-{n}{ext}"))).find(|p| !p.exists()).unwrap_or(first)
+}
+
+/// Grava um anexo na pasta da tarefa (ou do rascunho) e devolve o caminho e o tamanho.
+pub fn save(
+    root: &Path,
+    task: Option<u64>,
+    draft: Option<&str>,
+    name: &str,
+    bytes: &[u8],
+) -> Result<(PathBuf, u64), String> {
+    if bytes.len() > MAX_BYTES {
+        return Err(format!("{name}: anexo acima de {} MB.", MAX_BYTES / 1024 / 1024));
+    }
+    let dir = dir_for(root, task, draft)
+        .ok_or_else(|| format!("{name}: conversa sem identificação para guardar o anexo."))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Não foi possível criar a pasta de anexos: {e}"))?;
+    let path = free_path(&dir, &sanitize_name(name));
+    std::fs::write(&path, bytes).map_err(|e| format!("Não foi possível gravar o anexo: {e}"))?;
+    Ok((path, bytes.len() as u64))
+}
+
 /// Caminhos citados nas linhas "- <caminho> (<tipo>)" do bloco de anexos de um pedido.
 fn cited_paths(prompt: &str) -> impl Iterator<Item = PathBuf> + '_ {
     prompt.lines().filter_map(|l| {

@@ -1,0 +1,8 @@
+/gen/schemas
+/target
+# Projeto Android gerado pelo `tauri android init` (recriado a qualquer momento).
+/gen/android
+# Assinatura de release: nunca versionar (ver key.properties.exemplo).
+key.properties
+*.jks
+*.keystore

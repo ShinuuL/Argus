@@ -231,7 +231,7 @@ pub async fn chat_agents(project: Option<PathBuf>) -> Result<Vec<ChatAgent>, Str
 // --------------------------------------------------------------- anexos
 
 /// Tamanho máximo de um anexo gravado.
-pub const MAX_ATTACHMENT: usize = 8 * 1024 * 1024;
+pub const MAX_ATTACHMENT: usize = argus_core::attachments::MAX_BYTES;
 /// Anexos mais velhos que isto são apagados por `chat_attachments_cleanup`.
 const ATTACHMENT_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
@@ -254,41 +254,9 @@ pub fn attachments_root() -> PathBuf {
     argus_core::attachments::root()
 }
 
-/// Nome de arquivo seguro: só o último trecho, sem caracteres de caminho ou de
-/// controle, com no máximo 80 caracteres.
+/// Nome de arquivo seguro (a mesma regra do core, usada também pelo celular).
 pub fn sanitize_name(name: &str) -> String {
-    let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
-    let clean: String = base
-        .chars()
-        .map(|c| if c.is_alphanumeric() || matches!(c, '.' | '-' | '_' | ' ' | '(' | ')') { c } else { '_' })
-        .collect();
-    let clean = clean.trim().trim_matches('.').trim().to_string();
-    let clean: String = if clean.chars().count() > 80 {
-        // mantém a extensão ao cortar
-        let ext = clean.rsplit_once('.').map(|(_, e)| e).filter(|e| e.chars().count() <= 8).map(|e| format!(".{e}"));
-        let ext = ext.unwrap_or_default();
-        clean.chars().take(80 - ext.chars().count()).collect::<String>() + &ext
-    } else {
-        clean
-    };
-    if clean.is_empty() {
-        "anexo".into()
-    } else {
-        clean
-    }
-}
-
-/// Primeiro caminho livre em `dir` para `name` ("a.png", "a-2.png", ...).
-fn free_path(dir: &Path, name: &str) -> PathBuf {
-    let first = dir.join(name);
-    if !first.exists() {
-        return first;
-    }
-    let (stem, ext) = match name.rsplit_once('.') {
-        Some((s, e)) if !s.is_empty() => (s.to_string(), format!(".{e}")),
-        _ => (name.to_string(), String::new()),
-    };
-    (2..10_000).map(|n| dir.join(format!("{stem}-{n}{ext}"))).find(|p| !p.exists()).unwrap_or(first)
+    argus_core::attachments::sanitize_name(name)
 }
 
 fn save_attachment_in(
@@ -298,15 +266,8 @@ fn save_attachment_in(
     name: &str,
     bytes: &[u8],
 ) -> Result<SavedAttachment, String> {
-    if bytes.len() > MAX_ATTACHMENT {
-        return Err(format!("{name}: anexo acima de {} MB.", MAX_ATTACHMENT / 1024 / 1024));
-    }
-    let dir = argus_core::attachments::dir_for(root, task, draft)
-        .ok_or_else(|| format!("{name}: conversa sem identificação para guardar o anexo."))?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Não foi possível criar a pasta de anexos: {e}"))?;
-    let path = free_path(&dir, &sanitize_name(name));
-    std::fs::write(&path, bytes).map_err(|e| format!("Não foi possível gravar o anexo: {e}"))?;
-    Ok(SavedAttachment { path, size: bytes.len() as u64 })
+    let (path, size) = argus_core::attachments::save(root, task, draft, name, bytes)?;
+    Ok(SavedAttachment { path, size })
 }
 
 /// Grava um anexo (conteúdo em base64) na pasta de anexos da tarefa e devolve o caminho.

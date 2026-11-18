@@ -353,7 +353,7 @@ impl Orchestrator {
         Ok(())
     }
 
-    /// Preferência gravada de um nível de git ("local" ou "remote"): a geral
+    /// Preferência gravada de um nível ("local", "remote" ou "build"): a geral
     /// (`project` = None) ou a de um projeto. None = segue o padrão.
     pub fn git_setting(&self, project: Option<&Path>, level: &str) -> Option<bool> {
         let db = self.inner.db.as_ref()?;
@@ -372,13 +372,17 @@ impl Orchestrator {
         Ok(())
     }
 
-    /// Níveis de git que valem para um turno em `project` no modo `mode`: a
-    /// preferência do projeto, depois a geral, depois o padrão do modo ("Git local"
-    /// ligado só na cópia isolada; "Git remoto" desligado).
+    /// Níveis que valem para um turno em `project` no modo `mode`: a preferência
+    /// do projeto, depois a geral, depois o padrão do modo ("Git local" ligado só
+    /// na cópia isolada; "Git remoto" desligado; "Compilar e testar" ligado).
     pub fn git_levels(&self, project: &Path, mode: WorkMode) -> crate::permissions::GitLevels {
         let def = crate::permissions::GitLevels::defaults(mode);
         let pick = |level: &str, d: bool| self.git_setting(Some(project), level).or_else(|| self.git_setting(None, level)).unwrap_or(d);
-        crate::permissions::GitLevels { local: pick("local", def.local), remote: pick("remote", def.remote) }
+        crate::permissions::GitLevels {
+            local: pick("local", def.local),
+            remote: pick("remote", def.remote),
+            build: pick("build", def.build),
+        }
     }
 
     /// Preferência gravada de modo de permissão: a geral (`project` = None) ou a de
@@ -1836,8 +1840,8 @@ mod tests {
 
         // Níveis de git: o padrão segue o modo; a preferência do projeto vale sobre a geral.
         use crate::permissions::GitLevels;
-        assert_eq!(o.git_levels(&proj, WorkMode::Isolated), GitLevels { local: true, remote: false });
-        assert_eq!(o.git_levels(&proj, WorkMode::Direct), GitLevels { local: false, remote: false });
+        assert_eq!(o.git_levels(&proj, WorkMode::Isolated), GitLevels { local: true, remote: false, build: true });
+        assert_eq!(o.git_levels(&proj, WorkMode::Direct), GitLevels { local: false, remote: false, build: true });
         {
             use crate::permissions::PermissionMode as P;
             assert_eq!(o.permission_mode(&proj), P::Auto);
@@ -1851,15 +1855,15 @@ mod tests {
         }
         o.set_git_setting(None, "remote", Some(true)).unwrap();
         o.set_git_setting(Some(&proj), "local", Some(false)).unwrap();
-        assert_eq!(o.git_levels(&proj, WorkMode::Isolated), GitLevels { local: false, remote: true });
+        assert_eq!(o.git_levels(&proj, WorkMode::Isolated), GitLevels { local: false, remote: true, build: true });
         o.set_git_setting(Some(&proj), "remote", Some(false)).unwrap();
-        assert_eq!(o.git_levels(&proj, WorkMode::Direct), GitLevels { local: false, remote: false });
-        assert_eq!(o.git_levels(&plain_other(&root), WorkMode::Direct), GitLevels { local: false, remote: true });
+        assert_eq!(o.git_levels(&proj, WorkMode::Direct), GitLevels { local: false, remote: false, build: true });
+        assert_eq!(o.git_levels(&plain_other(&root), WorkMode::Direct), GitLevels { local: false, remote: true, build: true });
         for level in ["local", "remote"] {
             o.set_git_setting(None, level, None).unwrap();
             o.set_git_setting(Some(&proj), level, None).unwrap();
         }
-        assert_eq!(o.git_levels(&proj, WorkMode::Isolated), GitLevels { local: true, remote: false });
+        assert_eq!(o.git_levels(&proj, WorkMode::Isolated), GitLevels { local: true, remote: false, build: true });
 
         // Preferências: geral e por projeto; pasta sem git só aceita o modo direto.
         assert_eq!(o.default_mode(&proj), WorkMode::Isolated);

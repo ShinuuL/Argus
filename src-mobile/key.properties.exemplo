@@ -1,0 +1,13 @@
+# Modelo do arquivo de assinatura de release do Android.
+#
+# Copie para `gen/android/key.properties` (essa pasta é gerada pelo
+# `tauri android init`) e preencha com os dados do SEU keystore.
+#
+# NUNCA versione o key.properties nem o arquivo .jks: eles assinam o aplicativo
+# em seu nome. Guarde os dois num cofre de senhas e faça backup — perder o
+# keystore significa não conseguir mais atualizar o aplicativo publicado.
+
+storeFile=C:/caminho/para/argus-celular.jks
+storePassword=COLOQUE_A_SENHA_DO_KEYSTORE
+keyAlias=argus
+password=COLOQUE_A_SENHA_DA_CHAVE

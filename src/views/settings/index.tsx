@@ -166,6 +166,20 @@ function AgentDefaults() {
             onChange={(v) => void save(api.permissionsSet(null, "remote", parseOnOff(v)))}
           />
         </label>
+        <label className="set-field">
+          <span className="small">Compilar e testar (build, testes, tipos)</span>
+          <Select
+            ariaLabel="Compilar e testar"
+            title="Comandos de build, teste e checagem de tipos. Instalar dependência e publicar continuam de fora."
+            value={onOff(perms?.global_build ?? null)}
+            options={[
+              { value: "", label: "Padrão", hint: "ligado" },
+              { value: "on", label: "Ligado" },
+              { value: "off", label: "Desligado" },
+            ]}
+            onChange={(v) => void save(api.permissionsSet(null, "build", parseOnOff(v)))}
+          />
+        </label>
       </div>
       <div className="small muted">
         No Auto, o agente executa comandos sem pedir e só os nocivos à máquina ou ao projeto são bloqueados. No Restrito, vale só a
@@ -182,6 +196,7 @@ function AgentDefaults() {
           <Patterns title="Inspeção" items={[...d.inspect, ...d.inspect_powershell]} />
           <Patterns title="Com o Git local ligado" items={d.git_local} />
           <Patterns title="Com o Git remoto ligado" items={d.git_remote} />
+          <Patterns title="Com o Compilar e testar ligado (padrão)" items={d.build} />
           <Patterns title="Nunca por padrão" items={d.never} />
         </div>
       )}
@@ -243,6 +258,15 @@ function ProjectAgentSettings({ project }: { project: Path }) {
             value={onOff(perms?.project_remote ?? null)}
             options={[follow, { value: "on", label: "Ligado" }, { value: "off", label: "Desligado" }]}
             onChange={(v) => void save(api.permissionsSet(project, "remote", parseOnOff(v)))}
+          />
+        </label>
+        <label className="set-field">
+          <span className="small">Compilar e testar</span>
+          <Select
+            ariaLabel="Compilar e testar no projeto"
+            value={onOff(perms?.project_build ?? null)}
+            options={[follow, { value: "on", label: "Ligado" }, { value: "off", label: "Desligado" }]}
+            onChange={(v) => void save(api.permissionsSet(project, "build", parseOnOff(v)))}
           />
         </label>
       </div>
