@@ -5,7 +5,11 @@
 //! Bearer <token>` ou cookie definido em `/pair?token=...`). Revogar =
 //! regenerar o token: cookies e QR antigos deixam de valer na hora.
 //! O token nunca aparece em log nem em corpo de resposta.
-//! Fora da LAN, use uma VPN como Tailscale em vez de expor a porta.
+//!
+//! Publicação (`Exposure`): o padrão é Tailscale Funnel — o Argus escuta só em
+//! 127.0.0.1 e o Tailscale publica a porta em HTTPS enquanto o servidor estiver
+//! ligado. `Tailnet` faz o mesmo restrito ao tailnet; `Lan` é o modo antigo
+//! (0.0.0.0 + http por IP), que depende de liberar a porta no Firewall.
 
 use crate::autowork::AutoWork;
 use crate::agents::orchestrator::{Orchestrator, OrchestratorEvent, TaskId};
@@ -23,6 +27,7 @@ use axum::{
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use crate::tailscale::{self, Exposure, TailscaleStatus};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::{broadcast, oneshot, watch};
@@ -76,6 +81,10 @@ pub struct RemoteInfo {
     pub host: String,
     /// IPs disponíveis para escolha (LAN primeiro).
     pub hosts: Vec<LanAddr>,
+    /// Como o servidor está publicado.
+    pub exposure: Exposure,
+    /// Estado do Tailscale nesta máquina (para a interface explicar o que falta).
+    pub tailscale: TailscaleStatus,
 }
 
 /// Endereço IPv4 local candidato para o pareamento.
@@ -281,10 +290,14 @@ async fn pair(State(st): State<AppState>, q: Result<Query<PairQuery>, axum::extr
 const PORT_SEARCH: u16 = 50;
 
 /// Abre a porta pedida ou, se estiver ocupada, a livre mais próxima acima dela.
-async fn bind_nearest(port: u16) -> anyhow::Result<tokio::net::TcpListener> {
+///
+/// `loopback` escuta só em 127.0.0.1: é o que vale quando o Tailscale publica o
+/// serviço, e é o que evita o aviso do Firewall do Windows.
+async fn bind_nearest(port: u16, loopback: bool) -> anyhow::Result<tokio::net::TcpListener> {
+    let addr = if loopback { [127, 0, 0, 1] } else { [0, 0, 0, 0] };
     let mut last = None;
     for p in (port..=port.saturating_add(PORT_SEARCH)).take(if port == 0 { 1 } else { usize::from(PORT_SEARCH) + 1 }) {
-        match tokio::net::TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], p))).await {
+        match tokio::net::TcpListener::bind(SocketAddr::from((addr, p))).await {
             Ok(l) => return Ok(l),
             Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => last = Some(e),
             Err(e) => return Err(e.into()),
@@ -636,6 +649,9 @@ struct Running {
     shutdown: oneshot::Sender<()>,
     stopped: watch::Sender<bool>,
     port: u16,
+    exposure: Exposure,
+    /// Base HTTPS publicada pelo Tailscale (`https://host.tailnet.ts.net`), quando houver.
+    public_url: Option<String>,
 }
 
 /// Servidor remoto. Desligado até `start`.
@@ -683,13 +699,24 @@ impl RemoteServer {
         self.running.lock().unwrap().is_some()
     }
 
-    /// Inicia em 0.0.0.0:`port` (0 = porta livre). Se a porta pedida estiver ocupada (por
-    /// exemplo, por outra cópia do Argus), usa a porta livre mais próxima acima dela; a porta
-    /// de fato usada vem em `RemoteInfo`. Se já rodando, reinicia.
-    pub async fn start(&self, orch: Orchestrator, port: u16) -> anyhow::Result<RemoteInfo> {
+    /// Inicia o servidor na porta dada (0 = porta livre). Se a porta pedida estiver ocupada
+    /// (por exemplo, por outra cópia do Argus), usa a porta livre mais próxima acima dela; a
+    /// porta de fato usada vem em `RemoteInfo`. Se já rodando, reinicia.
+    ///
+    /// Com `Exposure::Tailnet` ou `Funnel`, escuta só em 127.0.0.1 e manda o Tailscale
+    /// publicar a porta em HTTPS — ligado aqui e desligado no `stop`, nunca antes. Se o
+    /// Tailscale recusar, o servidor é derrubado junto: ninguém fica com uma porta aberta
+    /// sem a publicação que o usuário pediu.
+    pub async fn start(&self, orch: Orchestrator, port: u16, exposure: Exposure) -> anyhow::Result<RemoteInfo> {
         self.stop();
-        let listener = bind_nearest(port).await?;
+        let listener = bind_nearest(port, exposure.via_tailscale()).await?;
         let port = listener.local_addr()?.port();
+        let public_url = if exposure.via_tailscale() {
+            let url = tokio::task::spawn_blocking(move || tailscale::expose(exposure, port)).await??;
+            Some(url)
+        } else {
+            None
+        };
         let (stopped, stopped_rx) = watch::channel(false);
         let app = router(AppState {
             orch,
@@ -710,15 +737,16 @@ impl RemoteServer {
                 tracing::warn!("servidor remoto: {e}");
             }
         });
-        *self.running.lock().unwrap() = Some(Running { shutdown: tx, stopped, port });
+        *self.running.lock().unwrap() = Some(Running { shutdown: tx, stopped, port, exposure, public_url });
         self.info()
     }
 
     pub fn stop(&self) {
-        if let Some(r) = self.running.lock().unwrap().take() {
-            let _ = r.stopped.send(true);
-            let _ = r.shutdown.send(());
-        }
+        let Some(r) = self.running.lock().unwrap().take() else { return };
+        let _ = r.stopped.send(true);
+        let _ = r.shutdown.send(());
+        // Tira a publicação junto com o servidor: a URL HTTPS não sobrevive ao desligar.
+        tailscale::unexpose(r.exposure);
     }
 
     /// Revoga o token atual (todos os aparelhos pareados perdem acesso) e gera outro.
@@ -734,11 +762,24 @@ impl RemoteServer {
     }
 
     /// URL + QR atuais (erro se parado).
+    ///
+    /// Publicado pelo Tailscale, o pareamento vai pela URL HTTPS e o IP escolhido à mão
+    /// não entra na conta — quem resolve o nome é o Tailscale.
     pub fn info(&self) -> anyhow::Result<RemoteInfo> {
-        let port = self.running.lock().unwrap().as_ref().map(|r| r.port).ok_or_else(|| anyhow::anyhow!("servidor parado"))?;
-        let host = self.host.read().unwrap().clone().unwrap_or_else(|| lan_ip().to_string());
-        let url = format!("http://{host}:{port}/pair?token={}", self.token.read().unwrap());
-        Ok(RemoteInfo { qr_svg: qr_svg(&url)?, url, port, host, hosts: lan_addrs() })
+        let (port, exposure, public_url) = {
+            let g = self.running.lock().unwrap();
+            let r = g.as_ref().ok_or_else(|| anyhow::anyhow!("servidor parado"))?;
+            (r.port, r.exposure, r.public_url.clone())
+        };
+        let token = self.token.read().unwrap().clone();
+        let (url, host) = match &public_url {
+            Some(base) => (format!("{base}/pair?token={token}"), base.trim_start_matches("https://").to_string()),
+            None => {
+                let host = self.host.read().unwrap().clone().unwrap_or_else(|| lan_ip().to_string());
+                (format!("http://{host}:{port}/pair?token={token}"), host)
+            }
+        };
+        Ok(RemoteInfo { qr_svg: qr_svg(&url)?, url, port, host, hosts: lan_addrs(), exposure, tailscale: tailscale::status() })
     }
 }
 
@@ -803,9 +844,9 @@ mod tests {
 
     #[tokio::test]
     async fn busy_port_falls_back_to_the_nearest_free_one() {
-        let taken = bind_nearest(0).await.unwrap();
+        let taken = bind_nearest(0, false).await.unwrap();
         let busy = taken.local_addr().unwrap().port();
-        let l = bind_nearest(busy).await.unwrap();
+        let l = bind_nearest(busy, false).await.unwrap();
         let got = l.local_addr().unwrap().port();
         assert!(got > busy && got <= busy.saturating_add(PORT_SEARCH), "{busy} -> {got}");
     }
@@ -813,7 +854,7 @@ mod tests {
     async fn auth_flow() {
         let srv = RemoteServer::new();
         let orch = Orchestrator::new(vec![], 1);
-        let info = srv.start(orch, 0).await.unwrap();
+        let info = srv.start(orch, 0, Exposure::Lan).await.unwrap();
         assert!(info.qr_svg.contains("<svg"));
         let port = info.port;
         let token = srv.token.read().unwrap().clone();
@@ -863,7 +904,7 @@ mod tests {
     #[tokio::test]
     async fn every_route_requires_the_token() {
         let srv = RemoteServer::new();
-        let port = srv.start(Orchestrator::new(vec![], 1), 0).await.unwrap().port;
+        let port = srv.start(Orchestrator::new(vec![], 1), 0, Exposure::Lan).await.unwrap().port;
         let token = srv.token.read().unwrap().clone();
         let gets = [
             "/", "/app.js", "/style.css", "/manifest.webmanifest", "/icon.svg", "/api/tasks", "/api/tasks/1", "/api/projects",
@@ -893,7 +934,7 @@ mod tests {
     #[tokio::test]
     async fn stopping_the_server_closes_open_websockets() {
         let srv = RemoteServer::new();
-        let port = srv.start(Orchestrator::new(vec![], 1), 0).await.unwrap().port;
+        let port = srv.start(Orchestrator::new(vec![], 1), 0, Exposure::Lan).await.unwrap().port;
         let token = srv.token.read().unwrap().clone();
         let req = format!(
             "GET /api/stream HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nCookie: {COOKIE}={token}\r\n\r\n"
@@ -919,7 +960,7 @@ mod tests {
     #[tokio::test]
     async fn unauthorized_page_is_clear_and_leaks_nothing() {
         let srv = RemoteServer::new();
-        let port = srv.start(Orchestrator::new(vec![], 1), 0).await.unwrap().port;
+        let port = srv.start(Orchestrator::new(vec![], 1), 0, Exposure::Lan).await.unwrap().port;
         let token = srv.token.read().unwrap().clone();
         let missing = http(port, get("/pair", "")).await;
         let wrong = http(port, get("/pair?token=errado", "")).await;
@@ -946,7 +987,7 @@ mod tests {
         std::fs::create_dir(&alfa).unwrap();
         let srv = RemoteServer::new();
         srv.set_projects(vec![alfa.clone()]);
-        let port = srv.start(Orchestrator::new(vec![], 1), 0).await.unwrap().port;
+        let port = srv.start(Orchestrator::new(vec![], 1), 0, Exposure::Lan).await.unwrap().port;
         let auth = format!("Authorization: Bearer {}\r\n", srv.token.read().unwrap());
 
         let r = http(port, get("/api/projects", &auth)).await;

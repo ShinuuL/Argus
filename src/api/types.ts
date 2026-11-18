@@ -510,15 +510,34 @@ export interface LanAddr {
   kind: AddrKind;
 }
 
+/**
+ * Como o servidor remoto fica acessível ao celular.
+ * - `Funnel`: HTTPS publicado na internet pelo Tailscale (padrão).
+ * - `Tailnet`: HTTPS só para os aparelhos do seu tailnet.
+ * - `Lan`: http por IP da rede local (depende do Firewall).
+ */
+export type Exposure = "Funnel" | "Tailnet" | "Lan";
+
+export interface TailscaleStatus {
+  /** A CLI do Tailscale existe neste computador. */
+  installed: boolean;
+  /** O Tailscale está conectado e logado. */
+  running: boolean;
+  /** Nome da máquina no tailnet (ex.: `pc.tail1234.ts.net`). */
+  dns_name: string;
+}
+
 export interface RemoteInfo {
   /** URL de pareamento (contém o token do Argus). */
   url: string;
   /** QR code da URL, em SVG. */
   qr_svg: string;
   port: number;
-  /** IP usado na URL. */
+  /** IP (ou nome no tailnet) usado na URL. */
   host: string;
   hosts: LanAddr[];
+  exposure: Exposure;
+  tailscale: TailscaleStatus;
 }
 
 // ---------------------------------------------------------------------- mídia

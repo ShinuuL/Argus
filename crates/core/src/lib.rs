@@ -15,5 +15,6 @@ pub mod procs;
 pub mod pty;
 pub mod remote;
 pub mod runs;
+pub mod tailscale;
 pub mod usage;
 pub mod workspace;
