@@ -18,3 +18,17 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# O APK leva a biblioteca nativa das quatro arquiteturas do Android. Com os
+# símbolos de depuração o arquivo passava de 460 MB; sem eles fica na casa das
+# dezenas. O que se perde é a pilha simbolizada de um crash nativo — e o
+# aplicativo aqui é uma casca fina em volta da webview.
+[profile.dev]
+strip = "debuginfo"
+
+[profile.release]
+strip = true
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"

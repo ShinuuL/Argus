@@ -1,0 +1,12 @@
+{
+  "name": "argus-celular",
+  "private": true,
+  "version": "0.1.2",
+  "description": "Casca Android do Argus (Tauri 2). O pacote existe para o projeto Gradle gerado rodar a CLI do Tauri daqui, e não da raiz do repositório — de lá ela encontraria o src-tauri (o app do computador) e o celular nunca seria compilado.",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}
