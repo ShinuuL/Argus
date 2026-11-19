@@ -38,8 +38,27 @@ pub fn open_root(app: &AppHandle, dir: PathBuf) -> Result<RootInfo, String> {
     let projects = list_projects(app, &dir)?;
     let paths = existing(&projects);
     *ctx.root.lock().map_err(err)? = Some(dir.clone());
-    // Preferências e memória dos agentes ficam em `<raiz>/Argus`.
+    // Preferências e memória dos agentes ficam em `<raiz>/_Argus`.
     argus_core::memory::set_root(Some(dir.clone()));
+    // Uma vez por execução do app: atualiza as notas de projeto do vault com os
+    // commits novos (sem agente se nada mudou; modelo barato se mudou). A cópia
+    // de desenvolvimento não roda, para testes não gastarem tokens.
+    {
+        static DONE: std::sync::Once = std::sync::Once::new();
+        if argus_core::paths::dir_name() == "argus" {
+            let orch = ctx.orch.clone();
+            let root = dir.clone();
+            DONE.call_once(move || {
+                // `git log` é bloqueante (thread própria); `submit_with` usa
+                // `tokio::spawn`, por isso a thread entra no runtime do app.
+                let rt = tauri::async_runtime::handle();
+                std::thread::spawn(move || {
+                    let _guard = rt.inner().enter();
+                    let _ = argus_core::vault_sync::run(&orch, &root);
+                });
+            });
+        }
+    }
     *ctx.projects.lock().map_err(err)? = projects.clone();
     // O acesso remoto (celular) lista estes projetos e só cria conversa neles.
     ctx.remote.set_projects(paths.clone());

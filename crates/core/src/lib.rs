@@ -22,4 +22,5 @@ pub mod schedules;
 pub mod tunnels;
 pub mod tailscale;
 pub mod usage;
+pub mod vault_sync;
 pub mod workspace;
