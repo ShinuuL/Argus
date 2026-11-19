@@ -5,6 +5,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { baseName, isTaskActive, samePath } from "@/api";
+import { requestNewTask } from "@/areas/tasks/intent";
 import { AREAS, PAGES, useApp, useLayout, useWorkbench, type Area } from "@/store";
 import { sessionTitle } from "@/views/session/events";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -94,6 +95,13 @@ function commands(): Cmd[] {
     { id: "inspector", group: "Ações", label: "Alternar o inspetor", meta: <span className="kbd">Ctrl .</span>, run: () => (layout.setArea("chat"), layout.toggleInspector()) },
     { id: "changes", group: "Ações", label: "Ver alterações da sessão", run: () => layout.showChanges() },
     { id: "agents", group: "Ações", label: "Ver agentes em tela cheia", run: go("agents") },
+    {
+      id: "new-schedule",
+      group: "Ações",
+      label: "Nova tarefa agendada",
+      keys: "agendar agendamento lembrete cron recorrente tarefas",
+      run: () => (layout.setArea("tasks"), requestNewTask()),
+    },
     { id: "mirror", group: "Ações", label: "Espelhar celular como aba", keys: "celular espelhamento screen mirror android", run: () => wb.openMirror() },
   );
 

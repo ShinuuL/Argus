@@ -11,6 +11,7 @@ use argus_core::devices::ScreenMirror;
 use argus_core::monitor::WatchHandle;
 use argus_core::pty::PtyManager;
 use argus_core::remote::RemoteServer;
+use argus_core::schedules::Scheduler;
 use argus_core::workspace::Project;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -21,6 +22,8 @@ pub struct AppCtx {
     pub providers: Vec<Arc<dyn AgentProvider>>,
     pub orch: Orchestrator,
     pub autowork: AutoWork,
+    /// Tarefas agendadas (o laço liga no `setup`, com o aviso para a janela).
+    pub scheduler: Scheduler,
     pub remote: Arc<RemoteServer>,
     /// Caminho do banco em uso (None = histórico desligado).
     pub db_path: Option<PathBuf>,
@@ -89,6 +92,7 @@ impl AppCtx {
         };
         let orch = Orchestrator::with_db(providers.clone(), 2, db);
         let autowork = AutoWork::start(orch.clone());
+        let scheduler = Scheduler::new(orch.clone());
         let remote = RemoteServer::new();
         remote.set_autowork(autowork.clone());
         Self {
@@ -96,6 +100,7 @@ impl AppCtx {
             providers,
             orch,
             autowork,
+            scheduler,
             remote: Arc::new(remote),
             db_path,
             root: Mutex::new(None),

@@ -11,6 +11,7 @@
 //! | `servers-changed`     | `ServerInfo[]`                                         |
 //! | `runs-changed`        | `RunInfo[]` (builds e servidores de dev)                |
 //! | `run-finished`        | `RunInfo` (uma execução terminou)                      |
+//! | `schedules-changed`   | (nada) a lista de tarefas agendadas mudou              |
 //! | `media-local`         | `{ type: "Error", message }` ou `{ type: "Finished" }` |
 use crate::state::AppCtx;
 use argus_core::agents::orchestrator::{OrchestratorEvent, TaskId, TaskState};

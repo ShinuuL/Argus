@@ -44,6 +44,7 @@ export const EVENTS = {
   mediaLocal: "media-local",
   runsChanged: "runs-changed",
   runFinished: "run-finished",
+  schedulesChanged: "schedules-changed",
 } as const;
 
 function on<T>(event: string, cb: (payload: T) => void): Promise<Unlisten> {
@@ -196,3 +197,6 @@ export const onRunsChanged = (cb: (runs: RunInfo[]) => void): Promise<Unlisten> 
 
 /** Uma execução terminou (ok, falhou, parada ou encerrada). */
 export const onRunFinished = (cb: (run: RunInfo) => void): Promise<Unlisten> => on(EVENTS.runFinished, cb);
+
+/** A lista de tarefas agendadas mudou (disparo, término, edição). */
+export const onSchedulesChanged = (cb: () => void): Promise<Unlisten> => on(EVENTS.schedulesChanged, () => cb());

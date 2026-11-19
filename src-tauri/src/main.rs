@@ -38,6 +38,14 @@ fn main() {
             events::start_orchestrator_forwarder(&handle);
             events::start_servers_forwarder(&handle);
             commands::runs::start_watcher(&handle);
+            // Tarefas agendadas: a primeira volta recupera o que venceu com o app fechado.
+            commands::schedules::start(&handle);
+            // Aberto pelo "Iniciar com o Windows": começa minimizado.
+            if std::env::args().any(|a| a == commands::schedules::MINIMIZED_ARG) {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.minimize();
+                }
+            }
             // ARGUS_ROOT: abre a pasta raiz automaticamente (útil para testes).
             if let Some(dir) = std::env::var_os("ARGUS_ROOT").map(std::path::PathBuf::from).filter(|d| d.is_dir()) {
                 if let Err(e) = workspace::open_root(&handle, dir) {
@@ -117,6 +125,14 @@ fn main() {
             autowork::autowork_pause,
             autowork::autowork_resume,
             autowork::autowork_stop,
+            // tarefas agendadas e inicialização
+            schedules::schedules_list,
+            schedules::schedules_save,
+            schedules::schedules_set_enabled,
+            schedules::schedules_delete,
+            schedules::schedules_run_now,
+            schedules::autostart_get,
+            schedules::autostart_set,
             // servidores
             servers::servers_list,
             // builds e servidores de dev

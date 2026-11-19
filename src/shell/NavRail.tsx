@@ -5,6 +5,7 @@
  */
 import type { LucideIcon } from "lucide-react";
 import {
+  CalendarClock,
   ChartColumn,
   GitPullRequestArrow,
   House,
@@ -26,6 +27,7 @@ const TOP: { id: Area; label: string; icon: LucideIcon }[] = [
   { id: "devices", label: "Dispositivos", icon: Smartphone },
   { id: "metrics", label: "Métricas", icon: ChartColumn },
   { id: "terminal", label: "Terminal", icon: SquareTerminal },
+  { id: "tasks", label: "Tarefas agendadas", icon: CalendarClock },
 ];
 
 function RailItem({ id, label, icon: I }: { id: Area; label: string; icon: LucideIcon }) {
