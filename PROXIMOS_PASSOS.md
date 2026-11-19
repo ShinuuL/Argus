@@ -337,6 +337,22 @@ Falta:
 - sandbox do codex no Windows (é experimental na CLI): verificar se `workspace-write` realmente bloqueia escrita fora da pasta;
 - "Liberar este comando neste projeto" não vale para o codex (a lista de comandos permitidos é do claude).
 
+## Funções da extensão do VS Code portadas (2026-11-19, branch `feat/extensao-vscode`)
+
+Valem para qualquer provedor. Estado: **core testado** (Rust) e **compila** (tela; nada visto na janela).
+
+- **Acesso por conversa: Planejar / Normal / Bypass** (`permissions::AccessMode`, coluna `access` da tarefa, `Orchestrator::set_access`, comando `task_set_access`). Escolha em "Opções da conversa" do composer, depois do primeiro envio. Argumentos por provedor (cada `task_command` lê `TurnOptions::access`):
+  - Planejar: claude `--permission-mode plan` (se o `--help` tiver `"plan"`; senão fica `acceptEdits`), gemini `--approval-mode plan`, codex `--sandbox read-only`, opencode `--agent plan`. Ao fim do turno, "Executar o plano" volta ao Normal e manda "Execute o plano que você propôs acima.".
+  - Bypass: claude `--permission-mode bypassPermissions` (ou `--dangerously-skip-permissions` se a CLI não listar `bypassPermissions`), codex `--dangerously-bypass-approvals-and-sandbox` (sem `--sandbox`), gemini `--approval-mode yolo`, opencode `OPENCODE_CONFIG_CONTENT={"permission":"allow"}`. A política de shell do Argus (`permissions::apply`) não entra (`apply_for`). Nunca padrão, só na conversa onde foi ligado, confirmação pelo diálogo do sistema, selo vermelho "Bypass" no cabeçalho, na aba e na barra de status.
+  - ⚠ conferido só a montagem: o claude 2.1.x lista `plan`/`bypassPermissions` no `--help`; codex e gemini não estão instalados aqui (flags da documentação); `opencode run --agent plan` e a config `permission: allow` não rodados.
+- **Editor no chat**: Alt+K (e menu de contexto do Monaco) "Adicionar à conversa" insere `@caminho#L10-20` e o trecho na conversa visível. Acima do composer, chip "arquivo em foco · L10-20" (ligado por padrão; clique desliga) anexa o arquivo/seleção ao pedido, e chip "N erros do editor" (só com markers do Monaco; desligado por padrão) anexa os erros/avisos. Estado em `src/views/workbench/editorContext.ts`.
+- **Rejeitar no diff**: `Orchestrator::revert_file` (volta ao último commit com `git restore --worktree`, ou apaga o arquivo novo) e `revert_hunk` (patch do trecho tirado do `git diff HEAD`, aplicado com `git apply -R` só nos arquivos), no worktree ou na pasta (Direto). Na aba de alterações: "Rejeitar arquivo" e "Rejeitar trecho acima" (quando há mais de um trecho), com confirmação. Bloqueado com turno rodando.
+- **"Liberar e repetir"** no cartão Comando negado: libera o comando exato e manda o turno curto "o comando X foi liberado; rode de novo".
+
+Falta ver na janela: menu de opções com os três modos e o diálogo do Bypass; selos na aba e na barra de status; "Executar o plano" depois de um turno real em Planejar; Alt+K com seleção e o chip de foco atualizando ao trocar de arquivo/grupo; chip de erros num .ts com erro; rejeitar trecho num arquivo CRLF; "Liberar e repetir" numa negação real.
+
+Ficou de fora: escolher Planejar/Bypass antes do primeiro envio (hoje só depois que a tarefa existe); checkpoints por turno ("Voltar a este ponto", ref `refs/argus/t<id>/<n>` com `git stash create` antes do turno); Alt+K quando não há conversa aberta (o texto só entra se uma aba de conversa estiver visível).
+
 ## Próximos passos (em ordem)
 
 1. **Terminar o teste na janela.** O que ainda não foi conferido:
