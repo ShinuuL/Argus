@@ -7,3 +7,7 @@ key.properties
 *.jks
 *.keystore
 /node_modules
+
+# Logs de crash da JVM (Gradle sem memória)
+hs_err_pid*.log
+replay_pid*.log
