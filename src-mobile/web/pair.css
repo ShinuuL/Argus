@@ -41,4 +41,6 @@ button.ghost {
 }
 button.ghost.small { font-size: 13.5px; color: var(--text-2); min-height: 40px; }
 section { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+/* `section { display: flex }` venceria o atributo hidden e mostraria "Último computador" vazio. */
+[hidden] { display: none !important; }
 .rodape { margin: 18px 0 0; color: var(--text-2); font-size: 12.5px; }

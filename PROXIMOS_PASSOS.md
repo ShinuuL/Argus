@@ -263,7 +263,8 @@ Marcado com `[x]` o que foi visto funcionando na janela em 2026-11-14.
 - [x] Login pela CLI num terminal (OpenCode; aberto e fechado sem concluir).
 - [ ] Login do claude num terminal (abre o navegador; não foi aberto).
 - [x] Tarefa pelo OpenCode.
-- [ ] Web app aberta num celular de verdade.
+- [x] Web app aberta num celular de verdade (2026-11-19, SM-M556B, Android 16, APK debug 0.1.2): pareamento pelo Funnel (`https://<pc>.ts.net/pair?token=…`), lista de sessões, histórico de uma sessão, aba Servidores e indicador "ao vivo". Ao desligar, `tailscale funnel status` ficou sem configuração. Corrigidos no teste: biblioteca nativa sem alinhamento de 16 KB (aviso do Android 16; `src-mobile/build.rs`), "Último computador usado" vazio aparecendo sem nada salvo (`[hidden]` vencido pelo `section { display:flex }`), texto do rodapé que dizia que nada ia para a internet, números em formato inglês na web app.
+- [ ] App do celular: uma linha `FORTIFY: pthread_mutex_lock called on a destroyed mutex` no buffer de crash no instante de um `am force-stop`. Parece ser só no encerramento forçado; não apareceu no uso normal.
 - [x] Servidor vinculado a uma sessão de agente.
 
 ## Defeitos conhecidos

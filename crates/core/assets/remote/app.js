@@ -167,13 +167,19 @@ const baseName = (p) => {
 };
 const pathKey = (p) => String(p).replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
 
+// Mesmo formato do app no computador (src/api/util.ts): pt-BR, "36,8 mil", "US$ 0,16".
+const NF_1 = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 1 });
 function formatTokens(n) {
-  if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
-  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
-  if (n >= 1e4) return (n / 1e3).toFixed(1) + "k";
-  return String(Math.round(n));
+  if (n >= 1e9) return NF_1.format(n / 1e9) + " bi";
+  if (n >= 1e6) return NF_1.format(n / 1e6) + " mi";
+  if (n >= 1e3) return NF_1.format(n / 1e3) + " mil";
+  return Math.round(n).toLocaleString("pt-BR");
 }
-const formatUsd = (v) => (v > 0 && v < 0.01 ? "$" + v.toFixed(4) : "$" + v.toFixed(2));
+function formatUsd(v) {
+  v = v || 0;
+  const d = v > 0 && v < 0.01 ? 4 : 2;
+  return "US$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
+}
 const plural = (n, one, many) => (n === 1 ? "1 " + one : n + " " + many);
 
 const TASK_STATES = {
