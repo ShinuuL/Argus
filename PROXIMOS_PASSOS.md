@@ -12,6 +12,8 @@ A conferência na janela foi feita pelo protocolo de depuração do WebView2 (cl
 - **Colar imagem:** evento `paste` sintético com um PNG no `DataTransfer`. Limite: a área de transferência real do sistema (Ctrl+V depois de um print) não é coberta.
 - **Caixas nativas de confirmação** (Aplicar, Descartar, "Parar e enviar"): a página fica parada até a resposta; o teste respondeu mandando a mensagem de clique ao botão "Sim" da caixa.
 
+Uso no dia a dia como o Claude Code no VS Code (equivalências e diferenças): [docs/USO_COMO_CLAUDE_CODE.md](docs/USO_COMO_CLAUDE_CODE.md).
+
 ## Pendências por prioridade (2026-11-19)
 
 Fila de trabalho. P1 a P3 em andamento; P4 é conferência que o usuário faz em casa (aparelho, sistema, chave).

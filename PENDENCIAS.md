@@ -2,7 +2,7 @@
 
 _Criado em 2026-11-16. Complementa o [PROXIMOS_PASSOS.md](PROXIMOS_PASSOS.md)._
 
-A meta é que o Argus seja o hub único das ferramentas de desenvolvimento da Mastersys. Três projetos separados entram nele como módulos:
+A meta é que o Argus seja o hub único das ferramentas de desenvolvimento. Três projetos separados entram nele como módulos:
 
 | Projeto | O que é hoje | Stack | Como entra no Argus |
 |---|---|---|---|
@@ -102,7 +102,7 @@ O Screen-Mirror funciona e tem MCP pronto. Reescrever o protocolo do scrcpy de c
 - [ ] E1. O Argus reconhece o projeto como Android (Gradle) e compila, instala e abre o app pelo módulo de dispositivos.
 - [ ] E2. **Ponte de dados:** o AllSeenEye expõe o que capturou (pacotes do `CaptureBus`, trocas HTTP do `ProxyBus`, scan Wi-Fi) num socket local ou num arquivo `.pcap`/JSON. O Argus lê por `adb forward` ou `adb pull` e mostra numa aba **Rede do aparelho**. Junto vem o item do roadmap do próprio app: salvar sessões (Room) e exportar `.pcap`.
 - [ ] E3. Tipos compartilhados: `CapturedPacket`, `HttpExchange` e `WifiModels` viram structs Rust e tipos TS, com o mesmo JSON do Kotlin.
-- [ ] E4. Depuração de apps Mastersys: durante uma conversa de agente, o tráfego HTTP do app em teste aparece junto ao logcat, o que ajuda a depurar integrações (APIs de ERP/PDV).
+- [ ] E4. Depuração de apps em teste: durante uma conversa de agente, o tráfego HTTP do app em teste aparece junto ao logcat, o que ajuda a depurar integrações (APIs de ERP/PDV).
 - [ ] E5 (opcional, desktop): capturar o tráfego do próprio PC no Argus, com Npcap e a crate `pcap` e a lógica do `PacketParser` (ou `etherparse`). Só depois de E2 e só para o tráfego da própria máquina.
 - [ ] E6. `EducationContent.kt` pode virar JSON para cards de ajuda nas abas Rede e Portas.
 

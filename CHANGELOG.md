@@ -7,7 +7,22 @@ lugares, que precisam andar juntos: `package.json`, `src-tauri/tauri.conf.json`,
 `src-mobile/tauri.conf.json` e `src-mobile/Cargo.toml`. Cada release tem uma tag `vX.Y.Z` e o instalador
 `Argus_X.Y.Z_x64-setup.exe` anexado no GitHub.
 
-## 0.1.2 (2026-11-17)
+## 0.1.2 (2026-11-19)
+
+Uso como o Claude Code no VS Code: ver [docs/USO_COMO_CLAUDE_CODE.md](docs/USO_COMO_CLAUDE_CODE.md).
+
+- Planejar / Normal / Bypass por conversa, escolhidos já antes do primeiro envio. O Planejar do
+  claude não usa mais o `--permission-mode plan` (a CLI trocava haiku por sonnet).
+- "Voltar a este ponto" em cada pedido (`refs/argus/t<id>/<n>`, sem mexer em índice nem branch).
+- Funções da extensão do VS Code: Alt+K, chips de arquivo em foco e de erros, rejeitar trecho,
+  "Liberar e repetir"; Alt+K mostra uma conversa quando nenhuma está à vista.
+- Tarefas agendadas e "Iniciar com o Windows"; preferências e memória em `_Argus/` no vault.
+- Auto-work usa o mesmo arquivo de pendências do inspetor; configuração por projeto sem
+  depender de `/` ou `\`.
+- OpenCode com `--standalone`: a política do modo Restrito passa a valer.
+- Compactação automática, texto ao vivo, uso estimado de turno cancelado.
+- Aparência: tamanho da interface e fonte do código; paleta com ícones; aviso quando o servidor
+  que o agente subiu cai, com "Iniciar pelo Argus".
 
 - Builds: uma execução não é mais dada como encerrada quando um elo da corrente de processos
   termina. Um build é `npm run …` chamando `cargo`, que chama um `rustc` por alvo; cada processo
