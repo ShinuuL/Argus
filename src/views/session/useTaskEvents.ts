@@ -37,6 +37,8 @@ export interface TaskEvents {
   /** false até a primeira leitura do histórico terminar. */
   loaded: boolean;
   error: string | null;
+  /** Texto do agente ainda sendo gerado (some quando chega o bloco completo). */
+  draft: string;
 }
 
 /**
@@ -48,6 +50,7 @@ export function useTaskEvents(taskId: TaskId | null, active: boolean): TaskEvent
   const [times, setTimes] = useState<SubagentTimes>({});
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
   /** Relê o histórico (definido pelo efeito abaixo). */
   const resync = useRef<() => void>(() => undefined);
 
@@ -56,6 +59,7 @@ export function useTaskEvents(taskId: TaskId | null, active: boolean): TaskEvent
     /** Durante uma leitura do histórico, o que chega ao vivo espera aqui. */
     let pending: AgentEvent[] | null = [];
     setEvents([]);
+    setDraft("");
     setTimes({});
     setLoaded(taskId == null);
     setError(null);
@@ -120,6 +124,13 @@ export function useTaskEvents(taskId: TaskId | null, active: boolean): TaskEvent
 
     const off = onTaskEvent(taskId, (event) => {
       if (!alive) return;
+      // Texto parcial: acumula no rascunho, fora da lista de eventos.
+      if ("TextDelta" in event) {
+        setDraft((d) => d + event.TextDelta);
+        return;
+      }
+      // Qualquer evento do agente principal fecha o bloco que estava sendo gerado.
+      if (!("Scoped" in event)) setDraft("");
       stamp(event);
       if (pending) pending.push(event);
       else setEvents((cur) => [...cur, event]);
@@ -136,6 +147,7 @@ export function useTaskEvents(taskId: TaskId | null, active: boolean): TaskEvent
   const wasActive = useRef(active);
   useEffect(() => {
     if (wasActive.current && !active) {
+      setDraft("");
       // Dá tempo de os últimos eventos do turno serem gravados.
       const timer = setTimeout(() => resync.current(), 400);
       wasActive.current = active;
@@ -144,5 +156,5 @@ export function useTaskEvents(taskId: TaskId | null, active: boolean): TaskEvent
     wasActive.current = active;
   }, [active]);
 
-  return { events, times, loaded, error };
+  return { events, times, loaded, error, draft };
 }

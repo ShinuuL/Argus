@@ -400,7 +400,12 @@ Falta:
     - Tratar a memória do Argus (notas, contexto e decisões que os agentes leem e gravam) como um vault do Obsidian: arquivos Markdown simples numa pasta, com links `[[nota]]` e frontmatter, abríveis e editáveis direto no Obsidian.
     - Hoje o vault é a pasta que o Argus controla, acima de todos os projetos: `D:\Dev\Desenvolvimento` já tem `.obsidian/`, e os `.md` com o nome de cada projeto em `Projetos\` (ex.: `Argus.md`, `Digitama.md`) são notas do vault. O Argus ainda não lê nem grava nada nele.
     - Pendente: definir o local, o formato das notas (uma por fato, com links entre elas), o que entra ou não no git, e como os agentes leem e gravam nessas notas.
-15. **Refazer o ícone do app (não crítico).** O olho atual é provisório; redesenhar o ícone do Argus (janela, barra de tarefas, instalador e web app do celular).
+15. **Eficiência de tokens (2026-11-19).**
+    - Feito: o claude roda com `--exclude-dynamic-system-prompt-sections` (o git status saía do prompt de sistema e regravava o cache da conversa inteira a cada turno; a sessão #9 regravou ~10,9 M tokens em 21 turnos) e com `--include-partial-messages` (o texto aparece enquanto é gerado, como `TextDelta`, que não é gravado no banco nem enviado ao celular).
+    - Pendente: compactar sozinho quando o contexto passar de um limite (a #9 chegou a ~600 mil tokens no `opus[1m]`, e cada chamada de ferramenta relê tudo). Conferir antes se `/compact` funciona com `claude -p --resume`.
+    - Pendente: "Padrão da CLI" hoje resolve para o modelo de 1M; avaliar um padrão de janela menor para conversas comuns.
+    - Pendente: medir de novo uma sessão longa com as duas opções e comparar `cache_write` por turno.
+16. **Refazer o ícone do app (não crítico).** O olho atual é provisório; redesenhar o ícone do Argus (janela, barra de tarefas, instalador e web app do celular).
 
 ## Notas
 

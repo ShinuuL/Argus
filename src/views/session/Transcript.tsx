@@ -160,6 +160,15 @@ export function WorkingLine({ activity }: { activity?: string }) {
   );
 }
 
+/** Texto do agente ainda sendo gerado: o mesmo visual do bloco de texto final. */
+export function DraftText({ text }: { text: string }) {
+  return (
+    <TimelineItem dot={<Dot status="text" />} className="tl-text tl-draft">
+      <MessageView event={{ Text: text }} />
+    </TimelineItem>
+  );
+}
+
 export interface TranscriptProps {
   entries: ChatEntry[];
   /** Subagentes por id, para os cartões. */
@@ -173,6 +182,8 @@ export interface TranscriptProps {
   /** Conteúdo fixo antes e depois das mensagens (prompt do subagente, "trabalhando…"). */
   before?: ReactNode;
   after?: ReactNode;
+  /** Muda enquanto o conteúdo de `after` cresce (texto sendo gerado): acompanha o fim. */
+  follow?: number;
   /** Muda quando o chat exibido troca: volta a rolagem para o fim. */
   resetKey?: string;
   /** Nome de exibição de um provedor (para a divisória de troca de agente). */
@@ -211,7 +222,7 @@ export function Transcript(props: TranscriptProps) {
   useLayoutEffect(() => {
     const el = ref.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [entries.length, resetKey, after != null]);
+  }, [entries.length, resetKey, after != null, props.follow]);
 
   const onScroll = () => {
     const el = ref.current;

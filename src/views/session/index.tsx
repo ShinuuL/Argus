@@ -62,7 +62,7 @@ import {
 import { AgentModelPill, ComposerOptions, DirectHold, hasGaps, IsolationHold, useWorkModeInfo, WORK_MODE_LABEL } from "./pills";
 import { ContextMeter } from "./ContextMeter";
 import { UsagePill } from "@/views/chat/UsagePill";
-import { liveActivity, Transcript, WorkingLine } from "./Transcript";
+import { DraftText, liveActivity, Transcript, WorkingLine } from "./Transcript";
 import { useTaskEvents } from "./useTaskEvents";
 import { AgentState, agentStateLabel, agentStateOf, lastTurnDenied } from "./AgentState";
 import "./session.css";
@@ -331,7 +331,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   const providers = useProviders();
 
   const busy = task ? isTaskActive(task.state) : false;
-  const { events, times, loaded, error: loadError } = useTaskEvents(taskId, busy);
+  const { events, times, loaded, error: loadError, draft } = useTaskEvents(taskId, busy);
   const pricing = usePricing();
   const [provider, setProvider] = useState("");
   /** Modelo escolhido para a conversa nova (undefined = o inicial do provedor). */
@@ -771,6 +771,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                 <div className="cv-note">Carregando o histórico…</div>
               ) : null
             }
+            follow={draft.length}
             after={
               current ? (
                 current.done ? (
@@ -787,7 +788,10 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                   <div className="cv-note">O turno parou antes de o subagente terminar.</div>
                 )
               ) : busy ? (
-                <WorkingLine activity={liveActivity(entries, project)} />
+                <>
+                  {draft && <DraftText text={draft} />}
+                  <WorkingLine activity={liveActivity(entries, project)} />
+                </>
               ) : null
             }
           />

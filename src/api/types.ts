@@ -208,6 +208,8 @@ export type AgentEvent =
   | { Session: string }
   | { User: string }
   | { Text: string }
+  /** Pedaço de texto ainda sendo gerado: só ao vivo, nunca no histórico. */
+  | { TextDelta: string }
   | { ToolUse: { name: string; input: unknown } }
   /** Saída de uma ferramenta comum, na mesma ordem dos `ToolUse` do mesmo dono (cortada em 4000 caracteres). */
   | { ToolResult: { ok: boolean; output: string } }

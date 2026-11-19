@@ -70,11 +70,18 @@ impl AgentProvider for ClaudeProvider {
         // é negada. `acceptEdits` libera só edições (Bash continua bloqueado).
         // No modo de permissão "Auto", `permissions::apply` troca para `auto`.
         // As pastas de anexos entram depois, com `--add-dir` (`attachments::apply_add_dirs`).
-        c.arg("--permission-mode")
+        // As seções do prompt de sistema que mudam a cada turno (git status, cwd,
+        // memória) vão para a primeira mensagem. Sem isto, o git status muda quando
+        // o agente edita um arquivo, o prompt de sistema muda junto e o cache da
+        // conversa inteira é regravado no turno seguinte.
+        c.arg("--exclude-dynamic-system-prompt-sections")
+            .arg("--permission-mode")
             .arg("acceptEdits")
             .arg("--output-format")
             .arg("stream-json")
             .arg("--verbose")
+            // O texto chega aos pedaços enquanto é gerado (vira `TextDelta`).
+            .arg("--include-partial-messages")
             .cwd(cwd)
             .stdin(prompt)
     }
@@ -765,7 +772,18 @@ impl StreamParser {
                 // task_started/task_progress/task_updated e hooks: sem evento de UI.
                 _ => vec![],
             },
-            // rate_limit_event, stream_event: sem evento de UI.
+            // Texto parcial do agente principal (os subagentes trazem `parent_tool_use_id`).
+            Some("stream_event") => {
+                let main = v.get("parent_tool_use_id").map_or(true, Value::is_null);
+                let ev = v.get("event");
+                let is_text = ev.and_then(|e| e.get("type")).and_then(Value::as_str) == Some("content_block_delta")
+                    && ev.and_then(|e| e.pointer("/delta/type")).and_then(Value::as_str) == Some("text_delta");
+                match ev.and_then(|e| e.pointer("/delta/text")).and_then(Value::as_str) {
+                    Some(t) if main && is_text && !t.is_empty() => vec![AgentEvent::TextDelta(t.to_string())],
+                    _ => vec![],
+                }
+            }
+            // rate_limit_event: sem evento de UI.
             Some(_) => vec![],
             None => vec![AgentEvent::Raw(line.to_string())],
         }
@@ -871,7 +889,15 @@ mod tests {
     #[test]
     fn task_command_shape() {
         let c = ClaudeProvider::new().task_command("oi \"x\" 100%\nlinha", Path::new("."), None, &TurnOptions::default());
-        let tail = ["--permission-mode", "acceptEdits", "--output-format", "stream-json", "--verbose"];
+        let tail = [
+            "--exclude-dynamic-system-prompt-sections",
+            "--permission-mode",
+            "acceptEdits",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--include-partial-messages",
+        ];
         assert_eq!(c.args, [&["-p"][..], &tail].concat());
         assert_eq!(c.stdin.as_deref(), Some("oi \"x\" 100%\nlinha"));
         let c = ClaudeProvider::new().task_command("e agora?", Path::new("."), Some("abc"), &TurnOptions::default());
@@ -884,6 +910,19 @@ mod tests {
         assert!(!c.args.iter().any(|a| a == "--add-dir"));
         let bad = TurnOptions { model: Some("--dangerously-skip-permissions".into()), system_note: None };
         assert_eq!(ClaudeProvider::new().task_command("oi", Path::new("."), None, &bad).args, [&["-p"][..], &tail].concat());
+    }
+
+    #[test]
+    fn text_delta_only_from_main_agent() {
+        let p = ClaudeProvider::new();
+        let main = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Olá"}},"parent_tool_use_id":null,"session_id":"s"}"#;
+        assert!(matches!(&p.parse_line(main)[..], [AgentEvent::TextDelta(t)] if t == "Olá"));
+        let sub = main.replace("\"parent_tool_use_id\":null", "\"parent_tool_use_id\":\"toolu_1\"");
+        assert!(p.parse_line(&sub).is_empty());
+        let thinking = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hm"}},"parent_tool_use_id":null}"#;
+        assert!(p.parse_line(thinking).is_empty());
+        let start = r#"{"type":"stream_event","event":{"type":"message_start","message":{}},"parent_tool_use_id":null}"#;
+        assert!(p.parse_line(start).is_empty());
     }
 
     /// Linha real (claude 2.1.220, encurtada): `git push` negado com o padrão.

@@ -730,6 +730,11 @@ impl Orchestrator {
                     let _ = db.set_task_session(id as i64, s);
                 }
             }
+            AgentEvent::TextDelta(_) => {
+                // Texto parcial: só ao vivo, o `Text` completo é que fica no histórico.
+                let _ = self.inner.tx.send(OrchestratorEvent::Agent { task: id, event: ev });
+                return;
+            }
             AgentEvent::Context(c) => {
                 // Só o último valor importa: fica na tarefa (e no banco), não no histórico.
                 let mut c = c.clone();

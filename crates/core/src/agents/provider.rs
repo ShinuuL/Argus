@@ -74,6 +74,9 @@ pub enum AgentEvent {
     /// Mensagem enviada pelo usuário (turnos de resposta).
     User(String),
     Text(String),
+    /// Pedaço de texto ainda sendo gerado (claude com `--include-partial-messages`).
+    /// Só vai ao vivo para a tela: não é gravado, e o `Text` completo vem depois.
+    TextDelta(String),
     /// Raciocínio do modelo (bloco `thinking`), mostrado recolhido no chat.
     Thinking(String),
     ToolUse { name: String, input: serde_json::Value },
@@ -294,6 +297,7 @@ impl AgentEvent {
             AgentEvent::Session(_) => "Session",
             AgentEvent::User(_) => "User",
             AgentEvent::Text(_) => "Text",
+            AgentEvent::TextDelta(_) => "TextDelta",
             AgentEvent::ToolUse { .. } => "ToolUse",
             AgentEvent::Thinking(_) => "Thinking",
             AgentEvent::ToolResult { .. } => "ToolResult",

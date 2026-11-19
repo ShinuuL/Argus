@@ -67,7 +67,9 @@ fn hidden_notice(line: &str) -> bool {
 
 /// O evento (já sem `Scoped`) é só o aviso escondido?
 fn is_hidden_event(ev: &crate::agents::provider::AgentEvent) -> bool {
-    matches!(ev.inner(), crate::agents::provider::AgentEvent::Raw(l) if hidden_notice(l))
+    use crate::agents::provider::AgentEvent;
+    // Texto parcial fica só na janela: o celular recebe o bloco completo (`Text`).
+    matches!(ev.inner(), AgentEvent::TextDelta(_)) || matches!(ev.inner(), AgentEvent::Raw(l) if hidden_notice(l))
 }
 
 /// Dados para exibir ao usuário depois de iniciar o servidor.
