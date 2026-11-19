@@ -63,6 +63,7 @@ fn main() {
             fs::fs_write_file,
             fs::fs_list_dir,
             fs::fs_stat,
+            fs::project_checklist,
             // pty
             pty::pty_spawn,
             pty::pty_write,
