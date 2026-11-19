@@ -800,6 +800,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
             onOpenSubagent={selectSub}
             providerName={providerName}
             project={project}
+            onRetry={current || closed || noSession || busy ? undefined : (text) => send(text)}
             onAnswer={
               current || closed || noSession
                 ? undefined

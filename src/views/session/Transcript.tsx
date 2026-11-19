@@ -9,6 +9,7 @@ import { Icon } from "@/shell/icons";
 import { MessageView } from "@/views/chat";
 import { isAskTool, parseAsk, splitAskBlock } from "./ask";
 import { AskCard } from "./AskCard";
+import { allowAndRetry } from "./actions";
 import { Dot, ThinkingRow, TimelineItem, ToolRow, toolSummary } from "./ToolRow";
 import {
   noticeSummary,
@@ -51,7 +52,17 @@ function UsageLine({ usage, pricing }: { usage: TokenUsage; pricing: Pricing | n
  * Ferramenta negada por falta de permissão: diz qual comando foi negado e
  * oferece liberá-lo no projeto (entra em "Comandos permitidos ao agente").
  */
-function DeniedLine({ tool, command, project }: { tool: string; command: string; project: Path | null }) {
+function DeniedLine({
+  tool,
+  command,
+  project,
+  onRetry,
+}: {
+  tool: string;
+  command: string;
+  project: Path | null;
+  onRetry?: (text: string) => Promise<void>;
+}) {
   const [state, setState] = useState<"idle" | "saving" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
   const shell = tool === "Bash" || tool === "PowerShell";
@@ -68,6 +79,20 @@ function DeniedLine({ tool, command, project }: { tool: string; command: string;
       setError(errorMessage(e));
     }
   };
+  const [retried, setRetried] = useState(false);
+  const allowRetry = async () => {
+    if (!project || !onRetry) return;
+    setState("saving");
+    try {
+      await allowAndRetry(project, tool, command, onRetry);
+      setRetried(true);
+      setState("done");
+      setError(null);
+    } catch (e) {
+      setState("idle");
+      setError(errorMessage(e));
+    }
+  };
   return (
     <TimelineItem dot={<Dot status="warn" />}>
     <div className="cv-denied" role="status">
@@ -77,7 +102,9 @@ function DeniedLine({ tool, command, project }: { tool: string; command: string;
         {command && <code>{command}</code>}
         <span className="cv-denied-why">
           {state === "done"
-            ? "Liberado neste projeto. Vale a partir do próximo turno: peça de novo."
+            ? retried
+              ? "Liberado neste projeto; o agente foi avisado para rodar de novo."
+              : "Liberado neste projeto. Vale a partir do próximo turno: peça de novo."
             : shell
               ? "Não está entre os comandos liberados ao agente."
               : "O agente não tem permissão para isso nesta pasta."}
@@ -92,6 +119,17 @@ function DeniedLine({ tool, command, project }: { tool: string; command: string;
           onClick={() => void allow()}
         >
           {state === "saving" ? "Liberando…" : "Liberar este comando neste projeto"}
+        </button>
+      )}
+      {canAllow && onRetry && state !== "done" && (
+        <button
+          type="button"
+          className="primary"
+          disabled={state === "saving"}
+          title="Libera este comando no projeto e pede ao agente que rode de novo"
+          onClick={() => void allowRetry()}
+        >
+          Liberar e repetir
         </button>
       )}
     </div>
@@ -195,6 +233,8 @@ export interface TranscriptProps {
    * subagente, histórico) os cartões de pergunta ficam só de leitura.
    */
   onAnswer?(text: string): Promise<void> | void;
+  /** Envia um turno (para "Liberar e repetir" no comando negado). Sem isto, só "Liberar". */
+  onRetry?(text: string): Promise<void>;
 }
 
 /** Passos que ficam à vista enquanto o turno roda. */
@@ -286,7 +326,7 @@ export function Transcript(props: TranscriptProps) {
         return node ? <SubagentCard key={key} node={node} taskActive={taskActive} now={now} onOpen={onOpenSubagent} /> : null;
       }
       case "denied":
-        return <DeniedLine key={key} tool={entry.tool} command={entry.command} project={props.project ?? null} />;
+        return <DeniedLine key={key} tool={entry.tool} command={entry.command} project={props.project ?? null} onRetry={props.onRetry} />;
       case "compacted":
         return (
           <div

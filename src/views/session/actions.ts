@@ -75,3 +75,14 @@ export async function deleteClosedTasks(project: Path): Promise<boolean> {
   await useApp.getState().refreshTasks();
   return true;
 }
+
+/** Turno curto depois de liberar um comando negado: pede ao agente que rode de novo. */
+export function retryDeniedText(command: string): string {
+  return `O comando \`${command}\` foi liberado neste projeto; rode de novo e continue de onde parou.`;
+}
+
+/** "Liberar e repetir": libera o comando no projeto e manda o turno curto. */
+export async function allowAndRetry(project: Path, tool: string, command: string, send: (text: string) => Promise<void>): Promise<void> {
+  await api.permissionsAllowDenied(project, tool, command);
+  await send(retryDeniedText(command));
+}
