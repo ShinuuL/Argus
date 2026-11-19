@@ -35,6 +35,8 @@ export type ChatEntry =
   | { type: "usage"; usage: TokenUsage }
   | { type: "notices"; lines: string[] }
   | { type: "subagent"; id: string }
+  /** Linha divisória "Conversa compactada: antes → depois". */
+  | { type: "compacted"; pre: number; post: number; trigger: string }
   /** Linha divisória "Agente trocado: X → Y" (ids de provedor). */
   | { type: "switch"; from: string; to: string }
   /** Ferramenta negada por falta de permissão. */
@@ -97,6 +99,11 @@ export function chatEntries(events: AgentEvent[], owner: string | null): ChatEnt
       out.push({ type: "denied", ...event.Denied });
       continue;
     }
+    if ("Compacted" in event) {
+      const c = event.Compacted;
+      out.push({ type: "compacted", pre: c.pre_tokens, post: c.post_tokens, trigger: c.trigger });
+      continue;
+    }
     if ("ProviderSwitch" in event) {
       const last = out[out.length - 1];
       // Trocas seguidas sem nenhuma mensagem no meio viram uma divisória só.
@@ -119,7 +126,11 @@ export function chatEntries(events: AgentEvent[], owner: string | null): ChatEnt
       if (tool) tool.result = { ok: event.ToolResult.ok, output: event.ToolResult.output };
     } else if ("Thinking" in event) {
       if (event.Thinking.trim()) out.push({ type: "thinking", text: event.Thinking });
-    } else if ("Result" in event) out.push({ type: "result", ok: event.Result.ok, summary: event.Result.summary });
+    } else if ("Result" in event) {
+      // O turno de compactação termina com um resultado vazio: a divisória já diz tudo.
+      if (out[out.length - 1]?.type === "compacted" && !event.Result.summary.trim()) continue;
+      out.push({ type: "result", ok: event.Result.ok, summary: event.Result.summary });
+    }
     else if ("Usage" in event) out.push({ type: "usage", usage: event.Usage });
     else if ("Raw" in event) pushNotice(out, event.Raw);
     else if ("Session" in event || "Context" in event) continue;

@@ -74,6 +74,9 @@ pub enum AgentEvent {
     /// Mensagem enviada pelo usuário (turnos de resposta).
     User(String),
     Text(String),
+    /// A conversa foi compactada (resumo no lugar do histórico): tamanho do
+    /// contexto antes e depois, e se foi pedida (`manual`) ou feita pela CLI (`auto`).
+    Compacted { pre_tokens: u64, post_tokens: u64, trigger: String },
     /// Pedaço de texto ainda sendo gerado (claude com `--include-partial-messages`).
     /// Só vai ao vivo para a tela: não é gravado, e o `Text` completo vem depois.
     TextDelta(String),
@@ -298,6 +301,7 @@ impl AgentEvent {
             AgentEvent::User(_) => "User",
             AgentEvent::Text(_) => "Text",
             AgentEvent::TextDelta(_) => "TextDelta",
+            AgentEvent::Compacted { .. } => "Compacted",
             AgentEvent::ToolUse { .. } => "ToolUse",
             AgentEvent::Thinking(_) => "Thinking",
             AgentEvent::ToolResult { .. } => "ToolResult",

@@ -769,6 +769,16 @@ impl StreamParser {
                         vec![]
                     }
                 }
+                // Fim de uma compactação (pedida pelo Argus ou automática da CLI).
+                (Some("compact_boundary"), _) => {
+                    let m = v.get("compact_metadata");
+                    let n = |k: &str| m.and_then(|m| m.get(k)).and_then(Value::as_u64).unwrap_or(0);
+                    vec![AgentEvent::Compacted {
+                        pre_tokens: n("pre_tokens"),
+                        post_tokens: n("post_tokens"),
+                        trigger: m.and_then(|m| m.get("trigger")).and_then(Value::as_str).unwrap_or("auto").to_string(),
+                    }]
+                }
                 // task_started/task_progress/task_updated e hooks: sem evento de UI.
                 _ => vec![],
             },
@@ -910,6 +920,14 @@ mod tests {
         assert!(!c.args.iter().any(|a| a == "--add-dir"));
         let bad = TurnOptions { model: Some("--dangerously-skip-permissions".into()), system_note: None };
         assert_eq!(ClaudeProvider::new().task_command("oi", Path::new("."), None, &bad).args, [&["-p"][..], &tail].concat());
+    }
+
+    /// Linha real (claude 2.1.220) do fim de um `/compact` com `--resume`.
+    #[test]
+    fn compact_boundary_becomes_event() {
+        let l = r#"{"type":"system","subtype":"compact_boundary","session_id":"s","compact_metadata":{"trigger":"manual","pre_tokens":39252,"post_tokens":2663}}"#;
+        assert!(matches!(&ClaudeProvider::new().parse_line(l)[..],
+            [AgentEvent::Compacted { pre_tokens: 39252, post_tokens: 2663, trigger }] if trigger == "manual"));
     }
 
     #[test]

@@ -11,7 +11,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { baseName, isTaskActive } from "@/api";
 import { Chip } from "@/ui";
 import { sessionTitle } from "@/views/session/events";
-import { AREAS, useApp, useLayout } from "@/store";
+import { activeTab, AREAS, tabTitle, useApp, useLayout, useWorkbench } from "@/store";
 import { Icon } from "./icons";
 import { useActiveContext } from "./useActiveContext";
 
@@ -44,12 +44,15 @@ function useMaximized(): boolean {
 /** Breadcrumb: na conversa, o título da sessão em foco (como no mockup); nas outras áreas, área · projeto. */
 function Crumb() {
   const area = useLayout((s) => s.area);
+  const kind = useWorkbench((s) => activeTab(s.groups.find((g) => g.id === s.activeGroup))?.kind);
   const ctx = useActiveContext();
   const task = useApp((s) => (ctx.taskId == null ? undefined : s.tasks.find((t) => t.id === ctx.taskId)));
   const label = AREAS.find((a) => a.id === area)?.label ?? area;
   const project = ctx.project ? baseName(ctx.project) : null;
   if (area === "chat") {
-    const title = task ? sessionTitle(task.prompt) : project ? `Nova conversa · ${project}` : "Conversas";
+    // Aba que não é conversa (Celular, terminal, arquivo...): o nome dela.
+    const other = kind && kind.type !== "chat" ? tabTitle(kind) : null;
+    const title = other ?? (task ? sessionTitle(task.prompt) : project ? `Nova conversa · ${project}` : "Conversas");
     return (
       <>
         <span className="tb-crumb" data-tauri-drag-region title={task ? `#${task.id} · ${project ?? ""}` : undefined}>

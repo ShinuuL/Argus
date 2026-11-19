@@ -21,6 +21,8 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
 pub const ORCH: &str = "orch";
+/// A janela perdeu eventos do orquestrador (fila cheia): relê o histórico.
+pub const ORCH_LAGGED: &str = "orch-lagged";
 pub const PROJECT_CHANGED: &str = "project-changed";
 pub const WORKSPACE_CHANGED: &str = "workspace-changed";
 pub const PTY_OUTPUT: &str = "pty-output";
@@ -73,7 +75,11 @@ pub fn start_orchestrator_forwarder(app: &AppHandle) {
                 Ok(ev) => {
                     let _ = app.emit(ORCH, orch_msg(&ev));
                 }
-                Err(RecvError::Lagged(_)) => continue,
+                Err(RecvError::Lagged(n)) => {
+                    // Descartar em silêncio deixaria a tela sem Text/ToolUse/estado
+                    // até o fim do turno: avisa para ela reler.
+                    let _ = app.emit(ORCH_LAGGED, n);
+                }
                 Err(RecvError::Closed) => break,
             }
         }

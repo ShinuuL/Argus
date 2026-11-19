@@ -281,6 +281,19 @@ export function Transcript(props: TranscriptProps) {
       }
       case "denied":
         return <DeniedLine key={key} tool={entry.tool} command={entry.command} project={props.project ?? null} />;
+      case "compacted":
+        return (
+          <div
+            key={key}
+            className="cv-switch"
+            role="separator"
+            title={entry.trigger === "manual" ? "O Argus compactou a conversa antes deste turno: o agente segue com um resumo do que veio antes." : "A CLI compactou a conversa sozinha: o agente segue com um resumo do que veio antes."}
+          >
+            <span>
+              Conversa compactada: {Math.round(entry.pre / 1000)} mil → {Math.round(entry.post / 1000)} mil tokens
+            </span>
+          </div>
+        );
       case "switch":
         return (
           <div key={key} className="cv-switch" role="separator" title="A partir daqui, outro agente atende esta conversa. Ele recebeu um resumo do que veio antes.">

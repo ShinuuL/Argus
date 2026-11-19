@@ -34,6 +34,7 @@ export type Unlisten = () => void;
 /** Nomes dos eventos, iguais aos de src-tauri/src/events.rs. */
 export const EVENTS = {
   orch: "orch",
+  orchLagged: "orch-lagged",
   projectChanged: "project-changed",
   workspaceChanged: "workspace-changed",
   ptyOutput: "pty-output",
@@ -53,6 +54,8 @@ function on<T>(event: string, cb: (payload: T) => void): Promise<Unlisten> {
 
 /** Todos os eventos do orquestrador (estado das tarefas, eventos de agente, stderr, auto-work). */
 export const onOrch = (cb: (ev: OrchEvent) => void): Promise<Unlisten> => on(EVENTS.orch, cb);
+/** A janela perdeu eventos do orquestrador: quem mostra histórico deve relê-lo. */
+export const onOrchLagged = (cb: () => void): Promise<Unlisten> => on(EVENTS.orchLagged, () => cb());
 
 /** Só as mudanças de estado das tarefas. */
 export const onTaskState = (cb: (task: TaskId, state: TaskState) => void): Promise<Unlisten> =>

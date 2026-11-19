@@ -48,3 +48,9 @@
 .sa-field > pre { margin: 6px 0 0; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); overflow: auto; white-space: pre-wrap; }
 .sa-row { display: flex; gap: 10px; align-items: flex-start; }
 .ui-dim { opacity: .55; }
+.set-radio { display: flex; flex-direction: column; gap: 8px; }
+.set-radio-it { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.set-radio-it input { accent-color: var(--accent); margin: 0; }
+/* Subagentes: colunas fixas; descrição numa linha só, com reticências. */
+.sa-fixed { table-layout: fixed; width: 100%; }
+.sa-fixed td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -215,6 +215,9 @@ export const permissionsSet = (project: Path | null, level: "local" | "remote" |
   invoke("permissions_set", { project, level, on });
 
 /** Grava o modo de permissão no geral (`project` null) ou no projeto; `mode` null apaga a do projeto. */
+/** Limite de contexto (tokens) para compactar antes do próximo turno; 0 = desligado. */
+export const autocompactGet = (): Promise<number> => invoke("autocompact_get");
+export const autocompactSet = (tokens: number | null): Promise<void> => invoke("autocompact_set", { tokens });
 export const permissionModeSet = (project: Path | null, mode: PermissionMode | null): Promise<void> =>
   invoke("permission_mode_set", { project, mode });
 

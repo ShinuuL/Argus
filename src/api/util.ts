@@ -129,17 +129,14 @@ export function totalTokens(l: Pick<CostLine, "input_tokens" | "output_tokens" |
   return l.input_tokens + l.output_tokens + l.cache_read + l.cache_write;
 }
 
-/** 950, 12.3k, 2.50M, 1.20B. */
+/** Tokens no formato único do app (pt-BR): o mesmo que `formatTokensPt`. */
 export function formatTokens(n: number): string {
-  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
-  if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
-  if (n >= 1e4) return `${(n / 1e3).toFixed(1)}k`;
-  return String(Math.round(n));
+  return formatTokensPt(n);
 }
 
-/** Custo equivalente em API: $0.0042 abaixo de um centavo, senão $1.23. */
+/** Custo equivalente em API no formato único do app (pt-BR): o mesmo que `formatUsdPt`. */
 export function formatUsd(v: number): string {
-  return v > 0 && v < 0.01 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`;
+  return formatUsdPt(v);
 }
 
 /** Tempo desde `startedAt` (segundos Unix): 42s, 5min, 2h07. */

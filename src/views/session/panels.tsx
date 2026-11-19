@@ -170,7 +170,8 @@ export function ChangesPanel({ taskId, project }: { taskId: TaskId | null; proje
 
   const finished = isTaskFinished(task.state);
   const hasWorktree = task.workdir != null && !samePath(task.workdir, task.project);
-  const canAct = finished && hasWorktree && busy === null;
+  // Sem diff (erro ao ler o worktree, ou ainda calculando) não há o que revisar: nada de Aplicar.
+  const canAct = finished && hasWorktree && busy === null && !error && diff !== null;
   const closed = task.state === "Applied" || task.state === "Discarded";
 
   const run = async (kind: "apply" | "discard", ask: [string, string], action: () => Promise<unknown>) => {
@@ -223,7 +224,9 @@ export function ChangesPanel({ taskId, project }: { taskId: TaskId | null; proje
       )}
       {error && (
         <div className="err small" role="alert">
-          {error}
+          {/os error 267|os error 3|not a git repository/i.test(error)
+            ? `O worktree desta sessão não existe mais (${task.workdir ?? "pasta"}). Não há o que aplicar; descarte a sessão para limpar.`
+            : error}
         </div>
       )}
       {diff === null && !error && !closed && <p className="rp-empty">Calculando o diff…</p>}
@@ -233,7 +236,8 @@ export function ChangesPanel({ taskId, project }: { taskId: TaskId | null; proje
       <div className="ins-foot">
         <Btn
           variant="ghost"
-          disabled={!canAct}
+          // Descartar continua possível com o diff quebrado: é o jeito de limpar a sessão.
+          disabled={!(finished && hasWorktree && busy === null)}
           title="Descarta as alterações desta sessão (remove o worktree)"
           onClick={() =>
             void run(

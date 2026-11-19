@@ -33,6 +33,8 @@ fn main() {
             // raiz entra quando for aberta).
             ctx.mirror.sync_agent_mcp(None);
             app.manage(ctx);
+            // Publicação do Tailscale que uma execução anterior deixou ligada (crash).
+            std::thread::spawn(argus_core::tailscale::cleanup_stale);
             events::start_orchestrator_forwarder(&handle);
             events::start_servers_forwarder(&handle);
             commands::runs::start_watcher(&handle);
@@ -79,6 +81,8 @@ fn main() {
             agents::permissions_get,
             agents::permissions_set,
             agents::permission_mode_set,
+            agents::autocompact_get,
+            agents::autocompact_set,
             agents::permissions_allow_denied,
             agents::task_set_model,
             agents::task_set_provider,

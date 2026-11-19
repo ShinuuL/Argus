@@ -146,6 +146,12 @@ pub enum OrchestratorEvent {
     Removed { task: TaskId },
 }
 
+/// Chave e padrão do limite de compactação automática (ver `autocompact_limit`).
+const AUTOCOMPACT_KEY: &str = "autocompact_tokens";
+/// 200 mil tokens: acima disso cada chamada de ferramenta relê um histórico
+/// que um resumo substitui bem (a sessão #9 chegou a ~600 mil no modelo de 1M).
+pub const AUTOCOMPACT_DEFAULT: u64 = 200_000;
+
 #[derive(Debug, thiserror::Error)]
 pub enum OrchestratorError {
     #[error("provedor desconhecido: {0}")]
@@ -214,7 +220,8 @@ impl Orchestrator {
         max_concurrent: usize,
         db: Option<Db>,
     ) -> Self {
-        let (tx, _) = broadcast::channel(1024);
+        // Folga para o texto parcial (TextDelta) de várias conversas ao mesmo tempo.
+        let (tx, _) = broadcast::channel(8192);
         let db = db.map(Arc::new);
         let mut tasks = HashMap::new();
         let mut next = 1u64;
@@ -529,6 +536,16 @@ impl Orchestrator {
                 }
             }
             let opts = this.turn_options(&t);
+            // Conversa grande demais: compacta antes, para o turno (e cada ferramenta
+            // dele) não reler o histórico inteiro. Só o claude tem `/compact` no `-p`.
+            if let (Some(sid), false) = (session.as_deref(), t.handoff) {
+                if prov.id() == "claude" && this.needs_compact(id) {
+                    if let Ok((TaskState::Cancelled, _)) = this.run_turn(&t, prov.clone(), "/compact", Some(sid), &workdir, &opts, &cancel).await {
+                        this.finish(id, &cancel, TaskState::Cancelled);
+                        return;
+                    }
+                }
+            }
             let st = match this.run_turn(&t, prov, &prompt, session.as_deref(), &workdir, &opts, &cancel).await {
                 Ok((s, used_model)) => {
                     if t.handoff {
@@ -622,6 +639,32 @@ impl Orchestrator {
         if let Some(db) = &self.inner.db {
             let _ = db.set_task_handoff(id as i64, on);
         }
+    }
+
+    /// Limite de contexto (tokens) acima do qual a conversa é compactada antes do
+    /// próximo turno. Configuração `autocompact_tokens`; 0 desliga.
+    pub fn autocompact_limit(&self) -> u64 {
+        self.inner
+            .db
+            .as_ref()
+            .and_then(|db| db.get_setting(AUTOCOMPACT_KEY).ok().flatten())
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(AUTOCOMPACT_DEFAULT)
+    }
+
+    /// Grava o limite de compactação (None volta ao padrão).
+    pub fn set_autocompact_limit(&self, tokens: Option<u64>) -> Result<(), OrchestratorError> {
+        if let Some(db) = &self.inner.db {
+            db.set_setting(AUTOCOMPACT_KEY, tokens.map(|t| t.to_string()).as_deref())?;
+        }
+        Ok(())
+    }
+
+    /// O contexto do último pedido da tarefa passou do limite?
+    fn needs_compact(&self, id: TaskId) -> bool {
+        let limit = self.autocompact_limit();
+        let used = self.inner.tasks.lock().unwrap().get(&id).and_then(|t| t.context.as_ref().map(|c| c.input_tokens + c.cache_read + c.cache_write));
+        limit > 0 && used.is_some_and(|u| u >= limit)
     }
 
     /// Modelo e aviso de ambiente do próximo turno de `t`.

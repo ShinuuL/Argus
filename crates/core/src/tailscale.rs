@@ -162,8 +162,46 @@ pub fn expose(mode: Exposure, port: u16) -> anyhow::Result<String> {
         anyhow::bail!("O Tailscale não informou o nome da máquina (MagicDNS desligado?).");
     }
     let target = format!("http://127.0.0.1:{port}");
-    run(&[mode.verb(), "--bg", "--https=443", &target])?;
+    // Marca antes de publicar: se o Argus cair sem desligar, a próxima abertura
+    // desfaz a publicação (o `--bg` sobrevive ao processo).
+    mark(Some(mode));
+    if let Err(e) = run(&[mode.verb(), "--bg", "--https=443", &target]) {
+        mark(None);
+        return Err(e);
+    }
     Ok(format!("https://{}", st.dns_name))
+}
+
+/// Arquivo que diz que o Argus deixou uma publicação ligada (contém o verbo).
+fn marker() -> Option<std::path::PathBuf> {
+    let base = std::env::var_os("APPDATA")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config")))?;
+    Some(base.join(crate::paths::dir_name()).join("tailscale-publicado"))
+}
+
+fn mark(mode: Option<Exposure>) {
+    let Some(p) = marker() else { return };
+    let _ = match mode {
+        Some(m) => p.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|_| std::fs::write(&p, m.verb())),
+        None => std::fs::remove_file(&p),
+    };
+}
+
+/// Ao abrir o app: desfaz a publicação que uma execução anterior deixou ligada
+/// (crash, processo encerrado à força). Só age se foi o Argus que publicou.
+pub fn cleanup_stale() {
+    let Some(p) = marker() else { return };
+    let Ok(verb) = std::fs::read_to_string(&p) else { return };
+    let mode = match verb.trim() {
+        "funnel" => Exposure::Funnel,
+        "serve" => Exposure::Tailnet,
+        _ => {
+            let _ = std::fs::remove_file(&p);
+            return;
+        }
+    };
+    unexpose(mode);
 }
 
 /// Desfaz a publicação da porta 443. Chamada no desligar e no Drop: só registra o erro.
@@ -171,8 +209,9 @@ pub fn unexpose(mode: Exposure) {
     if !mode.via_tailscale() {
         return;
     }
-    if let Err(e) = run(&[mode.verb(), "--https=443", "off"]) {
-        tracing::warn!("não foi possível desligar o {} do Tailscale: {e}", mode.verb());
+    match run(&[mode.verb(), "--https=443", "off"]) {
+        Ok(_) => mark(None),
+        Err(e) => tracing::warn!("não foi possível desligar o {} do Tailscale: {e}", mode.verb()),
     }
 }
 

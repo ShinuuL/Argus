@@ -347,7 +347,8 @@ export default function ProjectsView() {
                   {sessions.map((t) => (
                     <SessionRow key={t.id} task={t} current={t.id === currentTask} onMenu={sessionMenu} />
                   ))}
-                  {sessions.length === 0 && !p.missing && (
+                  {/* Projeto sem nenhuma sessão: só o cabeçalho (o "+" dele começa uma conversa). */}
+                  {sessions.length === 0 && total > 0 && !p.missing && (
                     <button className="pj-none" onClick={() => newChat(p.path)}>
                       {total > 0 ? "Nenhuma sessão neste filtro" : "Nenhuma sessão · começar uma conversa"}
                     </button>

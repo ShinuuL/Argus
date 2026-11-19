@@ -276,6 +276,10 @@ button.chat-pill:hover:not(:disabled), .chat-pill-select:hover { background: var
   font-size: 10.5px; font-weight: 600; line-height: 14px; text-align: center;
 }
 /* Estreita: a pílula mostra só o modelo (o provedor fica na dica e no menu). */
+/* Sem espaço, o uso de hoje sai da barra (fica na barra de status) em vez de aparecer cortado. */
+@container (max-width: 720px) {
+  .chat-pills > .chat-usage { display: none; }
+}
 @container (max-width: 440px) {
   .am-prov { display: none; }
   .chat-pills > .sel-pill, .chat-pills > .sel-pill.am-pill { max-width: 110px; }

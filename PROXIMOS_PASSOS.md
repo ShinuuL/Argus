@@ -402,7 +402,8 @@ Falta:
     - Pendente: definir o local, o formato das notas (uma por fato, com links entre elas), o que entra ou não no git, e como os agentes leem e gravam nessas notas.
 15. **Eficiência de tokens (2026-11-19).**
     - Feito: o claude roda com `--exclude-dynamic-system-prompt-sections` (o git status saía do prompt de sistema e regravava o cache da conversa inteira a cada turno; a sessão #9 regravou ~10,9 M tokens em 21 turnos) e com `--include-partial-messages` (o texto aparece enquanto é gerado, como `TextDelta`, que não é gravado no banco nem enviado ao celular).
-    - Pendente: compactar sozinho quando o contexto passar de um limite (a #9 chegou a ~600 mil tokens no `opus[1m]`, e cada chamada de ferramenta relê tudo). Conferir antes se `/compact` funciona com `claude -p --resume`.
+    - Feito (2026-11-19): compactação automática. Antes de um turno de resposta do claude, se o contexto do último pedido passou do limite (Configurações › Contexto; padrão 200 mil, 0 desliga), o Argus roda `/compact` com `--resume` e só então o turno. Conferido na CLI 2.1.220: 39 252 → 2 663 tokens e a sessão lembrou o contexto. O `compact_boundary` vira a divisória "Conversa compactada" no chat. **Falta ver numa sessão longa real dentro do app.**
+    - Pendente: as opções novas do claude exigem uma CLI recente (conferidas na 2.1.220); com uma antiga, todo turno falharia. Checar a versão antes de passar as opções.
     - Pendente: "Padrão da CLI" hoje resolve para o modelo de 1M; avaliar um padrão de janela menor para conversas comuns.
     - Pendente: medir de novo uma sessão longa com as duas opções e comparar `cache_write` por turno.
 16. **Refazer o ícone do app (não crítico).** O olho atual é provisório; redesenhar o ícone do Argus (janela, barra de tarefas, instalador e web app do celular).

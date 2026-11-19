@@ -231,6 +231,8 @@ export type AgentEvent =
   | { Scoped: { subagent: string; event: AgentEvent } }
   /** O usuário trocou o agente da conversa (ids de provedor). */
   | { ProviderSwitch: { from: string; to: string } }
+  /** Conversa compactada: contexto antes e depois; `trigger` = "manual" (Argus) ou "auto" (CLI). */
+  | { Compacted: { pre_tokens: number; post_tokens: number; trigger: string } }
   /** A CLI negou uma ferramenta por falta de permissão (`command` vazio se não for de shell). */
   | { Denied: { tool: string; command: string } }
   /** Ocupação da janela de contexto (último pedido do agente principal). Não vai para o histórico. */
@@ -764,6 +766,8 @@ export interface AgentDef {
   shadowed: boolean;
   /** Campos de frontmatter que o Argus não conhece, preservados na gravação. */
   extra: Record<string, string>;
+  /** YAML que o Argus não regrava sem perder conteúdo, ou `name:` diferente do arquivo. */
+  read_only: boolean;
 }
 
 export interface SkillDef {

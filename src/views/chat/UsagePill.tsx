@@ -51,7 +51,7 @@ ${detail}`;
 
   return (
     <span className="chat-usage" title={tip}>
-      {tokensPt(today.tokens)} tok · ≈ {usdPt(today.cost)}
+      hoje {tokensPt(today.tokens)} tok · {usdPt(today.cost)}
     </span>
   );
 }

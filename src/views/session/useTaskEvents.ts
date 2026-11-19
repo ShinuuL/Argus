@@ -1,7 +1,7 @@
 /** Eventos de uma tarefa: histórico gravado + stream ao vivo, sem duplicar nem perder a emenda. */
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { api, errorMessage, onTaskEvent, type AgentEvent, type TaskId } from "@/api";
+import { api, errorMessage, onOrchLagged, onTaskEvent, type AgentEvent, type TaskId } from "@/api";
 import { unwrap, type SubagentTimes } from "./events";
 
 /** Resposta de `task_subagent_times` (comando extra; pode ainda não estar registrado). */
@@ -137,10 +137,13 @@ export function useTaskEvents(taskId: TaskId | null, active: boolean): TaskEvent
     });
     // Lê o histórico só depois de já estar ouvindo, para não perder o que sai no meio.
     void off.then(() => alive && sync(true));
+    // Eventos perdidos na fila: relê o histórico gravado.
+    const offLag = onOrchLagged(() => alive && sync(false));
 
     return () => {
       alive = false;
       void off.then((f) => f());
+      void offLag.then((f) => f());
     };
   }, [taskId]);
 

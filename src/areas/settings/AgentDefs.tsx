@@ -39,6 +39,7 @@ function emptyDef(scope: AgentScope): AgentDef {
     scope,
     path: "",
     shadowed: false,
+    read_only: false,
     extra: {},
   };
 }
@@ -144,7 +145,7 @@ export default function AgentDefsPage() {
           Nenhum agente ainda. "Novo agente" grava um arquivo .md com frontmatter que qualquer CLI lê.
         </p>
       ) : (
-        <table className="ui-t">
+        <table className="ui-t sa-fixed">
           <thead>
             <tr>
               <th style={{ width: 180 }}>Nome</th>
@@ -163,7 +164,7 @@ export default function AgentDefsPage() {
                 <td title={d.description}>
                   <span className="ellipsis">{d.description || <span className="ui-mut">(sem descrição)</span>}</span>
                 </td>
-                <td>{d.model ?? <span className="ui-mut">padrão</span>}</td>
+                <td>{d.model === "inherit" ? "herda" : d.model ?? <span className="ui-mut">padrão</span>}</td>
                 <td>
                   <Chip tone={d.scope === "project" ? "ok" : undefined}>{scopeLabel(d.scope)}</Chip>
                   {d.shadowed && (
@@ -174,8 +175,16 @@ export default function AgentDefsPage() {
                   )}
                 </td>
                 <td>
-                  <button onClick={() => open(d)}>Editar</button>{" "}
-                  <button onClick={() => void remove(d)}>Apagar</button>
+                  {d.read_only ? (
+                    <span className="ui-mut ui-sm" title={`O frontmatter usa YAML que o Argus não regrava sem perder conteúdo, ou o name difere do arquivo. Edite direto: ${d.path}`}>
+                      só leitura
+                    </span>
+                  ) : (
+                    <>
+                      <button onClick={() => open(d)}>Editar</button>{" "}
+                      <button onClick={() => void remove(d)}>Apagar</button>
+                    </>
+                  )}
                 </td>
               </tr>
             ))}

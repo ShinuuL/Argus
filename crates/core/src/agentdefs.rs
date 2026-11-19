@@ -63,6 +63,10 @@ pub struct AgentDef {
     /// Campos do frontmatter que o Argus não conhece, preservados na gravação.
     #[serde(default)]
     pub extra: BTreeMap<String, String>,
+    /// O Argus não regrava este arquivo: YAML que ele não reproduz, ou `name:`
+    /// diferente do nome do arquivo (gravar criaria outro arquivo).
+    #[serde(default)]
+    pub read_only: bool,
 }
 
 /// Uma skill: pasta com `SKILL.md`.
@@ -148,6 +152,9 @@ pub fn slugify(text: &str) -> String {
 pub struct Front {
     pub fields: BTreeMap<String, String>,
     pub body: String,
+    /// O frontmatter usa YAML que este leitor não reproduz (bloco `|`/`>`, mapa
+    /// aninhado, lista em campo desconhecido): regravar perderia conteúdo.
+    pub complex: bool,
 }
 
 /// Tira as aspas de um valor YAML simples.
@@ -169,13 +176,14 @@ pub fn parse_front(text: &str) -> Front {
     let mut lines = text.lines();
     let first = lines.next();
     if first.map(str::trim) != Some("---") {
-        return Front { fields: BTreeMap::new(), body: text.trim_start_matches(['\r', '\n']).to_string() };
+        return Front { fields: BTreeMap::new(), body: text.trim_start_matches(['\r', '\n']).to_string(), complex: false };
     }
     let mut fields: BTreeMap<String, String> = BTreeMap::new();
     let mut key: Option<String> = None;
     let mut items: Vec<String> = Vec::new();
     let mut rest = String::new();
     let mut closed = false;
+    let mut complex = false;
 
     for line in lines {
         if !closed {
@@ -191,12 +199,20 @@ pub fn parse_front(text: &str) -> Front {
             if t.is_empty() || t.starts_with('#') {
                 continue;
             }
+            let indented = line.starts_with([' ', '\t']);
             if let Some(item) = t.strip_prefix("- ") {
-                // Item de uma lista aberta pela chave anterior.
+                // Item de uma lista aberta pela chave anterior. Lista só é
+                // reproduzida em `tools`; em outro campo voltaria como texto.
                 if key.is_some() {
+                    complex |= key.as_deref() != Some("tools");
                     items.push(unquote(item));
                     continue;
                 }
+            }
+            // Linha indentada que não é item de lista: mapa aninhado.
+            if indented {
+                complex = true;
+                continue;
             }
             if let Some((k, v)) = t.split_once(':') {
                 // Fecha a lista da chave anterior antes de começar outra.
@@ -206,6 +222,9 @@ pub fn parse_front(text: &str) -> Front {
                 }
                 let k = k.trim().to_lowercase();
                 let v = v.trim();
+                if matches!(v, "|" | "|-" | "|+" | ">" | ">-" | ">+") {
+                    complex = true;
+                }
                 if v.is_empty() {
                     key = Some(k);
                 } else if let Some(inner) = v.strip_prefix('[').and_then(|x| x.strip_suffix(']')) {
@@ -222,12 +241,12 @@ pub fn parse_front(text: &str) -> Front {
     }
     // Frontmatter sem fechamento: o arquivo está quebrado, trata como corpo.
     if !closed {
-        return Front { fields: BTreeMap::new(), body: text.to_string() };
+        return Front { fields: BTreeMap::new(), body: text.to_string(), complex: false };
     }
     if let Some(k) = key.take() {
         fields.insert(k, items.join(", "));
     }
-    Front { fields, body: rest.trim_start_matches(['\r', '\n']).trim_end().to_string() }
+    Front { fields, body: rest.trim_start_matches(['\r', '\n']).trim_end().to_string(), complex }
 }
 
 /// Valor YAML: entre aspas quando tiver algo que mudaria o sentido da linha.
@@ -269,6 +288,7 @@ fn render(fields: &[(&str, String)], extra: &BTreeMap<String, String>, body: &st
 // ----------------------------------------------------------------- leitura
 
 fn front_to_agent(front: Front, path: &Path, scope: Scope, fallback_name: &str) -> AgentDef {
+    let complex = front.complex;
     let mut fields = front.fields;
     let take = |f: &mut BTreeMap<String, String>, k: &str| f.remove(k).filter(|s| !s.trim().is_empty());
     let name = take(&mut fields, "name").unwrap_or_else(|| fallback_name.to_string());
@@ -278,6 +298,7 @@ fn front_to_agent(front: Front, path: &Path, scope: Scope, fallback_name: &str) 
     let tools = take(&mut fields, "tools")
         .map(|t| t.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
         .unwrap_or_default();
+    let read_only = complex || name != fallback_name;
     AgentDef {
         name,
         description,
@@ -288,6 +309,7 @@ fn front_to_agent(front: Front, path: &Path, scope: Scope, fallback_name: &str) 
         scope,
         path: path.to_string_lossy().to_string(),
         shadowed: false,
+        read_only,
         extra: fields,
     }
 }
@@ -386,10 +408,8 @@ fn write_atomic(path: &Path, text: &str) -> Result<()> {
     }
     let tmp = path.with_extension("argus-tmp");
     std::fs::write(&tmp, text).with_context(|| format!("Não foi possível escrever {}", tmp.display()))?;
-    // No Windows o rename falha se o destino existir: remove antes.
-    if path.exists() {
-        let _ = std::fs::remove_file(path);
-    }
+    // `rename` substitui o destino também no Windows (MoveFileExW com
+    // REPLACE_EXISTING): apagar antes perderia o arquivo se o rename falhasse.
     std::fs::rename(&tmp, path).with_context(|| format!("Não foi possível gravar {}", path.display()))?;
     Ok(())
 }
@@ -397,6 +417,9 @@ fn write_atomic(path: &Path, text: &str) -> Result<()> {
 /// Grava o agente e devolve o caminho do arquivo. O corpo é o prompt; os
 /// campos desconhecidos que vieram na leitura voltam para o arquivo.
 pub fn save_agent(def: &AgentDef, project: Option<&Path>) -> Result<PathBuf> {
+    if def.read_only {
+        bail!("Este agente usa YAML que o Argus não regrava sem perder conteúdo (ou o nome difere do arquivo). Edite o arquivo direto: {}", def.path);
+    }
     check_name(&def.name)?;
     if def.description.trim().is_empty() {
         bail!("A descrição é obrigatória: é ela que diz à CLI quando acionar o agente.");
@@ -436,9 +459,10 @@ pub fn save_skill(def: &SkillDef, project: Option<&Path>) -> Result<PathBuf> {
 pub fn delete_agent(name: &str, scope: Scope, project: Option<&Path>) -> Result<()> {
     check_name(name)?;
     let path = agents_dir(scope, project)?.join(format!("{name}.md"));
-    if path.exists() {
-        std::fs::remove_file(&path).with_context(|| format!("Não foi possível apagar {}", path.display()))?;
+    if !path.exists() {
+        bail!("Arquivo {} não encontrado: nada foi apagado.", path.display());
     }
+    std::fs::remove_file(&path).with_context(|| format!("Não foi possível apagar {}", path.display()))?;
     Ok(())
 }
 
@@ -494,6 +518,41 @@ pub fn sync_agents_md(project: &Path, body: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn yaml_it_cannot_rewrite_is_flagged() {
+        assert!(parse_front("---
+name: a
+description: |
+  linha
+---
+x").complex);
+        assert!(parse_front("---
+name: a
+hooks:
+  pre: x
+---
+x").complex);
+        assert!(parse_front("---
+name: a
+allow:
+ - a
+---
+x").complex);
+        assert!(!parse_front("---
+name: a
+tools:
+ - Read
+ - Grep
+---
+x").complex);
+        let f = parse_front("---
+name: outro
+description: d
+---
+x");
+        assert!(front_to_agent(f, Path::new("a.md"), Scope::Global, "a").read_only);
+    }
 
     #[test]
     fn nomes() {
@@ -571,6 +630,7 @@ mod tests {
             scope: Scope::Project,
             path: String::new(),
             shadowed: false,
+            read_only: false,
             extra: BTreeMap::new(),
         };
         assert!(save_agent(&def, Some(dir.path())).is_err());
@@ -589,6 +649,7 @@ mod tests {
             scope: Scope::Project,
             path: String::new(),
             shadowed: false,
+            read_only: false,
             extra: BTreeMap::new(),
         };
         assert!(save_agent(&def, Some(dir.path())).is_err());

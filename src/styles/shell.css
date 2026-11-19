@@ -164,15 +164,16 @@ button.df-file:hover { background: var(--bg-hover); }
    ícones .rail, áreas em tela cheia, inspetor, paleta e barra de status .sb.
    ====================================================================== */
 .shell { font-family: var(--font-sans); }
-.tb { height: 34px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 0 0 10px; border-bottom: 1px solid var(--border); background: var(--bg); font-size: 12.5px; user-select: none; }
+/* A busca fica centralizada na janela (não no espaço que sobra), em qualquer área. */
+.tb { position: relative; height: 34px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 0 0 10px; border-bottom: 1px solid var(--border); background: var(--bg); font-size: 12.5px; user-select: none; }
 .tb-logo { width: 16px; height: 16px; border-radius: 4px; background: var(--accent); flex: none; }
 .tb-app { font-weight: 600; color: var(--text); }
 .tb-sep { color: var(--text-2); opacity: 0.6; }
-.tb-crumb { color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tb-crumb { color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: calc(50% - 250px); }
 .tb-crumb b { color: var(--text); font-weight: 500; }
 .tb-sp { flex: 1; align-self: stretch; }
 .tb-chat-ctl { display: flex; align-items: center; gap: 2px; }
-.tb-search { width: 300px; max-width: 34vw; height: 22px; flex: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text-2); font: inherit; font-size: 11.5px; display: flex; align-items: center; padding: 0 8px; gap: 6px; background: var(--surface); cursor: pointer; }
+.tb-search { position: absolute; left: 50%; transform: translateX(-50%); width: 300px; max-width: 34vw; height: 22px; flex: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text-2); font: inherit; font-size: 11.5px; display: flex; align-items: center; padding: 0 8px; gap: 6px; background: var(--surface); cursor: pointer; }
 .tb-search:hover { border-color: var(--border-strong); color: var(--text); }
 .tb-search-t { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .kbd { font-family: var(--font-mono-family); font-size: 10.5px; border: 1px solid var(--border-strong); border-radius: 4px; padding: 0 4px; color: var(--text-2); white-space: nowrap; }

@@ -4,7 +4,7 @@
  * Permissões como tabela de ações. Reaproveita as views antigas e as APIs existentes.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, samePath, type Path } from "@/api";
+import { api, errorMessage, samePath, type Path } from "@/api";
 import { THEMES, useApp, useTheme, useWorkbench } from "@/store";
 import { Chip, SideHeading, SideItem, SideList, type Tone, AreaStatus } from "@/ui";
 import ProvidersView, { useProviders } from "@/views/agents";
@@ -25,6 +25,7 @@ type Page =
   | "atalhos"
   | "provedores"
   | "subagentes"
+  | "contexto"
   | "permissoes"
   | "mcp"
   | "deps"
@@ -54,6 +55,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
     items: [
       { id: "provedores", label: "Provedores", keywords: "claude codex gemini opencode login modelo" },
       { id: "subagentes", label: "Subagentes", keywords: "agentes skills frontmatter AGENTS.md claude agents arquivo" },
+      { id: "contexto", label: "Contexto", keywords: "compactar compact tokens janela resumo economia" },
       { id: "permissoes", label: "Permissões", keywords: "política comandos git push permitir bloquear modo trabalho" },
       { id: "mcp", label: "Ferramentas MCP", keywords: "celular screen-mirror" },
     ],
@@ -161,6 +163,42 @@ const SHORTCUTS: [string, string][] = [
   ["Ctrl+\\", "Dividir o editor"],
   ["/", "Buscar configuração (nesta tela)"],
 ];
+
+const COMPACT_OPTIONS: { value: number; label: string }[] = [
+  { value: 100_000, label: "100 mil tokens" },
+  { value: 200_000, label: "200 mil tokens (padrão)" },
+  { value: 400_000, label: "400 mil tokens" },
+  { value: 0, label: "Nunca" },
+];
+
+function ContextPage() {
+  const [limit, setLimit] = useState<number | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    api.autocompactGet().then(setLimit, (e) => setErr(errorMessage(e)));
+  }, []);
+  const choose = (v: number) => {
+    setLimit(v);
+    api.autocompactSet(v).catch((e) => setErr(errorMessage(e)));
+  };
+  return (
+    <PageBody
+      title="Contexto"
+      lead="Quando a conversa passa do limite, o Argus compacta antes do próximo turno: o agente segue com um resumo, e cada ferramenta deixa de reler o histórico inteiro. Vale para o Claude Code."
+    >
+      {err && <div className="err" role="alert">{err}</div>}
+      <div className="set-radio" role="radiogroup" aria-label="Compactar a conversa a partir de">
+        {COMPACT_OPTIONS.map((o) => (
+          <label key={o.value} className="set-radio-it">
+            <input type="radio" name="autocompact" checked={limit === o.value} disabled={limit == null} onChange={() => choose(o.value)} />
+            {o.label}
+          </label>
+        ))}
+        {limit != null && !COMPACT_OPTIONS.some((o) => o.value === limit) && <span className="small">Atual: {limit} tokens</span>}
+      </div>
+    </PageBody>
+  );
+}
 
 function ShortcutsPage() {
   return (
@@ -338,6 +376,7 @@ export default function SettingsArea() {
             </PageBody>
           )}
           {page === "subagentes" && <AgentDefsPage />}
+          {page === "contexto" && <ContextPage />}
           {page === "mcp" && <McpPage />}
           {page === "deps" && (
             <PageBody title="Dependências" lead="Ferramentas que faltam no projeto, cada uma com o comando de correção.">

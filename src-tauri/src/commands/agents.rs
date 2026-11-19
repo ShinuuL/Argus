@@ -156,6 +156,20 @@ pub async fn permissions_set(ctx: State<'_, AppCtx>, project: Option<PathBuf>, l
     blocking(move || orch.set_git_setting(project.as_deref(), &level, on).map_err(err)).await
 }
 
+/// Limite (tokens de contexto) para compactar a conversa antes do próximo turno; 0 = desligado.
+#[tauri::command]
+pub async fn autocompact_get(ctx: State<'_, AppCtx>) -> Result<u64, String> {
+    let orch = ctx.orch.clone();
+    blocking(move || Ok(orch.autocompact_limit())).await
+}
+
+/// Grava o limite de compactação (`tokens` ausente volta ao padrão).
+#[tauri::command]
+pub async fn autocompact_set(ctx: State<'_, AppCtx>, tokens: Option<u64>) -> Result<(), String> {
+    let orch = ctx.orch.clone();
+    blocking(move || orch.set_autocompact_limit(tokens).map_err(err)).await
+}
+
 /// Grava o modo de permissão ("auto" ou "restricted") no geral (`project`
 /// ausente) ou num projeto. `mode` ausente apaga a preferência.
 #[tauri::command]
