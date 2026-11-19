@@ -65,6 +65,8 @@ import { ContextMeter } from "./ContextMeter";
 import { UsagePill } from "@/views/chat/UsagePill";
 import { DraftText, liveActivity, Transcript, WorkingLine } from "./Transcript";
 import { useTaskEvents } from "./useTaskEvents";
+import { EditorChips } from "./EditorChips";
+import { withEditorContext } from "@/views/workbench/editorContext";
 import { AgentState, agentStateLabel, agentStateOf, lastTurnDenied } from "./AgentState";
 import "./session.css";
 
@@ -904,6 +906,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                   <AutoWorkBadge taskId={taskId} readOnly={closed} />
                 </div>
               )}
+              {!closed && <EditorChips root={project} />}
               <Composer
                 ref={composer}
                 taskId={taskId}
@@ -913,7 +916,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                 workdir={task ? (task.workdir ?? task.project) : newProject}
                 provider={task?.provider ?? providerId}
                 placeholder={placeholder}
-                onSend={(prompt) => send(prompt)}
+                onSend={(prompt) => send(withEditorContext(prompt, project))}
                 onStop={taskId != null && !cancelling ? cancel : undefined}
                 onCommand={onCommand}
                 toolbar={pills}

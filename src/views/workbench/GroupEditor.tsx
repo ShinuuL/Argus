@@ -3,6 +3,8 @@ import type * as Monaco from "monaco-editor";
 import { errorMessage, type Path } from "@/api";
 import { loadMonaco } from "./lazy";
 import { MONACO_THEME } from "./theme";
+import { useApp, useLayout } from "@/store";
+import { addToChatText, useEditorContext, type EditorFocus } from "./editorContext";
 
 type Editor = Monaco.editor.IStandaloneCodeEditor;
 
@@ -16,7 +18,9 @@ interface Props {
 /**
  * Instância Monaco de um grupo: mostra o arquivo da aba ativa. Os modelos são
  * compartilhados entre os grupos (./monaco); posição do cursor e rolagem são
- * guardadas por arquivo neste grupo. Ctrl+S grava.
+ * guardadas por arquivo neste grupo. Ctrl+S grava. Alt+K leva a seleção (ou o
+ * arquivo) para a conversa visível; o arquivo e a seleção em foco ficam em
+ * `useEditorContext` para os chips do composer.
  */
 export function GroupEditor({ path, focused }: Props) {
   const el = useRef<HTMLDivElement>(null);
@@ -52,6 +56,61 @@ export function GroupEditor({ path, focused }: Props) {
               (err) => setError(`Erro ao salvar ${uri.fsPath}: ${errorMessage(err)}`),
             );
           }
+        });
+        /** Arquivo, seleção e problemas deste editor para o chat. */
+        const snapshot = (): EditorFocus | null => {
+          const model = ed.getModel();
+          if (!model) return null;
+          const sel = ed.getSelection();
+          const empty = !sel || sel.isEmpty();
+          const start = sel ? sel.startLineNumber : 1;
+          // Seleção que termina no começo de uma linha não inclui essa linha.
+          const end = sel && !empty && sel.endColumn === 1 && sel.endLineNumber > start ? sel.endLineNumber - 1 : (sel?.endLineNumber ?? start);
+          const markers = monaco.editor
+            .getModelMarkers({ resource: model.uri })
+            .filter((m) => m.severity >= monaco.MarkerSeverity.Warning)
+            .sort((a, b) => b.severity - a.severity || a.startLineNumber - b.startLineNumber)
+            .map((m) => ({
+              line: m.startLineNumber,
+              severity: m.severity === monaco.MarkerSeverity.Error ? ("erro" as const) : ("aviso" as const),
+              message: m.message,
+            }));
+          return {
+            path: model.uri.fsPath,
+            startLine: start,
+            endLine: end,
+            selection: empty || !sel ? "" : model.getValueInRange(sel),
+            language: model.getLanguageId(),
+            markers,
+          };
+        };
+        const publish = () => useEditorContext.getState().setFocus(snapshot());
+        ed.onDidFocusEditorText(publish);
+        ed.onDidChangeCursorSelection(() => {
+          if (ed.hasTextFocus() || focusedRef.current) publish();
+        });
+        ed.onDidChangeModel(() => {
+          if (focusedRef.current) publish();
+        });
+        const markersSub = monaco.editor.onDidChangeMarkers((uris) => {
+          const m = ed.getModel();
+          const cur = useEditorContext.getState().focus;
+          if (m && cur?.path === m.uri.fsPath && uris.some((u) => u.toString() === m.uri.toString())) publish();
+        });
+        ed.onDidDispose(() => markersSub.dispose());
+        ed.addAction({
+          id: "argus.addToChat",
+          label: "Adicionar à conversa",
+          keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.KeyK],
+          contextMenuGroupId: "navigation",
+          contextMenuOrder: 0,
+          run: () => {
+            const f = snapshot();
+            if (!f) return;
+            useEditorContext.getState().setFocus(f);
+            useLayout.getState().setArea("chat");
+            useLayout.getState().insertInComposer(addToChatText(f, useApp.getState().selected));
+          },
         });
         created = ed;
         setLoading(false);
