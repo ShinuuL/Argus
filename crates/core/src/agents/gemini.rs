@@ -96,7 +96,11 @@ impl AgentProvider for GeminiProvider {
             .arg("--output-format")
             .arg("stream-json")
             .arg("--approval-mode")
-            .arg("auto_edit")
+            .arg(match opts.access {
+                crate::permissions::AccessMode::Plan => "plan",
+                crate::permissions::AccessMode::Bypass => "yolo",
+                crate::permissions::AccessMode::Normal => "auto_edit",
+            })
             .arg("--skip-trust");
         if let Some(m) = opts.model.as_deref().filter(|m| valid_model_name(m)) {
             c = c.arg("-m").arg(m);
@@ -382,7 +386,7 @@ mod tests {
     #[test]
     fn command_line() {
         let p = GeminiProvider::new();
-        let opts = TurnOptions { model: Some("gemini-3.8-flash".into()), system_note: Some("cópia".into()) };
+        let opts = TurnOptions { model: Some("gemini-3.8-flash".into()), system_note: Some("cópia".into()), ..Default::default() };
         let c = p.task_command("oi", Path::new("w"), None, &opts);
         assert_eq!(c.args, ["--output-format", "stream-json", "--approval-mode", "auto_edit", "--skip-trust", "-m", "gemini-3.8-flash"]);
         assert_eq!(c.stdin.as_deref(), Some("[Aviso do ambiente] cópia\n\noi"));
@@ -390,6 +394,11 @@ mod tests {
         assert_eq!(c.args[c.args.len() - 2..], ["--resume", "test-session-123"]);
         assert_eq!(c.stdin.as_deref(), Some("oi"));
         assert!(!c.args.iter().any(|a| a == "--yolo" || a == "yolo" || a == "--include-directories"));
+        use crate::permissions::AccessMode;
+        let mode = |access| p.task_command("oi", Path::new("w"), None, &TurnOptions { access, ..Default::default() }).args[3].clone();
+        assert_eq!(mode(AccessMode::Plan), "plan");
+        assert_eq!(mode(AccessMode::Bypass), "yolo");
+        assert_eq!(mode(AccessMode::Normal), "auto_edit");
     }
 
     #[test]

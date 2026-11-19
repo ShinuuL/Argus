@@ -319,7 +319,12 @@ export interface Task {
   handoff: boolean;
   /** Última ocupação da janela de contexto (null = ainda sem pedido ao modelo). */
   context?: ContextUsage | null;
+  /** Modo de acesso da conversa (Planejar / normal / Bypass). */
+  access?: AccessMode;
 }
+
+/** Modo de acesso por conversa: "plan" só lê e propõe; "bypass" roda sem pedir aprovação. */
+export type AccessMode = "plan" | "normal" | "bypass";
 
 // ------------------------------------------------------------------ auto-work
 

@@ -21,6 +21,7 @@ import {
   totalTokens,
   variantOf,
   type Path,
+  type AccessMode,
   type IsolationReport,
   type Pricing,
   type Task,
@@ -59,7 +60,7 @@ import {
   type ChatEntry,
   type SubagentNode,
 } from "./events";
-import { AgentModelPill, ComposerOptions, DirectHold, hasGaps, IsolationHold, useWorkModeInfo, WORK_MODE_LABEL } from "./pills";
+import { ACCESS_LABEL, AgentModelPill, BypassBadge, ComposerOptions, DirectHold, hasGaps, IsolationHold, useWorkModeInfo, WORK_MODE_LABEL } from "./pills";
 import { ContextMeter } from "./ContextMeter";
 import { UsagePill } from "@/views/chat/UsagePill";
 import { DraftText, liveActivity, Transcript, WorkingLine } from "./Transcript";
@@ -524,6 +525,37 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
     }
   };
 
+  /** Troca o acesso da conversa. Ligar o Bypass pede confirmação no diálogo do sistema. */
+  const changeAccess = async (access: AccessMode) => {
+    if (taskId == null) return;
+    try {
+      if (access === "bypass") {
+        const ok = await api.systemConfirm(
+          "Ligar o Bypass",
+          "Nesta conversa o agente vai rodar qualquer comando sem pedir aprovação e sem a política de shell do Argus. Ligar o Bypass?",
+        );
+        if (!ok) return;
+      }
+      await api.taskSetAccess(taskId, access);
+      await useApp.getState().refreshTasks();
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
+
+  /** Fim de um turno em Planejar: volta ao modo normal e pede a execução. */
+  const runPlan = async () => {
+    if (taskId == null) return;
+    try {
+      await api.taskSetAccess(taskId, "normal");
+      await useApp.getState().refreshTasks();
+      await send("Execute o plano que você propôs acima.");
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
+
   const changeProvider = async (id: string) => {
     if (taskId == null) return setProvider(id);
     try {
@@ -682,6 +714,8 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
         modeEditable={taskId == null && !!newProject && isGit}
         noGit={taskId == null && !isGit}
         onMode={setModeChoice}
+        access={task?.access ?? "normal"}
+        onAccess={closed ? undefined : (a) => void changeAccess(a)}
       />
     </>
   );
@@ -705,6 +739,12 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
               title={`Agente: ${providerName(task.provider)}\nModelo: ${task.model ?? "padrão da CLI"}\nModo de trabalho: ${WORK_MODE_LABEL[task.mode]}${task.handoff ? "\nO próximo turno leva o resumo da conversa para o agente novo." : ""}`}
             >
               {providerName(task.provider)} · {task.model ?? "modelo padrão"}
+            </span>
+          )}
+          {task?.access === "bypass" && <BypassBadge />}
+          {task?.access === "plan" && (
+            <span className="cv-agent access-plan" title="Esta conversa está em Planejar: o agente só lê e propõe.">
+              {ACCESS_LABEL.plan}
             </span>
           )}
           {taskId != null && <SessionServersBadge taskId={taskId} />}
@@ -845,6 +885,14 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                   onGo={() => void releaseHold({ mode: hold.mode ?? undefined, skipDirect: true })}
                   onCancel={cancelHold}
                 />
+              )}
+              {task?.access === "plan" && !busy && !closed && task.session_id != null && (
+                <div className="cv-note cv-plan">
+                  <span>Modo Planejar: o agente só propôs, nada foi alterado.</span>
+                  <button type="button" className="pop-link" onClick={() => void runPlan()}>
+                    Executar o plano
+                  </button>
+                </div>
               )}
               {task?.handoff && !busy && !closed && (
                 <div className="cv-note cv-handoff">

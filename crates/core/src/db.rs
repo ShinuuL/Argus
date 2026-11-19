@@ -33,9 +33,12 @@ pub struct TaskRecord {
     /// JSON do último `ContextUsage` (ocupação da janela de contexto).
     #[serde(default)]
     pub context: Option<String>,
+    /// Modo de acesso da conversa ("normal", "plan" ou "bypass"). None = normal.
+    #[serde(default)]
+    pub access: Option<String>,
 }
 
-const TASK_COLS: &str = "id, project, provider, prompt, state, created_at, workdir, session_id, model, mode, provider_state, handoff, context";
+const TASK_COLS: &str = "id, project, provider, prompt, state, created_at, workdir, session_id, model, mode, provider_state, handoff, context, access";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventRecord {
@@ -225,7 +228,7 @@ impl Db {
              CREATE INDEX IF NOT EXISTS idx_build_runs ON build_runs(project, started_at);",
         )?;
         // Migração de bancos antigos: colunas novas em `tasks`.
-        for col in ["workdir TEXT", "session_id TEXT", "model TEXT", "mode TEXT", "provider_state TEXT", "handoff INTEGER NOT NULL DEFAULT 0", "context TEXT"] {
+        for col in ["workdir TEXT", "session_id TEXT", "model TEXT", "mode TEXT", "provider_state TEXT", "handoff INTEGER NOT NULL DEFAULT 0", "context TEXT", "access TEXT"] {
             let name = col.split_whitespace().next().unwrap();
             let exists: bool = conn
                 .prepare("SELECT 1 FROM pragma_table_info('tasks') WHERE name=?1")?
@@ -282,6 +285,12 @@ impl Db {
     /// Modelo da tarefa (None = padrão da CLI).
     pub fn set_task_model(&self, id: i64, model: Option<&str>) -> rusqlite::Result<()> {
         self.c().execute("UPDATE tasks SET model=?2 WHERE id=?1", params![id, model])?;
+        Ok(())
+    }
+
+    /// Modo de acesso da conversa ("normal", "plan" ou "bypass").
+    pub fn set_task_access(&self, id: i64, access: &str) -> rusqlite::Result<()> {
+        self.c().execute("UPDATE tasks SET access=?2 WHERE id=?1", params![id, access])?;
         Ok(())
     }
 
@@ -628,6 +637,7 @@ fn task_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskRecord> {
         provider_state: r.get(10)?,
         handoff: r.get::<_, Option<i64>>(11)?.unwrap_or(0) != 0,
         context: r.get(12)?,
+        access: r.get(13)?,
     })
 }
 
@@ -818,6 +828,9 @@ mod tests {
         let t = db.get_task(1).unwrap().unwrap();
         assert_eq!((t.provider.as_str(), t.model.as_deref(), t.mode.as_deref()), ("opencode", Some("a/b"), Some("Direct")));
         assert_eq!((t.session_id.clone(), t.provider_state.as_deref(), t.handoff), (None, Some("{\"claude\":{}}"), true));
+        assert_eq!(t.access, None);
+        db.set_task_access(1, "bypass").unwrap();
+        assert_eq!(db.get_task(1).unwrap().unwrap().access.as_deref(), Some("bypass"));
         db.set_task_handoff(1, false).unwrap();
         assert!(!db.get_task(1).unwrap().unwrap().handoff);
         // A tabela de preferências também nasce na migração.

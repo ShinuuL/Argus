@@ -7,6 +7,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ensurePtyListeners, forgetPty } from "./events";
 import type {
+  AccessMode,
   AgentEvent,
   AppInfo,
   AutoWorkEvent,
@@ -193,6 +194,10 @@ export const taskCreate = (project: Path, provider: string, prompt: string, opts
 /** Troca o modelo da tarefa (null = padrão da CLI); vale a partir do próximo turno. */
 export const taskSetModel = (id: TaskId, model: string | null): Promise<void> =>
   invoke("task_set_model", { id, model: model || null });
+
+/** Troca o modo de acesso da conversa (Planejar / normal / Bypass); vale a partir do próximo turno. */
+export const taskSetAccess = (id: TaskId, access: AccessMode): Promise<void> =>
+  invoke("task_set_access", { id, access });
 
 /** Troca o agente (provedor) da tarefa, com o turno parado; o próximo turno leva o resumo da conversa. */
 export const taskSetProvider = (id: TaskId, provider: string): Promise<void> =>

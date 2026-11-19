@@ -65,6 +65,13 @@ impl AgentProvider for OpencodeProvider {
         if let Some(s) = session {
             c = c.arg("--session").arg(s);
         }
+        match opts.access {
+            // Agente embutido `plan`: só lê e propõe.
+            crate::permissions::AccessMode::Plan => c = c.arg("--agent").arg("plan"),
+            // Permissões liberadas só na configuração deste turno.
+            crate::permissions::AccessMode::Bypass => c.env.push(("OPENCODE_CONFIG_CONTENT".into(), crate::permissions::OPENCODE_BYPASS_CONFIG.into())),
+            crate::permissions::AccessMode::Normal => {}
+        }
         // O `opencode run` não tem opção de prompt de sistema (conferido no `--help`
         // da 2.3.0): o aviso de ambiente vai na frente do primeiro pedido da sessão.
         let text = match opts.system_note.as_deref().filter(|n| !n.is_empty() && session.is_none()) {
@@ -377,7 +384,7 @@ mod tests {
         // O modelo vem da tarefa; o do provedor é só o valor inicial das conversas novas.
         let p = OpencodeProvider::with_model("openai/gpt");
         assert_eq!(p.default_model().as_deref(), Some("openai/gpt"));
-        let opts = TurnOptions { model: Some("google/gemini".into()), system_note: Some("cópia isolada".into()) };
+        let opts = TurnOptions { model: Some("google/gemini".into()), system_note: Some("cópia isolada".into()), ..Default::default() };
         let c = p.task_command("a \"b\" %PATH%\nc", Path::new("."), Some("ses_1"), &opts);
         assert_eq!(c.args, ["run", "--format", "json", "-m", "google/gemini", "--session", "ses_1"]);
         assert_eq!(c.cwd.as_deref(), Some(Path::new(".")));
@@ -390,6 +397,12 @@ mod tests {
         assert_eq!(c.args, ["run", "--format", "json"]);
         let bad = TurnOptions { model: Some("--auto".into()), ..Default::default() };
         assert_eq!(p.task_command("oi", Path::new("."), None, &bad).args, ["run", "--format", "json"]);
+        use crate::permissions::AccessMode;
+        let c = p.task_command("oi", Path::new("."), None, &TurnOptions { access: AccessMode::Plan, ..Default::default() });
+        assert_eq!(c.args, ["run", "--format", "json", "--agent", "plan"]);
+        assert!(c.env.is_empty());
+        let c = p.task_command("oi", Path::new("."), None, &TurnOptions { access: AccessMode::Bypass, ..Default::default() });
+        assert_eq!(c.env, [("OPENCODE_CONFIG_CONTENT".to_string(), crate::permissions::OPENCODE_BYPASS_CONFIG.to_string())]);
     }
 
     #[test]

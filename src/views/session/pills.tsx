@@ -5,7 +5,7 @@
  * quando a cópia isolada não teria o que o pedido precisa.
  */
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { api, errorMessage, type IsolationReport, type ModelInfo, type Path, type TaskId, type WorkMode, type WorkModeInfo } from "@/api";
+import { api, errorMessage, type AccessMode, type IsolationReport, type ModelInfo, type Path, type TaskId, type WorkMode, type WorkModeInfo } from "@/api";
 import { Icon } from "@/shell/icons";
 import { Popover } from "@/shell/Popover";
 import { useWorkbench } from "@/store";
@@ -477,6 +477,9 @@ export interface ComposerOptionsProps {
   /** Projeto sem git (só existe "Direto na pasta"). */
   noGit?: boolean;
   onMode(mode: WorkMode): void;
+  /** Modo de acesso da conversa (só com tarefa criada). */
+  access?: AccessMode;
+  onAccess?: (a: AccessMode) => void;
 }
 
 /**
@@ -484,7 +487,15 @@ export interface ComposerOptionsProps {
  * permissão e auto-work, cada um com rótulo e explicação. O botão mostra
  * quantas opções fogem do padrão.
  */
-export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditable, noGit, onMode }: ComposerOptionsProps) {
+/** Rótulos e explicações do modo de acesso da conversa. */
+export const ACCESS_LABEL: Record<AccessMode, string> = { plan: "Planejar", normal: "Normal", bypass: "Bypass" };
+const ACCESS_HELP: Record<AccessMode, string> = {
+  plan: "O agente só lê e propõe um plano; nada é alterado. Ao fim do turno aparece \"Executar o plano\".",
+  normal: "Vale o modo de permissão do projeto e os comandos permitidos.",
+  bypass: "O agente roda qualquer comando sem pedir aprovação e sem a política de shell do Argus. Só nesta conversa.",
+};
+
+export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditable, noGit, onMode, access = "normal", onAccess }: ComposerOptionsProps) {
   const [open, setOpen] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
   const aw = useAutoWork(project, taskId);
@@ -494,10 +505,10 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
   }, []);
 
   const offMode = taskId == null && mode !== defaultMode;
-  const changed = (offMode ? 1 : 0) + (aw.on ? 1 : 0);
+  const changed = (offMode ? 1 : 0) + (aw.on ? 1 : 0) + (access !== "normal" ? 1 : 0);
   const summary = [
     mode === "Isolated" ? "isolado" : "direto na pasta",
-    "edições automáticas",
+    access === "normal" ? "edições automáticas" : `acesso ${ACCESS_LABEL[access]}`,
     aw.on ? `auto-work${aw.progress || " ligado"}` : null,
   ]
     .filter(Boolean)
@@ -553,6 +564,37 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
                   ? "escolha um projeto para definir o modo de trabalho."
                   : "fixo nesta conversa (escolhido ao criá-la). " + WORK_MODE_HELP[mode].replace(/^[^:]+: /, "")}
             </p>
+          )}
+        </div>
+        <div className="pop-sec">
+          <div className="pop-title">Acesso nesta conversa</div>
+          {taskId != null && onAccess ? (
+            <div className="pop-list" role="radiogroup" aria-label="Acesso nesta conversa">
+              {(["plan", "normal", "bypass"] as AccessMode[]).map((a) => (
+                <button
+                  key={a}
+                  type="button"
+                  role="radio"
+                  aria-checked={a === access}
+                  className={`sel-opt pop-opt pop-opt-tall${a === access ? " cur" : ""}`}
+                  onClick={() => {
+                    if (a !== access) onAccess(a);
+                  }}
+                >
+                  <span className="pop-opt-text">
+                    <span className="sel-opt-label">
+                      {ACCESS_LABEL[a]}
+                      {a === "normal" && <span className="pop-tag">padrão</span>}
+                      {a === "bypass" && <span className="pop-tag bypass-tag">perigoso</span>}
+                    </span>
+                    <span className="pop-help">{ACCESS_HELP[a]}</span>
+                  </span>
+                  {a === access && <Check />}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="pop-help">Planejar e Bypass ficam disponíveis depois do primeiro envio da conversa.</p>
           )}
         </div>
         <div className="pop-sec">
@@ -702,5 +744,17 @@ export function DirectHold(props: { others: TaskId[]; busy: boolean; onGo(): voi
         </button>
       </div>
     </div>
+  );
+}
+
+/** Selo vermelho "Bypass": a conversa roda sem pedir aprovação (cabeçalho, aba e barra de status). */
+export function BypassBadge({ compact = false }: { compact?: boolean }) {
+  return (
+    <span
+      className={`bypass-badge${compact ? " compact" : ""}`}
+      title="Bypass ligado nesta conversa: o agente roda sem pedir aprovação e sem a política de shell do Argus."
+    >
+      Bypass
+    </span>
   );
 }

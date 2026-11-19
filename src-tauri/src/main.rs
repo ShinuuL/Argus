@@ -86,6 +86,7 @@ fn main() {
             agents::autocompact_set,
             agents::permissions_allow_denied,
             agents::task_set_model,
+            agents::task_set_access,
             agents::task_set_provider,
             agents::tasks_list,
             agents::task_get,

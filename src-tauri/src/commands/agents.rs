@@ -277,6 +277,14 @@ pub async fn task_set_model(ctx: State<'_, AppCtx>, id: TaskId, model: Option<St
     ctx.orch.set_model(id, model.as_deref()).map_err(err)
 }
 
+/// Troca o modo de acesso da conversa ("plan", "normal" ou "bypass"); vale a
+/// partir do próximo turno. O Bypass só chega aqui depois da confirmação na tela.
+#[tauri::command]
+pub async fn task_set_access(ctx: State<'_, AppCtx>, id: TaskId, access: String) -> Result<(), String> {
+    let a = argus_core::permissions::AccessMode::parse(&access).ok_or_else(|| format!("modo de acesso desconhecido: {access}"))?;
+    ctx.orch.set_access(id, a).map_err(err)
+}
+
 /// Troca o agente (provedor) da tarefa, com o turno parado. O próximo turno abre
 /// (ou retoma) a sessão do provedor novo e leva o resumo da conversa.
 #[tauri::command]

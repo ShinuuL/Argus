@@ -116,6 +116,9 @@ pub struct Task {
     /// Ocupação da janela de contexto no último pedido do agente principal.
     #[serde(default)]
     pub context: Option<crate::agents::context::ContextUsage>,
+    /// Modo de acesso da conversa (Planejar / normal / Bypass), persistido.
+    #[serde(default)]
+    pub access: crate::permissions::AccessMode,
     /// Sessão e modelo dos provedores que já atenderam a tarefa (por id).
     #[serde(skip)]
     pub others: HashMap<String, ProviderState>,
@@ -271,6 +274,7 @@ impl Orchestrator {
                                 mode: r.mode.as_deref().and_then(WorkMode::parse).unwrap_or_default(),
                                 handoff: r.handoff,
                                 context: r.context.as_deref().and_then(|s| serde_json::from_str(s).ok()),
+                                access: r.access.as_deref().and_then(crate::permissions::AccessMode::parse).unwrap_or_default(),
                                 others: r
                                     .provider_state
                                     .as_deref()
@@ -482,6 +486,7 @@ impl Orchestrator {
             mode,
             handoff: false,
             context: None,
+            access: Default::default(),
             others: HashMap::new(),
         };
         if let Some(db) = &self.inner.db {
@@ -607,6 +612,19 @@ impl Orchestrator {
         Ok(())
     }
 
+    /// Troca o modo de acesso da conversa; vale a partir do próximo turno.
+    pub fn set_access(&self, id: TaskId, access: crate::permissions::AccessMode) -> Result<(), OrchestratorError> {
+        {
+            let mut tasks = self.inner.tasks.lock().unwrap();
+            let t = tasks.get_mut(&id).ok_or(OrchestratorError::UnknownTask(id))?;
+            t.access = access;
+        }
+        if let Some(db) = &self.inner.db {
+            db.set_task_access(id as i64, access.as_str())?;
+        }
+        Ok(())
+    }
+
     /// Troca o agente (provedor) que atende a tarefa, com o turno parado. A tarefa,
     /// a pasta de trabalho e o histórico continuam os mesmos. A sessão e o modelo do
     /// provedor que sai ficam guardados; se o que entra já atendeu a tarefa, a sessão
@@ -692,6 +710,7 @@ impl Orchestrator {
             model: t.model.clone(),
             // Texto fixo (não muda entre turnos, para não regravar o cache).
             system_note: Some(compose_note(t.mode, &t.project, crate::memory::for_project(&t.project).map(|m| m.0).as_deref())),
+            access: t.access,
         }
     }
 
@@ -861,7 +880,7 @@ impl Orchestrator {
         let spec = prov.task_command(prompt, workdir, session, opts);
         // Comandos de shell liberados: o padrão (git de leitura, inspeção), os níveis
         // de git do projeto neste modo e a lista "Comandos permitidos" do projeto.
-        let spec = crate::permissions::apply(spec, &task.project, self.git_levels(&task.project, task.mode), self.permission_mode(&task.project));
+        let spec = crate::permissions::apply_for(spec, &task.project, self.git_levels(&task.project, task.mode), self.permission_mode(&task.project), opts.access);
         // Os anexos do chat ficam fora da pasta de trabalho: libera a leitura deles.
         let mut dirs = crate::attachments::dirs_for(&crate::attachments::root(), id, &[&task.prompt, prompt]);
         // Preferências e memória (`<raiz>/Argus`), que o aviso de sistema aponta.
@@ -1789,6 +1808,31 @@ mod tests {
         let o = Orchestrator::with_db(provs, 1, Some(Db::open(&dbp).unwrap()));
         assert_eq!(o.task(id).unwrap().model.as_deref(), Some("gravado"));
         assert_eq!(o.task(id2).unwrap().model.as_deref(), Some("x/padrao"));
+    }
+
+    /// Modo de acesso por conversa: começa normal, vai no turno seguinte, fica no
+    /// banco e não vaza para outras tarefas.
+    #[tokio::test]
+    async fn access_mode_is_per_task_and_persisted() {
+        use crate::permissions::AccessMode;
+        let dir = tempfile::tempdir().unwrap();
+        let dbp = dir.path().join("h.db");
+        let (provs, seen) = spies();
+        let o = Orchestrator::with_db(provs, 1, Some(Db::open(&dbp).unwrap()));
+        let id = o.submit(dir.path(), "um", "primeiro").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        o.set_access(id, AccessMode::Bypass).unwrap();
+        o.reply(id, "segundo").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        let id2 = o.submit(dir.path(), "um", "outra").unwrap();
+        assert_eq!(wait_final(&o, id2).await, TaskState::Completed);
+        let acc: Vec<AccessMode> = seen.lock().unwrap().iter().map(|s| s.opts.access).collect();
+        assert_eq!(acc, [AccessMode::Normal, AccessMode::Bypass, AccessMode::Normal]);
+        drop(o);
+        let (provs, _) = spies();
+        let o = Orchestrator::with_db(provs, 1, Some(Db::open(&dbp).unwrap()));
+        assert_eq!(o.task(id).unwrap().access, AccessMode::Bypass);
+        assert_eq!(o.task(id2).unwrap().access, AccessMode::Normal);
     }
 
     /// Troca de provedor: mesma tarefa e mesma pasta, sessão antiga guardada, sessão
