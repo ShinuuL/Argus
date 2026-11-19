@@ -11,8 +11,8 @@ import ProvidersView, { useProviders } from "@/views/agents";
 import AutoWorkPanel from "@/views/autowork";
 import DepsView from "@/views/deps";
 import RemoteView from "@/views/remote";
-import PetView from "@/views/pet";
-import PlayerView from "@/views/player";
+import PetPage from "@/views/pet/Page";
+import PlayerPage from "@/views/player/Page";
 import { Select } from "@/shell/Select";
 import AgentDefsPage from "./AgentDefs";
 import PermissionsPage from "./Permissions";
@@ -84,7 +84,11 @@ const FROM_SECTION: Record<string, Page> = { theme: "aparencia", agents: "permis
 
 const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
-/** Chips de estado do menu, a partir de dados reais. */
+/**
+ * Chips de estado do menu, a partir de dados reais. O chip do acesso remoto
+ * também acompanha o ligar/desligar feito dentro da página (`setRemote`), senão
+ * ficaria preso ao estado do momento em que as Configurações abriram.
+ */
 function useSideStatus(project: Path | null) {
   const providers = useProviders();
   const [deps, setDeps] = useState<number | null>(null);
@@ -109,7 +113,7 @@ function useSideStatus(project: Path | null) {
   if (mcp != null) meta.mcp = chip(mcp ? "1" : "0");
   if (deps != null) meta.deps = deps ? chip(`${deps} falta${deps > 1 ? "m" : ""}`, "warn") : chip("ok", "ok");
   if (remote != null) meta.remoto = remote ? chip("ligado", "ok") : chip("desligado");
-  return meta;
+  return { meta, setRemote };
 }
 
 function ThemePage() {
@@ -267,7 +271,7 @@ export default function SettingsArea() {
   }, [section]);
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
-  const meta = useSideStatus(selected);
+  const { meta, setRemote } = useSideStatus(selected);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -349,20 +353,20 @@ export default function SettingsArea() {
           )}
           {page === "remoto" && (
             <PageBody title="Acesso remoto" lead="Use o Argus pelo celular na mesma rede.">
-              <RemoteView />
+              <RemoteView onRunningChange={setRemote} />
             </PageBody>
           )}
           {page === "auditoria" && (
             <SoonPage title="Auditoria" lead="Decisões de permissão tomadas pelos agentes." text="O registro de auditoria (audit.log) ainda não existe no backend." />
           )}
           {page === "pet" && (
-            <PageBody title="Pet">
-              <PetView />
+            <PageBody title="Pet" lead="O mascote da barra de status: o humor dele vem do uso do Argus.">
+              <PetPage />
             </PageBody>
           )}
           {page === "player" && (
-            <PageBody title="Player">
-              <PlayerView />
+            <PageBody title="Player" lead="Controle a música sem sair do Argus: a mídia do Windows ou uma pasta de arquivos.">
+              <PlayerPage />
             </PageBody>
           )}
           {page === "autowork" && <AutoworkPage />}

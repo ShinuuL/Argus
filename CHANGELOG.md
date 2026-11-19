@@ -9,6 +9,11 @@ lugares, que precisam andar juntos: `package.json`, `src-tauri/tauri.conf.json`,
 
 ## 0.1.2 (2026-11-17)
 
+- Builds: uma execução não é mais dada como encerrada quando um elo da corrente de processos
+  termina. Um build é `npm run …` chamando `cargo`, que chama um `rustc` por alvo; cada processo
+  que acaba fazia a tela dizer "encerrado" com o build ainda rodando (aconteceu com o APK, que
+  compila um alvo do Android por vez). Agora a execução adota os descendentes e só termina
+  quando a corrente inteira some.
 - Servidores: a lista agora enxerga servidor que roda na pasta do projeto da sessão mesmo fora
   da árvore de processos dela — é o caso do opencode, que executa os comandos por um daemon
   próprio, anterior ao Argus (por isso o dev server do projeto não aparecia nem no computador

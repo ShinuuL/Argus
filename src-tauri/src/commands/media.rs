@@ -35,14 +35,19 @@ pub enum MediaCmd {
     Previous,
 }
 
+/// Teto para a capa do álbum: acima disso a imagem não vale o custo de trafegar em base64.
+const MAX_ART_BYTES: u64 = 4 * 1024 * 1024;
+
 #[cfg(windows)]
 mod smtc {
-    use super::{MediaCmd, SystemMedia};
+    use super::{MediaCmd, SystemMedia, MAX_ART_BYTES};
+    use base64::Engine;
     use windows::Media::Control::{
         GlobalSystemMediaTransportControlsSession as Session,
         GlobalSystemMediaTransportControlsSessionManager as Manager,
         GlobalSystemMediaTransportControlsSessionPlaybackStatus as Status,
     };
+    use windows::Storage::Streams::DataReader;
 
     fn session() -> Result<Option<Session>, String> {
         let mgr = Manager::RequestAsync()
@@ -70,6 +75,36 @@ mod smtc {
         Ok(Some(out))
     }
 
+    /// Capa do álbum da sessão atual, como data URL. `None` quando o app não publica miniatura.
+    ///
+    /// Fica fora de `current` de propósito: a interface consulta a mídia a cada 2 s e a capa só
+    /// quando a faixa muda, para não trafegar a imagem inteira em toda consulta.
+    pub fn art() -> Result<Option<String>, String> {
+        let Some(s) = session()? else { return Ok(None) };
+        let Ok(props) = s.TryGetMediaPropertiesAsync().and_then(|op| op.get()) else { return Ok(None) };
+        let Ok(stream) = props.Thumbnail().and_then(|t| t.OpenReadAsync()).and_then(|op| op.get()) else {
+            return Ok(None);
+        };
+        let size = stream.Size().unwrap_or(0);
+        if size == 0 || size > MAX_ART_BYTES {
+            return Ok(None);
+        }
+        let mime = stream.ContentType().map(|h| h.to_string()).unwrap_or_default();
+        let mime = if mime.starts_with("image/") { mime } else { "image/jpeg".into() };
+        let reader = DataReader::CreateDataReader(&stream).map_err(|e| e.to_string())?;
+        let read = reader
+            .LoadAsync(size as u32)
+            .and_then(|op| op.get())
+            .map_err(|e| format!("falha ao ler a capa: {e}"))?;
+        let mut bytes = vec![0u8; read as usize];
+        reader.ReadBytes(&mut bytes).map_err(|e| e.to_string())?;
+        if bytes.is_empty() {
+            return Ok(None);
+        }
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        Ok(Some(format!("data:{mime};base64,{b64}")))
+    }
+
     pub fn send(cmd: MediaCmd) -> Result<(), String> {
         let Some(s) = session()? else { return Err("nenhuma mídia tocando".into()) };
         let op = match cmd {
@@ -86,6 +121,9 @@ mod smtc {
     use super::{MediaCmd, SystemMedia};
     pub fn current() -> Result<Option<SystemMedia>, String> {
         Err("controle de mídia do sistema só no Windows".into())
+    }
+    pub fn art() -> Result<Option<String>, String> {
+        Ok(None)
     }
     pub fn send(_: MediaCmd) -> Result<(), String> {
         current().map(|_| ())
@@ -247,6 +285,12 @@ pub struct MusicFolder {
 #[tauri::command]
 pub async fn media_system_current() -> Result<Option<SystemMedia>, String> {
     blocking(smtc::current).await
+}
+
+/// Capa do álbum da mídia do sistema, como data URL (None quando o app não publica a imagem).
+#[tauri::command]
+pub async fn media_system_art() -> Result<Option<String>, String> {
+    blocking(smtc::art).await
 }
 
 /// Envia tocar/pausar, próxima ou anterior para a mídia do sistema. Devolve o estado novo.

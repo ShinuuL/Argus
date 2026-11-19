@@ -304,6 +304,40 @@ fn tick(app: &AppHandle, scan: bool) {
     // Terminais da IDE que já são de uma execução: os processos deles não contam de novo.
     let run_ptys: HashSet<u64> = g.runs.iter().filter_map(|r| r.pty).collect();
 
+    // Um build é uma corrente de processos: `npm run build` chama o `cargo`, que
+    // chama um `rustc` por alvo. Cada elo morre quando o seguinte começa. Antes,
+    // a execução era dada como encerrada no primeiro elo que sumia — e o build
+    // continuava rodando com a tela dizendo "encerrado" (visto com o APK, que
+    // roda um `cargo build` por alvo do Android). Por isso a execução adota os
+    // descendentes dos processos dela e só termina quando a corrente inteira some.
+    let parent_of: HashMap<u32, Option<u32>> = owned.iter().map(|p| (p.pid, p.parent)).collect();
+    /// Primeiro ancestral de `pid` que já pertence a uma execução.
+    fn run_of_ancestor(parent_of: &HashMap<u32, Option<u32>>, runs: &[RunInfo], pid: u32) -> Option<u64> {
+        let mut cur = parent_of.get(&pid).copied().flatten();
+        // Teto baixo de propósito: a corrente de um build é curta e um ciclo
+        // (pid reaproveitado apontando para si) não pode prender o laço.
+        for _ in 0..16 {
+            let p = cur?;
+            if let Some(r) = runs.iter().find(|r| r.active() && r.pids.contains(&p)) {
+                return Some(r.id);
+            }
+            cur = parent_of.get(&p).copied().flatten();
+        }
+        None
+    }
+
+    // Descendentes vivos entram na execução do ancestral antes de decidir quem acabou.
+    let adotar: Vec<(u64, u32)> = owned
+        .iter()
+        .filter(|p| !g.runs.iter().any(|r| r.pids.contains(&p.pid)))
+        .filter_map(|p| run_of_ancestor(&parent_of, &g.runs, p.pid).map(|id| (id, p.pid)))
+        .collect();
+    for (id, pid) in adotar {
+        if let Some(r) = g.runs.iter_mut().find(|r| r.id == id) {
+            r.pids.insert(pid);
+        }
+    }
+
     // Execuções de fora: terminam quando todos os processos reconhecidos somem.
     let gone: Vec<u64> = g
         .runs

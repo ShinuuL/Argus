@@ -171,8 +171,10 @@ fn main() {
             remote::remote_regenerate_token,
             remote::remote_set_host,
             remote::remote_hosts,
+            remote::remote_tailscale_status,
             // mídia
             media::media_system_current,
+            media::media_system_art,
             media::media_system_command,
             media::media_pick_folder,
             media::media_scan_folder,
