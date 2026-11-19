@@ -39,7 +39,9 @@ fn main() {
             events::start_servers_forwarder(&handle);
             commands::runs::start_watcher(&handle);
             // Tarefas agendadas: a primeira volta recupera o que venceu com o app fechado.
-            commands::schedules::start(&handle);
+            // O agendador usa `tokio::spawn`: liga dentro do runtime (fora dele o app
+            // entrava em pânico ao abrir: "there is no reactor running").
+            tauri::async_runtime::block_on(async { commands::schedules::start(&handle) });
             // Aberto pelo "Iniciar com o Windows": começa minimizado.
             if std::env::args().any(|a| a == commands::schedules::MINIMIZED_ARG) {
                 if let Some(w) = app.get_webview_window("main") {
