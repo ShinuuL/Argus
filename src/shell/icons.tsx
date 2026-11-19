@@ -66,9 +66,11 @@ import {
   Maximize2,
   Wrench,
   X,
+  Undo2,
 } from "lucide-react";
 
 const ICONS = {
+  undo: Undo2,
   sidebarLeft: PanelLeft,
   sidebarRight: PanelRight,
   terminal: SquareTerminal,

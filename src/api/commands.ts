@@ -200,6 +200,12 @@ export const taskSetModel = (id: TaskId, model: string | null): Promise<void> =>
   invoke("task_set_model", { id, model: model || null });
 
 /** Troca o modo de acesso da conversa (Planejar / normal / Bypass); vale a partir do próximo turno. */
+/** Pedidos da tarefa com ponto de retorno (1 = o primeiro pedido). */
+export const taskCheckpoints = (id: TaskId): Promise<number[]> => invoke("task_checkpoints", { id });
+
+/** Volta a pasta ao estado de antes do pedido `n`; devolve quantos arquivos novos foram apagados. */
+export const taskRestoreCheckpoint = (id: TaskId, n: number): Promise<number> => invoke("task_restore_checkpoint", { id, n });
+
 export const taskSetAccess = (id: TaskId, access: AccessMode): Promise<void> =>
   invoke("task_set_access", { id, access });
 

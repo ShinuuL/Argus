@@ -351,6 +351,8 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   >(null);
   const [holdBusy, setHoldBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Aviso de sucesso (ex.: pasta de volta a um ponto de retorno). */
+  const [notice, setNotice] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   /** Quantidade de itens do chat quando o aviso de "chamada como texto" foi fechado. */
   const [dismissedAt, setDismissedAt] = useState(-1);
@@ -409,6 +411,33 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   );
   const anyRunning = busy && nodes.some((n) => !n.done);
   const now = useTick(anyRunning);
+
+  // Pontos de retorno: relidos ao abrir e a cada turno que termina.
+  const [checkpoints, setCheckpoints] = useState<number[]>([]);
+  useEffect(() => {
+    if (taskId == null || busy) return;
+    let alive = true;
+    api.taskCheckpoints(taskId).then((v) => alive && setCheckpoints(v)).catch(() => alive && setCheckpoints([]));
+    return () => {
+      alive = false;
+    };
+  }, [taskId, busy, events.length]);
+  const restore = async (n: number) => {
+    if (taskId == null) return;
+    const ok = await api.systemConfirm(
+      "Voltar a este ponto",
+      `Desfazer na pasta tudo o que mudou a partir do pedido ${n}? Arquivos editados voltam como estavam e os criados depois são apagados. A conversa continua igual.`,
+      true,
+    );
+    if (!ok) return;
+    try {
+      const removed = await api.taskRestoreCheckpoint(taskId, n);
+      setError(null);
+      setNotice(`Pasta de volta ao ponto antes do pedido ${n}${removed ? ` (${removed} ${removed === 1 ? "arquivo novo apagado" : "arquivos novos apagados"})` : ""}.`);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
 
   // Comando negado no último turno: a sessão "precisa de atenção" (barra lateral e abas).
   useEffect(() => {
@@ -802,6 +831,8 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
             project={project}
             onRetry={current || closed || noSession || busy ? undefined : (text) => send(text)}
             hideDenied={task?.access === "plan"}
+            checkpoints={current || closed ? undefined : checkpoints}
+            onRestore={current || closed ? undefined : (n) => void restore(n)}
             onAnswer={
               current || closed || noSession
                 ? undefined
@@ -848,6 +879,14 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
         {!current && !missing && (
           <div className="cv-foot">
             <div className="cv-col">
+              {notice && !error && (
+                <div className="chat-notice" role="status">
+                  <pre>{notice}</pre>
+                  <button type="button" title="Fechar" aria-label="Fechar aviso" onClick={() => setNotice(null)}>
+                    ✕
+                  </button>
+                </div>
+              )}
               {(error ?? loadError) && (
                 <div className="chat-notice err" role="alert">
                   <pre>{error ?? loadError}</pre>

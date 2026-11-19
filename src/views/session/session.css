@@ -109,6 +109,12 @@
 @container (max-width: 560px) { .cv-hold-group { flex-direction: column; gap: 3px; } .cv-hold-label { width: auto; } }
 
 /* Fala do usuário em caixa; resposta em Markdown corrido, sem balão. */
+/* Ponto de retorno: aparece no hover (ou com foco) no canto do pedido. */
+.cv-user { position: relative; display: flex; flex-direction: column; }
+.cv-restore { position: absolute; top: 6px; right: 8px; display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; font-size: 11.5px; color: var(--text-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-pill); opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
+.cv-user:hover .cv-restore, .cv-restore:focus-visible { opacity: 1; }
+.cv-restore:hover { color: var(--text); border-color: var(--border-strong); }
+@media (hover: none) { .cv-restore { opacity: 1; } }
 .cv .chat-msg.user { align-self: stretch; max-width: none; padding: 10px 13px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--border); color: var(--text); }
 .cv .chat-msg.agent { padding: 0; }
 .cv .chat-md { line-height: 1.62; font-size: 13.5px; }

@@ -891,6 +891,10 @@ impl Orchestrator {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
+        // Ponto de retorno: a pasta como estava antes deste pedido.
+        let n = self.user_count(id);
+        let wd = workdir.to_path_buf();
+        let _ = tokio::task::spawn_blocking(move || crate::checkpoints::snapshot(&wd, id, n)).await;
         prov.begin_turn(session);
         let spec = prov.task_command(prompt, workdir, session, opts);
         // Comandos de shell liberados: o padrão (git de leitura, inspeção), os níveis
@@ -1025,6 +1029,38 @@ impl Orchestrator {
         Ok((t, dir))
     }
 
+    /// Quantos pedidos do usuário a conversa tem (o do turno que começa incluso).
+    fn user_count(&self, id: TaskId) -> u32 {
+        match &self.inner.db {
+            Some(db) => db.list_events(id as i64).map(|v| v.iter().filter(|e| e.kind == "User").count() as u32).unwrap_or(0),
+            None => self.task(id).map(|t| t.turns).unwrap_or(0),
+        }
+    }
+
+    /// Pedidos da tarefa com ponto de retorno (1 = o primeiro pedido).
+    pub fn checkpoints(&self, id: TaskId) -> Vec<u32> {
+        match self.change_dir(id) {
+            Ok((t, dir)) if !matches!(t.state, TaskState::Applied | TaskState::Discarded) && dir.exists() => crate::checkpoints::list(&dir, id),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Volta a pasta de trabalho ao estado de antes do pedido `n`. Devolve quantos
+    /// arquivos criados depois foram apagados.
+    pub async fn restore_checkpoint(&self, id: TaskId, n: u32) -> Result<usize, OrchestratorError> {
+        let (t, dir) = self.change_dir(id)?;
+        if t.state.is_active() {
+            return Err(OrchestratorError::Busy);
+        }
+        if matches!(t.state, TaskState::Applied | TaskState::Discarded) {
+            return Err(OrchestratorError::Closed);
+        }
+        tokio::task::spawn_blocking(move || crate::checkpoints::restore(&dir, id, n))
+            .await
+            .map_err(|e| OrchestratorError::Git(e.to_string()))?
+            .map_err(OrchestratorError::Git)
+    }
+
     /// Rejeita as alterações da tarefa num arquivo: volta ao último commit (ou
     /// apaga o arquivo novo). `path` é relativo à pasta de trabalho, como no diff.
     pub async fn revert_file(&self, id: TaskId, path: &str) -> Result<(), OrchestratorError> {
@@ -1062,6 +1098,7 @@ impl Orchestrator {
         // vira Aplicada quando o worktree e a branch saíram.
         git(&t.project, &["merge", "--no-ff", "--no-edit", &branch]).await?;
         remove_worktree(&t.project, &wt, &branch, id).await?;
+        crate::checkpoints::forget(&t.project, id);
         self.set_state(id, TaskState::Applied);
         Ok(())
     }
@@ -1071,6 +1108,7 @@ impl Orchestrator {
         let wt = self.worktree_of(id)?;
         let t = self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
         remove_worktree(&t.project, &wt, &branch_name(id), id).await?;
+        crate::checkpoints::forget(&t.project, id);
         self.set_state(id, TaskState::Discarded);
         Ok(())
     }
@@ -1093,6 +1131,7 @@ impl Orchestrator {
             }
         }
         let t = self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
+        crate::checkpoints::forget(&t.project, id);
         let closed = matches!(t.state, TaskState::Applied | TaskState::Discarded);
         if t.mode == WorkMode::Isolated && !closed {
             if let Some(wt) = t.workdir.as_deref() {

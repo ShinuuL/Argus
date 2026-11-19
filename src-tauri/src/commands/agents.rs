@@ -281,6 +281,20 @@ pub async fn task_set_model(ctx: State<'_, AppCtx>, id: TaskId, model: Option<St
 
 /// Troca o modo de acesso da conversa ("plan", "normal" ou "bypass"); vale a
 /// partir do próximo turno. O Bypass só chega aqui depois da confirmação na tela.
+/// Pedidos da tarefa com ponto de retorno (1 = o primeiro pedido).
+#[tauri::command]
+pub async fn task_checkpoints(ctx: State<'_, AppCtx>, id: TaskId) -> Result<Vec<u32>, String> {
+    let orch = ctx.orch.clone();
+    blocking(move || Ok(orch.checkpoints(id))).await
+}
+
+/// Volta a pasta de trabalho ao estado de antes do pedido `n`. Devolve quantos
+/// arquivos criados depois foram apagados.
+#[tauri::command]
+pub async fn task_restore_checkpoint(ctx: State<'_, AppCtx>, id: TaskId, n: u32) -> Result<usize, String> {
+    ctx.orch.restore_checkpoint(id, n).await.map_err(err)
+}
+
 #[tauri::command]
 pub async fn task_set_access(ctx: State<'_, AppCtx>, id: TaskId, access: String) -> Result<(), String> {
     let a = argus_core::permissions::AccessMode::parse(&access).ok_or_else(|| format!("modo de acesso desconhecido: {access}"))?;

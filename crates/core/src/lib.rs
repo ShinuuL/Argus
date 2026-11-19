@@ -3,6 +3,7 @@ pub mod agents;
 pub mod attachments;
 pub mod autowork;
 pub mod checklist;
+pub mod checkpoints;
 pub mod connections;
 pub mod db;
 pub mod harmful;

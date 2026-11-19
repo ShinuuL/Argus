@@ -235,6 +235,9 @@ export interface TranscriptProps {
    * subagente, histórico) os cartões de pergunta ficam só de leitura.
    */
   onAnswer?(text: string): Promise<void> | void;
+  /** Pedidos com ponto de retorno (1 = o primeiro) e a ação de voltar a um deles. */
+  checkpoints?: number[];
+  onRestore?(n: number): void;
   /** Planejar: as negativas são o próprio modo funcionando; não viram aviso. */
   hideDenied?: boolean;
   /** Envia um turno (para "Liberar e repetir" no comando negado). Sem isto, só "Liberar". */
@@ -376,7 +379,10 @@ export function Transcript(props: TranscriptProps) {
     <div ref={ref} className="cv-scroll" onScroll={onScroll}>
       <div className="cv-col cv-log" data-ready={ready || undefined}>
         {before}
-        {turns.map((turn, t) => {
+        {turns.map((turn, t, all) => {
+          // Número do pedido na conversa (1 = o primeiro): é a chave do ponto de retorno.
+          const ordinal = turn.user == null ? 0 : all.slice(0, t + 1).filter((x) => x.user != null).length;
+          const canRestore = ordinal > 0 && !taskActive && !!props.onRestore && !!props.checkpoints?.includes(ordinal);
           const finished = t < turns.length - 1 || !taskActive;
           const live = !finished;
           // Turno terminado: tudo antes da resposta final vira "N passos".
@@ -390,7 +396,22 @@ export function Transcript(props: TranscriptProps) {
           const tail = live && t === turns.length - 1 ? liveItem : null;
           return (
             <div key={t} className="cv-turn">
-              {turn.user != null && <MessageView event={{ User: turn.user }} />}
+              {turn.user != null &&
+                (canRestore ? (
+                  <div className="cv-user">
+                    <MessageView event={{ User: turn.user }} />
+                    <button
+                      type="button"
+                      className="cv-restore"
+                      title="Desfaz na pasta tudo o que mudou a partir deste pedido (arquivos editados voltam, os criados depois somem). A conversa não muda."
+                      onClick={() => props.onRestore!(ordinal)}
+                    >
+                      <Icon name="undo" size={12} /> Voltar a este ponto
+                    </button>
+                  </div>
+                ) : (
+                  <MessageView event={{ User: turn.user }} />
+                ))}
               {(steps.length > 0 || rest.length > 0 || tail) && (
                 <div className="tl">
                   {steps.length > 0 && (
