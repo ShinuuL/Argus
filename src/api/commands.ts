@@ -18,6 +18,7 @@ import type {
   Apk,
   MirrorStatus,
   DirEntry,
+  RemoteExposure,
   FileStat,
   InstallPlan,
   LanAddr,
@@ -43,6 +44,7 @@ import type {
   PtyId,
   PtySession,
   RemoteInfo,
+  TailscaleStatus,
   RootInfo,
   ServerInfo,
   BuildRecord,
@@ -386,8 +388,15 @@ export const devicesInstall = (project: Path, apk: Path, serial: string): Promis
 
 export const remoteInfo = (): Promise<RemoteInfo | null> => invoke("remote_info");
 
-/** Liga o servidor remoto na porta; devolve a URL de pareamento e o QR code em SVG. */
-export const remoteStart = (port: number): Promise<RemoteInfo> => invoke("remote_start", { port });
+/**
+ * Liga o servidor remoto na porta; devolve a URL de pareamento e o QR code em SVG.
+ * `exposure` omitido = Funnel (HTTPS pelo Tailscale), o padrão.
+ */
+export const remoteStart = (port: number, exposure?: RemoteExposure): Promise<RemoteInfo> =>
+  invoke("remote_start", { port, exposure });
+
+/** Estado do Tailscale neste computador (instalado, conectado, nome no tailnet). */
+export const remoteTailscaleStatus = (): Promise<TailscaleStatus> => invoke("remote_tailscale_status");
 
 /** Desliga o servidor remoto. */
 export const remoteStop = (): Promise<void> => invoke("remote_stop");
@@ -405,6 +414,9 @@ export const remoteHosts = (): Promise<LanAddr[]> => invoke("remote_hosts");
 
 /** Mídia tocando no sistema (null se nada estiver tocando). */
 export const mediaSystemCurrent = (): Promise<SystemMedia | null> => invoke("media_system_current");
+
+/** Capa do álbum da mídia do sistema, como data URL (null quando o app não publica a imagem). */
+export const mediaSystemArt = (): Promise<string | null> => invoke("media_system_art");
 
 /** Envia tocar/pausar, próxima ou anterior à mídia do sistema; devolve o estado novo. */
 export const mediaSystemCommand = (cmd: MediaCmd): Promise<SystemMedia | null> =>
