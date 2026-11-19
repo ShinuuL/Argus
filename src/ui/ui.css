@@ -52,7 +52,7 @@ table.ui-t { width: 100%; border-collapse: collapse; font-size: 12px; }
 .ui-dot.bad { background: var(--err); }
 .ui-dot.info { background: var(--run); }
 
-.ui-bar { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.ui-bar { height: 6px; border-radius: var(--radius-sm); background: var(--surface-2); overflow: hidden; }
 .ui-bar > i { display: block; height: 100%; background: var(--accent); }
 .ui-bar.ok > i { background: var(--ok); }
 .ui-bar.warn > i { background: var(--warn); }

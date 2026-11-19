@@ -1,5 +1,5 @@
 .conn-view { display: flex; flex-direction: column; gap: 10px; padding: 16px; max-width: 760px; }
 .conn-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .conn-row > button { margin-left: auto; }
-.conn-card { border: 1px solid var(--border, rgba(127, 127, 127, 0.3)); border-radius: 8px; padding: 10px 12px; }
+.conn-card { border: 1px solid var(--border, rgba(127, 127, 127, 0.3)); border-radius: var(--radius-lg); padding: 10px 12px; }
 .conn-prs { margin: 8px 0 0; padding-left: 18px; }

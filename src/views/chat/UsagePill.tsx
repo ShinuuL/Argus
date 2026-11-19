@@ -45,10 +45,13 @@ export function UsagePill() {
         .map((m) => `${m.key || "modelo não informado"}: ${tokensPt(totalTokens(m))} tokens · ≈ ${usdPt(m.api_cost_usd)}`)
         .join("\n")
     : "Sem uso registrado hoje.";
+  const tip = `Uso de hoje: ${tokensPt(today.tokens)} tokens · ≈ ${usdPt(today.cost)} (equivalente em API)
+
+${detail}`;
 
   return (
-    <span className="chat-usage" title={detail}>
-      hoje: {tokensPt(today.tokens)} tokens · ≈ {usdPt(today.cost)} <small>(equivalente em API)</small>
+    <span className="chat-usage" title={tip}>
+      {tokensPt(today.tokens)} tok · ≈ {usdPt(today.cost)}
     </span>
   );
 }

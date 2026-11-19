@@ -25,7 +25,7 @@
 .gt-fname { all: unset; cursor: pointer; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono-family); font-size: 11px; }
 .gt-add { color: var(--ok); }
 .gt-del { color: var(--err); }
-.gt-msg { margin: 0 12px; border: 1px solid var(--border-strong); border-radius: 8px; padding: 8px; min-height: 70px; resize: vertical; background: transparent; color: var(--text); font: inherit; }
+.gt-msg { margin: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); padding: 8px; min-height: 70px; resize: vertical; background: transparent; color: var(--text); font: inherit; }
 .gt-note { margin: 6px 12px 0; }
 .gt-center { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
 .gt-ftop { display: flex; gap: 10px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--border); flex: none; }

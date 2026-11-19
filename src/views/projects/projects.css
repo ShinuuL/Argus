@@ -1,6 +1,6 @@
 /* Lista de sessões agrupada por projeto (.side do mockup, telas 02/03). */
 .pj { width: 230px; flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--border); font-size: 12.5px; }
-.pj-ibtn { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; flex: none; background: none; border: 0; border-radius: 5px; color: var(--text-2); }
+.pj-ibtn { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; flex: none; background: none; border: 0; border-radius: var(--radius); color: var(--text-2); }
 .pj-ibtn:hover { background: var(--selection); color: var(--text); }
 .pj-ibtn[aria-pressed="true"] { color: var(--accent-text); }
 .pj-ibtn:disabled { opacity: .5; cursor: default; }
@@ -50,3 +50,4 @@
 
 /* Tela 03: com o inspetor aberto em janela estreita, a lista recolhe para a conversa não espremer. */
 @media (max-width: 1280px) { .sh-chat:has(.rp) .pj { display: none; } }
+.pj-empty-note { color: var(--text-2); font-size: 12px; }

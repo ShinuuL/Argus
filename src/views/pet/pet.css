@@ -55,7 +55,7 @@
 .argo-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .argo-row > span:first-child { color: var(--text-dim); }
 .argo-row b { font-weight: 600; font-variant-numeric: tabular-nums; }
-.argo-meter { flex: 1; height: 5px; min-width: 50px; background: var(--bg-control); border-radius: 3px; overflow: hidden; }
+.argo-meter { flex: 1; height: 5px; min-width: 50px; background: var(--bg-control); border-radius: var(--radius-sm); overflow: hidden; }
 .argo-meter span { display: block; height: 100%; background: var(--accent); }
 
 @media (prefers-reduced-motion: reduce) {
@@ -68,14 +68,14 @@
 .pet-hero { display: flex; align-items: center; gap: var(--space-5); height: auto; padding: var(--space-5); border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--bg-panel); }
 .pet-hero .argo-svg { flex: none; }
 .pet-hero-text { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
-.pet-mood { margin: 0; font-size: 20px; font-weight: 600; color: var(--text-strong); }
+.pet-mood { margin: 0; font-size: 21px; font-weight: 600; color: var(--text-strong); }
 .pet-why { margin: 0; }
 
 .pet-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--space-3); }
 .pet-stat { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-panel); }
 .pet-stat-label { font-size: 12px; color: var(--text-dim); }
 .pet-stat-value { font-size: 18px; font-variant-numeric: tabular-nums; }
-.pet-meter { height: 5px; background: var(--bg-control); border-radius: 3px; overflow: hidden; }
+.pet-meter { height: 5px; background: var(--bg-control); border-radius: var(--radius-sm); overflow: hidden; }
 .pet-meter span { display: block; height: 100%; background: var(--accent); }
 
 .pet-legend { display: flex; flex-direction: column; gap: var(--space-2); }

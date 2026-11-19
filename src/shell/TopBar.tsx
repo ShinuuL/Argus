@@ -94,10 +94,12 @@ export function TopBar() {
         <span className="kbd">Ctrl K</span>
       </button>
       <span className="tb-sp" data-tauri-drag-region />
-      {area === "chat" && (
+      {/* Fora de Conversas os botões ficam reservados (invisíveis) para a busca não mudar de lugar. */}
+      <span className="tb-chat-ctl" style={area === "chat" ? undefined : { visibility: "hidden" }} aria-hidden={area !== "chat"}>
         <>
           <button
             className="tb-btn"
+            tabIndex={area === "chat" ? undefined : -1}
             aria-pressed={bottomOpen}
             title={bottomOpen ? "Ocultar o terminal (Ctrl+J)" : "Mostrar o terminal (Ctrl+J)"}
             aria-label="Alternar o terminal"
@@ -107,6 +109,7 @@ export function TopBar() {
           </button>
           <button
             className="tb-btn"
+            tabIndex={area === "chat" ? undefined : -1}
             aria-pressed={inspectorOpen}
             title={inspectorOpen ? "Ocultar o inspetor (Ctrl+.)" : "Mostrar o inspetor: alterações, arquivos e agentes (Ctrl+.)"}
             aria-label="Alternar o inspetor"
@@ -115,7 +118,7 @@ export function TopBar() {
             <Icon name="sidebarRight" size={15} />
           </button>
         </>
-      )}
+      </span>
       <div className="tb-win" role="group" aria-label="Janela">
         <button className="tb-wbtn" title="Minimizar" aria-label="Minimizar" onClick={win((w) => w.minimize())}>
           <Icon name="minus" size={15} />

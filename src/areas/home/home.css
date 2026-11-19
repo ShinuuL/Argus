@@ -1,24 +1,26 @@
-/* Tela 01 · Início (mockup docs/mockups/argus-telas.html #s1). */
-.hm { padding: 18px 22px; gap: 18px; }
-.hm-head { display: flex; align-items: flex-end; gap: 12px; }
-.hm-date { margin: 0; text-transform: lowercase; }
-.hm-hello { margin: 0; font-size: 20px; font-weight: 600; color: var(--text); }
+/* Tela 01 · Início: estado operacional, sem painel de números. */
+.hm { padding: 18px 22px; gap: 14px; }
+.hm-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.hm-sum { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; color: var(--text-2); font-size: 13px; min-width: 0; }
+.hm-sum b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.hm-sum b.hm-ok { color: var(--ok); }
+.hm-sum b.hm-warn { color: var(--warn); }
+.hm-link { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.hm-link:hover { color: var(--text); }
+.hm-dot { opacity: 0.5; }
 .hm-sp { flex: 1; }
-.hm-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.hm-cols { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; flex: 1; min-height: 0; }
+.hm-cols { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; align-items: start; }
 .hm-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; color: var(--text); }
-.hm-stat { display: grid; gap: 2px; text-align: left; font: inherit; cursor: pointer; min-width: 0; }
-.hm-stat:hover { border-color: var(--border-strong); }
-.hm-num { font-size: 22px; font-weight: 600; }
-.hm-ok { color: var(--ok); font-weight: 400; }
-.hm-ell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.hm-list { display: grid; gap: 2px; align-content: start; overflow-y: auto; min-height: 0; }
-.hm-ttl { margin-bottom: 6px; }
-.hm-it { border-radius: 6px; padding: 5px 8px; }
-.hm-needs { gap: 8px; }
-.hm-need { padding: 4px 0; border-radius: 6px; }
+.hm-list { display: grid; gap: 2px; align-content: start; max-height: 60vh; overflow-y: auto; }
+.hm-ttl { margin: 0 0 6px; font-size: 12px; font-weight: 500; color: var(--text-2); }
+.hm-it { border-radius: var(--radius); padding: 5px 8px; }
+.hm-needs { gap: 4px; border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
+.hm-need { padding: 4px 8px; border-radius: var(--radius); }
 .hm-need .grow { white-space: normal; }
+.hm-resume { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 12px; min-width: 0; }
+.hm-resume .grow { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hm-resume-t { color: var(--text); }
+.hm-start { display: flex; align-items: center; gap: 12px; }
 @media (max-width: 900px) {
-  .hm-stats { grid-template-columns: repeat(2, 1fr); }
   .hm-cols { grid-template-columns: 1fr; }
 }

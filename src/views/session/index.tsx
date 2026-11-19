@@ -619,7 +619,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
           ariaLabel="Projeto"
           title="Projeto em que a conversa vai acontecer"
           icon={<Icon name="folder" size={12} />}
-          placeholder="nenhum projeto"
+          placeholder="Nenhum projeto"
           value={newProject ?? ""}
           options={projects.map((p) => ({ value: p.path, label: p.name }))}
           onChange={(v) => useWorkbench.getState().setChatProject(tabId, v || null)}

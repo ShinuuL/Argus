@@ -398,7 +398,7 @@ Falta:
     - Aproveita o rastreamento de processos e portas de `crates/core/src/procs.rs`.
 14. **Memória como vault do Obsidian.**
     - Tratar a memória do Argus (notas, contexto e decisões que os agentes leem e gravam) como um vault do Obsidian: arquivos Markdown simples numa pasta, com links `[[nota]]` e frontmatter, abríveis e editáveis direto no Obsidian.
-    - Hoje o vault é a própria pasta onde o app está aberto (a raiz do projeto). Ainda não existe pasta `.obsidian/` nela; decidir se o vault continua sendo a raiz do projeto ou uma subpasta dedicada (ex.: `memoria/`), para não misturar notas com código nem com o que vai para o git.
+    - Hoje o vault é a pasta que o Argus controla, acima de todos os projetos: `D:\Dev\Desenvolvimento` já tem `.obsidian/`, e os `.md` com o nome de cada projeto em `Projetos\` (ex.: `Argus.md`, `Digitama.md`) são notas do vault. O Argus ainda não lê nem grava nada nele.
     - Pendente: definir o local, o formato das notas (uma por fato, com links entre elas), o que entra ou não no git, e como os agentes leem e gravam nessas notas.
 15. **Refazer o ícone do app (não crítico).** O olho atual é provisório; redesenhar o ícone do Argus (janela, barra de tarefas, instalador e web app do celular).
 

@@ -1,7 +1,7 @@
 /* Tela 11 · Uso e métricas. Só tokens. */
 .mxa { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; }
 .mxa-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.mxa-big { font-size: 22px; font-weight: 600; color: var(--text); margin: 2px 0; }
+.mxa-big { font-size: 21px; font-weight: 600; color: var(--text); margin: 2px 0; }
 .mxa-big.ui-mut { color: var(--text-2); }
 .mxa-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mxa-chart { flex: 1; }

@@ -4,7 +4,7 @@
  * navegam, Enter abre, Tab troca o filtro por tipo, Esc fecha.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { baseName, isTaskActive } from "@/api";
+import { baseName, isTaskActive, samePath } from "@/api";
 import { AREAS, PAGES, useApp, useLayout, useWorkbench, type Area } from "@/store";
 import { sessionTitle } from "@/views/session/events";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -49,7 +49,12 @@ function commands(): Cmd[] {
       group: "Sessões",
       label: `#${t.id} ${sessionTitle(t.prompt, 60)}`,
       keys: `sessao ${baseName(t.project)}`,
-      meta: <span className="pal-meta">{isTaskActive(t.state) ? "rodando" : baseName(t.project)}</span>,
+      meta: (
+        <span className="pal-meta">
+          {isTaskActive(t.state) ? "rodando" : baseName(t.project)}
+          {!app.projects.some((p) => samePath(p.path, t.project)) && " · fora da raiz"}
+        </span>
+      ),
       run: () => wb.openSession(t.id),
     });
   }

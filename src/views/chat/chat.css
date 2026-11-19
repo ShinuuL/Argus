@@ -88,7 +88,7 @@ button.chat-sub:hover { background: var(--bg-hover); }
 .chat-md hr { border: 0; border-top: 1px solid var(--border); margin: 10px 0; }
 .chat-md a { color: var(--accent-text); text-decoration: underline; cursor: pointer; }
 .chat-md code {
-  font: var(--font-mono); background: var(--bg-control); padding: 1px 4px; border-radius: 3px;
+  font: var(--font-mono); background: var(--bg-control); padding: 1px 4px; border-radius: var(--radius-sm);
 }
 .chat-md-table { overflow-x: auto; margin: 0 0 8px; }
 .chat-md-table table { border-collapse: collapse; font-size: 12px; }
@@ -147,10 +147,10 @@ button.chat-sub:hover { background: var(--bg-hover); }
   background: var(--bg-raised); border: 1px solid var(--border-control); border-radius: var(--radius);
 }
 .chat-att.err { border-color: var(--err); }
-.chat-att img { width: 36px; height: 36px; object-fit: cover; border-radius: 3px; cursor: zoom-in; }
+.chat-att img { width: 36px; height: 36px; object-fit: cover; border-radius: var(--radius-sm); cursor: zoom-in; }
 .chat-att-icon {
   display: grid; place-items: center; width: 36px; height: 36px; flex: none;
-  font-size: 10px; font-weight: 700; border-radius: 3px; background: var(--bg-control); color: var(--text-dim);
+  font-size: 10px; font-weight: 700; border-radius: var(--radius-sm); background: var(--bg-control); color: var(--text-dim);
 }
 .chat-att.pdf .chat-att-icon { background: var(--err-bg); color: var(--err); }
 .chat-att-info { display: flex; flex-direction: column; min-width: 0; }
@@ -236,7 +236,7 @@ button.chat-pill:hover:not(:disabled), .chat-pill-select:hover { background: var
 .chat-stop { background: var(--text); border-color: var(--text); color: var(--bg); }
 .chat-stop:hover { background: var(--text-2); border-color: var(--text-2); }
 .chat-queue-btn { flex: none; height: 30px; padding: 0 10px; border-radius: var(--radius-pill); font-size: 12px; }
-.chat-hint { text-align: center; color: var(--text-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; opacity: .7; font-size: 10.5px; }
+.chat-hint { text-align: center; color: var(--text-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 10.5px; }
 
 .chat-suggest {
   position: absolute; left: 0; right: 0; bottom: calc(100% + 4px); z-index: 30;
@@ -252,7 +252,7 @@ button.chat-pill:hover:not(:disabled), .chat-pill-select:hover { background: var
 .chat-suggest-item small { color: var(--text-faint); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .chat-suggest-item.on, .chat-suggest-item:hover { background: var(--bg-selected); }
 .chat-suggest-tag {
-  flex: none; padding: 0 6px; border-radius: 8px; font-size: 10px;
+  flex: none; padding: 0 6px; border-radius: var(--radius-lg); font-size: 10px;
   background: var(--bg-control); color: var(--text-dim);
 }
 .chat-suggest-foot { padding: 4px 8px; font-size: 11px; color: var(--text-faint); }
@@ -273,7 +273,7 @@ button.chat-pill:hover:not(:disabled), .chat-pill-select:hover { background: var
 .opt-count {
   position: absolute; top: -2px; right: -3px; min-width: 14px; height: 14px; padding: 0 3px; box-sizing: border-box;
   border-radius: var(--radius); background: var(--accent); color: var(--on-accent);
-  font-size: 9.5px; font-weight: 600; line-height: 14px; text-align: center;
+  font-size: 10.5px; font-weight: 600; line-height: 14px; text-align: center;
 }
 /* Estreita: a pílula mostra só o modelo (o provedor fica na dica e no menu). */
 @container (max-width: 440px) {
@@ -288,4 +288,4 @@ button.chat-pill:hover:not(:disabled), .chat-pill-select:hover { background: var
 /* Redesign: os seletores (projeto, agente, modelo) não encolhem a ponto de sumir o nome. */
 .chat-pills > .sel-pill { min-width: 84px; flex: 0 0 auto; }
 .chat-pills { flex-wrap: nowrap; overflow: hidden; }
-.chat-pills > .chat-usage { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-pills > .chat-usage { flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

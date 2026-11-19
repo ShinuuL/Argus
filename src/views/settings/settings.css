@@ -34,6 +34,6 @@
 .set-swatch { display: flex; height: 74px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border-strong); background: var(--bg); }
 .set-sw-side { width: 28%; background: var(--surface); border-right: 1px solid var(--border); }
 .set-sw-main { flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 10px; }
-.set-sw-line { height: 6px; border-radius: 3px; background: var(--text); width: 80%; }
+.set-sw-line { height: 6px; border-radius: var(--radius-sm); background: var(--text); width: 80%; }
 .set-sw-line.short { width: 50%; background: var(--text-2); }
 .set-sw-btn { margin-top: auto; align-self: flex-end; width: 34px; height: 12px; border-radius: var(--radius); background: var(--accent); }

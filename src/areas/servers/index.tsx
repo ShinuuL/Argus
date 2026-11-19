@@ -137,6 +137,7 @@ function Detail({ server, memory, onError }: { server: ServerInfo; memory: numbe
 
 export default function ServersArea() {
   const servers = useApp((s) => s.servers);
+  const hasProjects = useApp((s) => s.projects.length > 0);
   const filter = useLayout((s) => s.serversFilter);
   const openPanel = useLayout((s) => s.openServersPanel);
   const [tab, setTab] = useState<PortTab>("mine");
@@ -219,7 +220,7 @@ export default function ServersArea() {
           )}
           <input
             className="srva-q"
-            placeholder="Filtrar por porta, processo ou linha de comando"
+            placeholder="Filtrar porta ou processo"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             aria-label="Filtrar servidores"
@@ -249,7 +250,7 @@ export default function ServersArea() {
               onRowClick={(s) => setSel(keyOf(s))}
               empty={filter ? `Nenhum servidor em execução em ${ownerLabel(filter)}.` : "Nenhum servidor em execução vinculado às sessões."}
             />
-            {!filter && (
+            {!filter && hasProjects && (
               <div className="ui-pad">
                 <Card title="Servidores de dev dos projetos">
                   <DevServersSection />
@@ -264,13 +265,10 @@ export default function ServersArea() {
           </div>
         )}
       </div>
-      {tab === "mine" && (
+      {/* O painel de detalhe só ocupa espaço quando há um servidor escolhido. */}
+      {tab === "mine" && selected && (
         <aside className="srva-panel" aria-label="Detalhe do servidor">
-          {selected ? (
-            <Detail server={selected} memory={usageOf(selected)?.memory ?? null} onError={setError} />
-          ) : (
-            <div className="ui-empty ui-sm">Selecione um servidor.</div>
-          )}
+          <Detail server={selected} memory={usageOf(selected)?.memory ?? null} onError={setError} />
         </aside>
       )}
     </div>
