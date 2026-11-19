@@ -259,6 +259,14 @@ export function Transcript(props: TranscriptProps) {
     stick.current = true;
   }, [resetKey]);
 
+  // A conversa recém-aberta aparece de uma vez; só o que chega depois anima a entrada.
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    setReady(false);
+    const id = requestAnimationFrame(() => requestAnimationFrame(() => setReady(true)));
+    return () => cancelAnimationFrame(id);
+  }, [resetKey]);
+
   useLayoutEffect(() => {
     const el = ref.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
@@ -361,7 +369,7 @@ export function Transcript(props: TranscriptProps) {
 
   return (
     <div ref={ref} className="cv-scroll" onScroll={onScroll}>
-      <div className="cv-col cv-log">
+      <div className="cv-col cv-log" data-ready={ready || undefined}>
         {before}
         {turns.map((turn, t) => {
           const finished = t < turns.length - 1 || !taskActive;
@@ -384,11 +392,13 @@ export function Transcript(props: TranscriptProps) {
                           {live ? `${stepsLabel(steps)} antes` : stepsLabel(steps)}
                           <Icon name="chevronRight" size={12} className="cv-steps-chev" />
                         </summary>
-                        <div className="cv-steps-body tl">{steps.map((e, i) => item(e, `s${i}`, false, false))}</div>
+                        <div className="cv-steps-body tl">{steps.map((e, i) => item(e, `i${i}`, false, false))}</div>
                       </details>
                     </TimelineItem>
                   )}
-                  {rest.map((e, i) => item(e, `r${i}`, live, i === rest.length - 1, t === turns.length - 1 && !taskActive))}
+                  {/* Chave = posição do item no turno inteiro (não no recorte): um item novo
+                      monta uma vez e os que já estavam não trocam de conteúdo no lugar. */}
+                  {rest.map((e, i) => item(e, `i${Math.max(cut, 0) + i}`, live, i === rest.length - 1, t === turns.length - 1 && !taskActive))}
                 </div>
               )}
             </div>

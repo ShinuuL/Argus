@@ -38,3 +38,9 @@ button.ck-ask:hover { background: var(--bg-hover); }
   .ck-mark.doing { animation: ck-pulse 1.6s ease-in-out infinite; }
 }
 @keyframes ck-pulse { 50% { opacity: 0.45; } }
+
+/* Linha que recolhe os itens feitos de uma seção. */
+.ck-done-toggle { display: inline-flex; align-items: center; gap: 4px; margin: 2px 0; padding: 2px 4px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-2); font: inherit; font-size: 12px; cursor: pointer; }
+.ck-done-toggle:hover { color: var(--text); background: var(--bg-hover); }
+.ck-chev { transition: transform var(--dur-fast) var(--ease-out); }
+.ck-chev.open { transform: rotate(90deg); }

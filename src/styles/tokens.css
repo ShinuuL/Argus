@@ -131,6 +131,12 @@
   --radius-xl: 12px;
   --radius-pill: 999px;
 
+  /* Motion: feedback (hover, chevron), entrada de conteúdo, painéis; uma curva de saída. */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-panel: 220ms;
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+
   --sidebar-width: 272px;
   --right-width: 320px;
   /* Barra de título: largura dos botões flutuantes nos cantos e o vermelho do Fechar (padrão do Windows). */

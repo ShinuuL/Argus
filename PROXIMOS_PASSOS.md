@@ -465,16 +465,16 @@ Os planos para unificar Screen-Mirror, Gerenciador de Portas e AllSeenEye no Arg
 ## Critique 3 e revisão de motion (2026-11-19)
 
 Pendentes do critique 3 (27/40; snapshot em `.impeccable/critique/`):
-- [ ] Popover de opções do composer em texto corrido; "Modo de permissão" (só leitura) compete com "Acesso nesta conversa" (`src/views/session/pills.tsx`).
-- [ ] Pendências: recolher os itens feitos numa linha "N feitos" e mostrar os abertos primeiro (`src/views/session/ChecklistPanel.tsx`).
-- [ ] Início: "Próximas agendadas" e "Pendências abertas" no lugar do vazio; legenda das bolinhas.
-- [ ] Texto de 10,5px (nomes de projeto, cabeçalhos de tabela, Ctrl K) e `.meta` de item selecionado com 3,7:1.
+- [x] Popover de opções do composer em texto corrido; "Modo de permissão" (só leitura) compete com "Acesso nesta conversa" (`src/views/session/pills.tsx`).
+- [x] Pendências: recolher os itens feitos numa linha "N feitos" e mostrar os abertos primeiro (`src/views/session/ChecklistPanel.tsx`).
+- [x] Início: "Próximas agendadas" e "Pendências abertas" no lugar do vazio; legenda das bolinhas.
+- [x] (feito: rótulos de estrutura a 11px; nomes de projeto viraram conteúdo, 12,5px sem caixa-alta) Texto de 10,5px (nomes de projeto, cabeçalhos de tabela, Ctrl K) e `.meta` de item selecionado com 3,7:1.
 - [ ] Faixa de abas: botões cobrem o título da última aba com o inspetor aberto.
 - [ ] Diálogo do Bypass com ícone de aviso em vez de informação.
 
 Motion (revisão só pelo código; falta captura quadro a quadro):
-- [ ] Chaves por posição na linha do tempo ao vivo (`Transcript.tsx`, `r${i}`/`s${i}`): itens trocam de conteúdo no lugar e a entrada roda de novo; usar a posição global do item.
-- [ ] Rascunho (TextDelta) vira texto final com fade/salto: reaproveitar o nó.
-- [ ] Ao trocar de conversa todo o histórico anima: só animar o que chega depois do primeiro paint.
-- [ ] 6–7 laços de "rodando" ao mesmo tempo; deixar o halo como único laço focal. Pet em laço infinito.
-- [ ] Tokens de duração e curva em `tokens.css`; entrada curta na paleta, menus e painel de Nova tarefa.
+- [x] Chaves por posição na linha do tempo ao vivo (`Transcript.tsx`, `r${i}`/`s${i}`): itens trocam de conteúdo no lugar e a entrada roda de novo; usar a posição global do item.
+- [~] (parcial: o texto final não roda mais a entrada; o rascunho ainda fica fora do `.tl`, pode haver pequeno salto de espaçamento) Rascunho (TextDelta) vira texto final com fade/salto: reaproveitar o nó.
+- [x] Ao trocar de conversa todo o histórico anima: só animar o que chega depois do primeiro paint.
+- [~] (parcial: sem o brilho no texto "trabalhando"; pet em rajadas de 3) 6–7 laços de "rodando" ao mesmo tempo; deixar o halo como único laço focal. Pet em laço infinito.
+- [x] Tokens de duração e curva em `tokens.css`; entrada curta na paleta, menus e painel de Nova tarefa.

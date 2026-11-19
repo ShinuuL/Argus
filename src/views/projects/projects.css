@@ -16,7 +16,7 @@
 .pj-empty p { margin: 0; }
 
 /* Cabeçalho do projeto: h4 em caixa alta, discreto. */
-.pj-project { display: flex; align-items: center; gap: 6px; margin: 0; padding: 12px 8px 6px 12px; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); font-weight: 500; cursor: pointer; min-width: 0; }
+.pj-project { display: flex; align-items: center; gap: 6px; margin: 0; padding: 12px 8px 6px 12px; font-size: 12.5px; color: var(--text-2); font-weight: 600; cursor: pointer; min-width: 0; }
 .pj-project:hover, .pj-project.sel { color: var(--text); }
 .pj-project:focus-visible, .pj-session:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .pj-name { flex: 0 1 auto; }

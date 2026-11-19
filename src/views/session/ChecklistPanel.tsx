@@ -148,6 +148,10 @@ function Section({ title, items, touched }: { title: string; items: ChecklistIte
   const done = items.filter((i) => i.done).length;
   const complete = done === items.length;
   const [open, setOpen] = useState(!complete);
+  // Abertos primeiro; os feitos ficam numa linha "N feitos" (o que falta é o que importa).
+  const [showDone, setShowDone] = useState(false);
+  const pending = items.filter((i) => !i.done);
+  const finished = items.filter((i) => i.done);
   return (
     <section className="ck-sec">
       <button className="ck-sec-head" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -161,9 +165,18 @@ function Section({ title, items, touched }: { title: string; items: ChecklistIte
       <Bar done={done} total={items.length} />
       {open && (
         <ul className="ck-list">
-          {items.map((it) => (
+          {pending.map((it) => (
             <Item key={it.line} item={it} hot={touched.has(itemKey(it.text))} />
           ))}
+          {finished.length > 0 && (
+            <li>
+              <button className="ck-done-toggle" aria-expanded={showDone} onClick={() => setShowDone(!showDone)}>
+                <Icon name="chevronRight" size={11} className={showDone ? "ck-chev open" : "ck-chev"} />
+                {finished.length} {finished.length === 1 ? "feito" : "feitos"}
+              </button>
+            </li>
+          )}
+          {showDone && finished.map((it) => <Item key={it.line} item={it} hot={touched.has(itemKey(it.text))} />)}
         </ul>
       )}
     </section>

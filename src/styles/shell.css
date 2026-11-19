@@ -161,7 +161,7 @@ button.df-file:hover { background: var(--bg-hover); }
 }
 
 /* ---------- Divisor entre grupos do workbench (redimensionar) ---------- */
-.wb-sash { flex: none; position: relative; z-index: 5; background: transparent; transition: background-color .12s; }
+.wb-sash { flex: none; position: relative; z-index: 5; background: transparent; transition: background-color var(--dur-fast) var(--ease-out); }
 .wb-row > .wb-sash { width: 5px; margin: 0 -2px; cursor: col-resize; }
 .wb-col > .wb-sash { height: 5px; margin: -2px 0; cursor: row-resize; }
 .wb-sash:hover, .wb-sash.active { background: var(--focus); }
@@ -184,7 +184,7 @@ button.df-file:hover { background: var(--bg-hover); }
 .tb-search { position: absolute; left: 50%; transform: translateX(-50%); width: 300px; max-width: 34vw; height: 22px; flex: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text-2); font: inherit; font-size: 11.5px; display: flex; align-items: center; padding: 0 8px; gap: 6px; background: var(--surface); cursor: pointer; }
 .tb-search:hover { border-color: var(--border-strong); color: var(--text); }
 .tb-search-t { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kbd { font-family: var(--font-mono-family); font-size: 10.5px; border: 1px solid var(--border-strong); border-radius: 4px; padding: 0 4px; color: var(--text-2); white-space: nowrap; }
+.kbd { font-family: var(--font-mono-family); font-size: 11px; border: 1px solid var(--border-strong); border-radius: 4px; padding: 0 4px; color: var(--text-2); white-space: nowrap; }
 .tb .tb-btn { height: 24px; }
 .tb .tb-win { margin-left: 4px; }
 

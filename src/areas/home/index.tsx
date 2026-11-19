@@ -1,6 +1,7 @@
 /** Tela 01 · Início: o que precisa de você, o que está rodando, a última sessão e os projetos recentes. */
-import { useEffect, useMemo } from "react";
-import { baseName, formatTokensPt, formatUsdPt, isTaskActive, samePath, type Path } from "@/api";
+import { useEffect, useMemo, useState } from "react";
+import { api, baseName, formatTokensPt, formatUsdPt, isTaskActive, samePath, type Path, type Schedule } from "@/api";
+import { formatWhen } from "@/areas/tasks/format";
 import { useApp, useLayout, useWorkbench } from "@/store";
 import { Btn, StatusDot, type Tone } from "@/ui";
 import { ensureRunsSync, useRuns } from "@/views/builds";
@@ -29,6 +30,16 @@ export default function HomeArea() {
     ensureRunsSync();
   }, []);
 
+  // Próximas tarefas agendadas (ligadas, pela próxima execução).
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  useEffect(() => {
+    api.schedulesList().then(setSchedules, () => setSchedules([]));
+  }, []);
+  const upcoming = schedules
+    .filter((x) => x.enabled && x.next_run != null)
+    .sort((a, b) => (a.next_run ?? 0) - (b.next_run ?? 0))
+    .slice(0, 3);
+
   const active = tasks.filter((t) => isTaskActive(t.state));
   const waiting = Object.keys(attention).length;
 
@@ -46,6 +57,27 @@ export default function HomeArea() {
         running: tasks.some((t) => samePath(t.project, p.path) && isTaskActive(t.state)),
       }));
   }, [projects, tasks]);
+
+  // Pendências abertas (itens "- [ ]" do PROXIMOS_PASSOS/PENDENCIAS/TODO) dos projetos recentes.
+  const [openItems, setOpenItems] = useState<Record<Path, number>>({});
+  const recentKey = recent.map((r) => r.p.path).join("|");
+  useEffect(() => {
+    let alive = true;
+    for (const { p } of recent) {
+      api.projectChecklist(p.path).then(
+        (c) => {
+          if (!alive || !c) return;
+          const n = c.sections.reduce((acc, sec) => acc + sec.items.filter((i) => !i.done).length, 0);
+          setOpenItems((m) => ({ ...m, [p.path]: n }));
+        },
+        () => undefined,
+      );
+    }
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recentKey]);
 
   const needs: Need[] = [];
   for (const [id, what] of Object.entries(attention)) {
@@ -153,6 +185,18 @@ export default function HomeArea() {
               </div>
             )}
           </section>
+          {upcoming.length > 0 && (
+            <section className="hm-card hm-list">
+              <h2 className="hm-ttl">Próximas agendadas</h2>
+              {upcoming.map((x) => (
+                <button key={x.id} className="ui-it hm-it" onClick={() => useLayout.getState().setArea("tasks")} title={x.prompt}>
+                  <StatusDot tone="info" />
+                  <span className="grow">{x.name}</span>
+                  <span className="meta">{formatWhen(x.next_run ?? 0)}</span>
+                </button>
+              ))}
+            </section>
+          )}
           <section className="hm-card hm-list">
             <h2 className="hm-ttl">Projetos recentes</h2>
             {recent.length === 0 && <div className="ui-empty">Nenhum projeto na raiz atual.</div>}
@@ -166,10 +210,18 @@ export default function HomeArea() {
                     {p.name}
                     {st?.branch && <span className="ui-mut"> · {st.branch}</span>}
                   </span>
-                  <span className="meta">{sessions ? `${sessions} ${sessions === 1 ? "sessão" : "sessões"}` : "sem sessões"}</span>
+                  <span className="meta">
+                    {openItems[p.path] ? `${openItems[p.path]} pendentes · ` : ""}
+                    {sessions ? `${sessions} ${sessions === 1 ? "sessão" : "sessões"}` : "sem sessões"}
+                  </span>
                 </button>
               );
             })}
+            {recent.length > 0 && (
+              <p className="hm-legend">
+                <StatusDot tone="ok" /> agente rodando <StatusDot tone="warn" /> alterações não commitadas
+              </p>
+            )}
           </section>
         </div>
       </div>

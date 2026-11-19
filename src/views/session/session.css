@@ -65,17 +65,11 @@
 .cv-working-wave i { width: 5px; height: 5px; border-radius: 50%; background: var(--run); animation: cv-wave 1.2s ease-in-out infinite; }
 .cv-working-wave i:nth-child(2) { animation-delay: .16s; }
 .cv-working-wave i:nth-child(3) { animation-delay: .32s; }
-.cv-working-text {
-  min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-  background: linear-gradient(90deg, var(--text-2) 30%, var(--text) 50%, var(--text-2) 70%) 0 0 / 220% 100%;
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-  animation: cv-shimmer 2.4s linear infinite;
-}
+/* Texto fixo: a onda ao lado já diz "rodando" (dois laços na mesma linha competiam com o halo). */
+.cv-working-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-2); }
 @keyframes cv-wave { 0%, 60%, 100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-3px); opacity: 1; } }
-@keyframes cv-shimmer { to { background-position: -220% 0; } }
 @media (prefers-reduced-motion: reduce) {
-  .cv-working-wave i, .cv-working-text { animation: none; }
-  .cv-working-text { background: none; color: var(--text-2); }
+  .cv-working-wave i { animation: none; }
 }
 .cv-usage { font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .cv-fail { display: flex; gap: 8px; align-items: flex-start; padding: 6px 10px; border: 1px solid var(--border); border-left: 2px solid var(--err); border-radius: var(--radius); background: var(--surface); color: var(--err); font-size: 12.5px; }
@@ -123,7 +117,7 @@
 .cv-steps > summary { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 2px 6px; margin-left: -6px; border-radius: var(--radius); color: var(--text-2); font-size: 12.5px; cursor: pointer; list-style: none; user-select: none; }
 .cv-steps > summary::-webkit-details-marker { display: none; }
 .cv-steps > summary:hover { background: var(--bg-hover); color: var(--text); }
-.cv-steps-chev { transition: transform .12s; }
+.cv-steps-chev { transition: transform var(--dur-fast) var(--ease-out); }
 .cv-steps[open] > summary .cv-steps-chev { transform: rotate(90deg); }
 .cv-steps-body { margin: 8px 0 2px -24px; min-width: 0; }
 .cv-steps-body .chat-md { color: var(--text-2); }
@@ -214,7 +208,10 @@
  * diff ou o texto.
  */
 .tl { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.tl-item { position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr); column-gap: 10px; min-width: 0; animation: tl-in .18s ease-out both; }
+.tl-item { position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr); column-gap: 10px; min-width: 0; }
+/* Entrada só para o que chega com a conversa já na tela (não ao abrir/trocar de conversa)
+   e não para o texto final, que substitui o rascunho já visível. */
+.cv-log[data-ready] .tl-item:not(.tl-text) { animation: tl-in var(--dur-base) var(--ease-out) both; }
 @keyframes tl-in { from { opacity: 0; transform: translateY(4px); } }
 @media (prefers-reduced-motion: reduce) { .tl-item { animation: none; } }
 .tl-mark { position: relative; display: flex; justify-content: center; align-items: flex-start; padding-top: 8.5px; }
@@ -244,7 +241,7 @@
 .tl-row b { flex: none; color: var(--text); font-weight: 600; }
 .tl-row-ic { flex: none; color: var(--text-2); }
 .tl-row-sum { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: var(--font-mono-family); font-size: 12px; color: var(--text-2); }
-.tl-chev { flex: none; color: var(--text-2); opacity: 0; transition: transform .12s, opacity .12s; }
+.tl-chev { flex: none; color: var(--text-2); opacity: 0; transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out); }
 .tl-row:hover .tl-chev, .tl-row:focus-visible .tl-chev, .tl-row[aria-expanded="true"] .tl-chev { opacity: 1; }
 .tl-row[aria-expanded="true"] .tl-chev { transform: rotate(90deg); }
 

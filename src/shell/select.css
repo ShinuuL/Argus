@@ -8,7 +8,7 @@
 .sel-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .sel-label { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .sel-label.empty { color: var(--text-2); }
-.sel-chev { flex: none; color: var(--text-2); transition: transform 0.12s; }
+.sel-chev { flex: none; color: var(--text-2); transition: transform 0var(--dur-fast) var(--ease-out); }
 .sel-btn.open .sel-chev { transform: rotate(180deg); }
 
 .sel-field {
@@ -123,3 +123,11 @@
   flex: none; padding: 0 5px; border: 1px solid var(--border-strong); border-radius: var(--radius-lg);
   color: var(--text-2); font-size: 10.5px; font-weight: 600; line-height: 15px;
 }
+/* Linha do auto-work no menu de opções: o interruptor e o atalho "Limites" lado a lado. */
+.pop-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pop-row .pop-link { margin: 0; }
+
+/* Popovers e menus: entrada curta, sem animação de saída. */
+.pop { animation: pop-in var(--dur-fast) var(--ease-out); }
+@keyframes pop-in { from { opacity: 0; transform: translateY(-2px); } }
+@media (prefers-reduced-motion: reduce) { .pop { animation: none; } }

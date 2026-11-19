@@ -489,9 +489,22 @@ export interface ComposerOptionsProps {
  */
 /** Rótulos e explicações do modo de acesso da conversa. */
 export const ACCESS_LABEL: Record<AccessMode, string> = { plan: "Planejar", normal: "Normal", bypass: "Bypass" };
+/** Uma linha no menu; o texto completo (`ACCESS_HELP`) fica no tooltip. */
+const ACCESS_SHORT: Record<AccessMode, string> = {
+  plan: "Só lê e propõe; nada é alterado.",
+  normal: "Edita sem perguntar; shell só com comandos permitidos.",
+  bypass: "Qualquer comando, sem aprovação. Só nesta conversa.",
+};
+
+/** Uma linha no menu; o texto completo (`WORK_MODE_HELP`) fica no tooltip. */
+const WORK_MODE_SHORT: Record<WorkMode, string> = {
+  Isolated: "Numa cópia (worktree); você revisa e aplica.",
+  Direct: "Na própria pasta; vale na hora.",
+};
+
 const ACCESS_HELP: Record<AccessMode, string> = {
   plan: "O agente só lê e propõe um plano; nada é alterado. Ao fim do turno aparece \"Executar o plano\".",
-  normal: "Vale o modo de permissão do projeto e os comandos permitidos.",
+  normal: "Edições automáticas: o agente edita arquivos sem perguntar; o shell só roda os comandos permitidos do projeto.",
   bypass: "O agente roda qualquer comando sem pedir aprovação e sem a política de shell do Argus. Só nesta conversa.",
 };
 
@@ -541,6 +554,7 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
                   role="radio"
                   aria-checked={m === mode}
                   className={`sel-opt pop-opt pop-opt-tall${m === mode ? " cur" : ""}`}
+                  title={WORK_MODE_HELP[m]}
                   onClick={() => onMode(m)}
                 >
                   <span className="pop-opt-text">
@@ -548,21 +562,17 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
                       {WORK_MODE_LABEL[m]}
                       {m === defaultMode && <span className="pop-tag">padrão</span>}
                     </span>
-                    <span className="pop-help">{WORK_MODE_HELP[m].replace(/^[^:]+: /, "")}</span>
+                    <span className="pop-help">{WORK_MODE_SHORT[m]}</span>
                   </span>
                   {m === mode && <Check />}
                 </button>
               ))}
             </div>
           ) : (
-            <p className="pop-help">
+            <p className="pop-help" title={WORK_MODE_HELP[mode]}>
               <b>{WORK_MODE_LABEL[mode]}</b>
-              {" — "}
-              {noGit
-                ? "este projeto não é um repositório git, então o agente trabalha direto na pasta."
-                : taskId == null
-                  ? "escolha um projeto para definir o modo de trabalho."
-                  : "fixo nesta conversa (escolhido ao criá-la). " + WORK_MODE_HELP[mode].replace(/^[^:]+: /, "")}
+              {" · "}
+              {noGit ? "o projeto não é um repositório git" : taskId == null ? "escolha um projeto" : "fixo nesta conversa"}
             </p>
           )}
         </div>
@@ -577,6 +587,7 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
                   role="radio"
                   aria-checked={a === access}
                   className={`sel-opt pop-opt pop-opt-tall${a === access ? " cur" : ""}`}
+                  title={ACCESS_HELP[a]}
                   onClick={() => {
                     if (a !== access) onAccess(a);
                   }}
@@ -587,21 +598,16 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
                       {a === "normal" && <span className="pop-tag">padrão</span>}
                       {a === "bypass" && <span className="pop-tag bypass-tag">perigoso</span>}
                     </span>
-                    <span className="pop-help">{ACCESS_HELP[a]}</span>
+                    <span className="pop-help">{ACCESS_SHORT[a]}</span>
                   </span>
                   {a === access && <Check />}
                 </button>
               ))}
             </div>
           ) : (
-            <p className="pop-help">Planejar e Bypass ficam disponíveis depois do primeiro envio da conversa.</p>
+            <p className="pop-help">Planejar e Bypass: depois do primeiro envio.</p>
           )}
-        </div>
-        <div className="pop-sec">
-          <div className="pop-title">Modo de permissão</div>
-          <p className="pop-help">
-            <b>Edições automáticas</b> — o agente edita arquivos sem perguntar; o shell só roda os comandos permitidos do projeto.
-          </p>
+          {/* O antigo "Modo de permissão" (só leitura) é o que vale no Normal: vira este atalho. */}
           <button
             type="button"
             className="pop-link"
@@ -610,22 +616,22 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
               useWorkbench.getState().openPage("settings");
             }}
           >
-            Ver comandos permitidos
+            Comandos permitidos
           </button>
         </div>
         <div className="pop-sec">
           <div className="pop-title">Auto-work</div>
           {project ? (
             <>
-              <label className="pop-switch">
-                <input type="checkbox" checked={aw.on} disabled={!aw.ready || aw.busy} onChange={() => void aw.toggle()} />
-                <span>{aw.on ? `Ligado neste projeto${aw.progress ? ` (${aw.progress.trim()})` : ""}` : "Desligado neste projeto"}</span>
-              </label>
-              <p className="pop-help">
-                Ao fim de cada turno, o Argus verifica as pendências e dispara novos turnos sozinho, dentro dos limites.
-                {aw.detail ? ` ${aw.detail}` : ""}
-              </p>
-              <button
+              <div className="pop-row">
+                <label
+                  className="pop-switch"
+                  title={`Ao fim de cada turno, o Argus verifica as pendências e dispara novos turnos sozinho, dentro dos limites.${aw.detail ? ` ${aw.detail}` : ""}`}
+                >
+                  <input type="checkbox" checked={aw.on} disabled={!aw.ready || aw.busy} onChange={() => void aw.toggle()} />
+                  <span>{aw.on ? `Ligado neste projeto${aw.progress ? ` (${aw.progress.trim()})` : ""}` : "Desligado neste projeto"}</span>
+                </label>
+                <button
                 type="button"
                 className="pop-link"
                 onClick={() => {
@@ -633,8 +639,9 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
                   useWorkbench.getState().openPage("settings");
                 }}
               >
-                Limites do auto-work
-              </button>
+                  Limites
+                </button>
+              </div>
             </>
           ) : (
             <p className="pop-help">Escolha um projeto para usar o auto-work.</p>

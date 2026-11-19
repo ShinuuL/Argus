@@ -18,7 +18,7 @@
 .gt-rhead b { font-weight: 500; color: var(--text); }
 .gt-review { flex: 1; min-height: 0; display: flex; }
 .gt-side { width: 260px; flex: none; border-right: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; overflow: auto; padding-bottom: 12px; }
-.gt-side h4 { margin: 0; padding: 12px 12px 6px; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); font-weight: 500; }
+.gt-side h4 { margin: 0; padding: 12px 12px 6px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); font-weight: 500; }
 .gt-side .gt-h4 { margin-top: 12px; }
 .gt-file { cursor: pointer; }
 .gt-file input { margin: 0; accent-color: var(--accent); }
