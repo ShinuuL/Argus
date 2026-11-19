@@ -235,6 +235,8 @@ export interface TranscriptProps {
    * subagente, histórico) os cartões de pergunta ficam só de leitura.
    */
   onAnswer?(text: string): Promise<void> | void;
+  /** Planejar: as negativas são o próprio modo funcionando; não viram aviso. */
+  hideDenied?: boolean;
   /** Envia um turno (para "Liberar e repetir" no comando negado). Sem isto, só "Liberar". */
   onRetry?(text: string): Promise<void>;
 }
@@ -336,6 +338,7 @@ export function Transcript(props: TranscriptProps) {
         return node ? <SubagentCard key={key} node={node} taskActive={taskActive} now={now} onOpen={onOpenSubagent} /> : null;
       }
       case "denied":
+        if (props.hideDenied) return null;
         return <DeniedLine key={key} tool={entry.tool} command={entry.command} project={props.project ?? null} onRetry={props.onRetry} />;
       case "compacted":
         return (

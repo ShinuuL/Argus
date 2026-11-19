@@ -358,9 +358,12 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   // Pedido de texto vindo do inspetor (clique numa pendência): só a aba visível atende.
   const insertReq = useLayout((s) => s.composerInsert);
   useEffect(() => {
-    if (insertReq && active) composer.current?.insertText(insertReq.text);
+    if (!insertReq || !active || !composer.current) return;
+    composer.current.insertText(insertReq.text);
+    // Consumido: outra aba que montar depois não repete o mesmo texto.
+    useLayout.setState({ composerInsert: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [insertReq]);
+  }, [insertReq, active]);
   /** Rascunho próprio desta aba enquanto a conversa não tem tarefa (caixa, fila e pasta de anexos). */
   const draftId = draftIdFor(tabId);
   const handoff = useChat((s) => (taskId == null && active ? (s.drafts.new ?? "") : ""));
@@ -410,8 +413,9 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   // Comando negado no último turno: a sessão "precisa de atenção" (barra lateral e abas).
   useEffect(() => {
     if (taskId == null || !loaded) return;
-    useApp.getState().setAttention(taskId, lastTurnDenied(events));
-  }, [taskId, loaded, events]);
+    // Em Planejar a escrita é negada de propósito: não é algo a resolver.
+    useApp.getState().setAttention(taskId, task?.access === "plan" ? null : lastTurnDenied(events));
+  }, [taskId, loaded, events, task?.access]);
 
   // A conversa à vista deixa de estar "não lida".
   useEffect(() => {
@@ -797,6 +801,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
             providerName={providerName}
             project={project}
             onRetry={current || closed || noSession || busy ? undefined : (text) => send(text)}
+            hideDenied={task?.access === "plan"}
             onAnswer={
               current || closed || noSession
                 ? undefined

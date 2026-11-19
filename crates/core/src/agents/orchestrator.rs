@@ -132,6 +132,9 @@ pub struct Task {
 /// pergunta, então o bloco `argus-ask` vira o cartão clicável no chat.
 /// O claude nega `cd <pasta>` seguido de `git` no mesmo comando (proteção da
 /// própria CLI, não da política do Argus): orienta o `git -C`.
+/// Planejar: a escrita está negada e no `-p` não existe a ferramenta de sair do
+/// modo plano; o agente termina com o plano em texto (a interface oferece executar).
+pub const PLAN_NOTE: &str = "Modo Planejar: não altere nenhum arquivo e não tente escrever, editar nem chamar ferramenta de sair do modo plano. Leia o necessário e termine a resposta com o plano em passos curtos; o usuário decide executar.";
 pub const SHELL_NOTE: &str = "Para rodar git em outra pasta use git -C pasta comando, sem encadear cd com git: a CLI nega essa combinação.";
 pub const ASK_NOTE: &str = "Quando precisar que o usuário escolha entre opções antes de continuar, termine a resposta com um bloco de código de linguagem argus-ask contendo um objeto JSON com a chave questions: uma lista de perguntas, cada uma com header (rótulo curto), question (a pergunta completa), multiSelect (true ou false) e options (de 2 a 4, cada uma com label e description). Pare logo depois do bloco: a interface mostra as opções e a escolha volta como a próxima mensagem. Pergunta aberta vai em texto normal.";
 
@@ -718,7 +721,10 @@ impl Orchestrator {
         TurnOptions {
             model: t.model.clone(),
             // Texto fixo (não muda entre turnos, para não regravar o cache).
-            system_note: Some(compose_note(t.mode, &t.project, crate::memory::for_project(&t.project).map(|m| m.0).as_deref())),
+            system_note: Some({
+                let note = compose_note(t.mode, &t.project, crate::memory::for_project(&t.project).map(|m| m.0).as_deref());
+                if t.access == crate::permissions::AccessMode::Plan { format!("{PLAN_NOTE} {note}") } else { note }
+            }),
             access: t.access,
         }
     }

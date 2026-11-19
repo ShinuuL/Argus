@@ -25,6 +25,10 @@ impl CommandSpec {
         self.args.push(a.into());
         self
     }
+    pub fn args(mut self, a: impl IntoIterator<Item = String>) -> Self {
+        self.args.extend(a);
+        self
+    }
     pub fn cwd(mut self, p: impl Into<PathBuf>) -> Self {
         self.cwd = Some(p.into());
         self

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type * as Monaco from "monaco-editor";
-import { errorMessage, type Path } from "@/api";
+import { errorMessage, samePath, type Path } from "@/api";
 import { loadMonaco } from "./lazy";
 import { MONACO_THEME } from "./theme";
-import { useApp, useLayout } from "@/store";
+import { useApp, useLayout, useWorkbench } from "@/store";
 import { addToChatText, useEditorContext, type EditorFocus } from "./editorContext";
 
 type Editor = Monaco.editor.IStandaloneCodeEditor;
@@ -85,17 +85,24 @@ export function GroupEditor({ path, focused }: Props) {
           };
         };
         let published: string | null = null;
+        // Só a aba do arquivo fechada apaga o foco: trocar para a conversa no mesmo
+        // grupo esconde o editor, mas o arquivo continua sendo o "em foco" do chat.
+        const forget = () => {
+          const cur = useEditorContext.getState().focus;
+          const stillOpen =
+            cur != null &&
+            useWorkbench.getState().groups.some((g) => g.tabs.some((t) => t.kind.type === "file" && samePath(t.kind.path, cur.path)));
+          if (cur && cur.path === published && !stillOpen) useEditorContext.getState().setFocus(null);
+          published = null;
+        };
         const publish = () => {
           const f = snapshot();
-          published = f?.path ?? null;
+          // Editor sem arquivo (aba trocada para a conversa): não publica vazio por cima.
+          if (!f) return forget();
+          published = f.path;
           useEditorContext.getState().setFocus(f);
         };
         // Editor fechado (aba fechada, grupo removido): o chip "em foco" não fica preso.
-        const forget = () => {
-          const cur = useEditorContext.getState().focus;
-          if (cur && cur.path === published) useEditorContext.getState().setFocus(null);
-          published = null;
-        };
         ed.onDidFocusEditorText(publish);
         ed.onDidChangeCursorSelection(() => {
           if (ed.hasTextFocus() || focusedRef.current) publish();
@@ -123,8 +130,11 @@ export function GroupEditor({ path, focused }: Props) {
             const f = snapshot();
             if (!f) return;
             useEditorContext.getState().setFocus(f);
-            useLayout.getState().setArea("chat");
-            useLayout.getState().insertInComposer(addToChatText(f, useApp.getState().selected));
+            const root = useApp.getState().selected;
+            // Sem conversa à vista, mostra uma (a do projeto, se houver) antes de inserir.
+            useWorkbench.getState().revealChat(root);
+            const text = addToChatText(f, root);
+            setTimeout(() => useLayout.getState().insertInComposer(text), 0);
           },
         });
         created = ed;

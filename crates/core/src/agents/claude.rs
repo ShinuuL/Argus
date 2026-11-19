@@ -123,7 +123,11 @@ impl AgentProvider for ClaudeProvider {
         }
         use crate::permissions::AccessMode;
         c = match opts.access {
-            AccessMode::Plan if flags.plan => c.arg("--permission-mode").arg("plan"),
+            // Planejar sem o `--permission-mode plan` da CLI: nele o claude troca o
+            // modelo escolhido (haiku) pelo sonnet por conta própria (visto no 2.1.220,
+            // 8 passos e US$ 0,81 para criar um arquivo). Aqui: modo padrão (no `-p`,
+            // o que não está liberado é negado), só leitura liberada e escrita negada.
+            AccessMode::Plan => c.arg("--permission-mode").arg("default").args(crate::permissions::plan_args()),
             AccessMode::Bypass if flags.bypass => c.arg("--permission-mode").arg("bypassPermissions"),
             AccessMode::Bypass => c.arg("--dangerously-skip-permissions"),
             // Sem `plan` na CLI, Planejar cai no padrão (`acceptEdits`).
@@ -1013,12 +1017,14 @@ mod tests {
             let i = c.args.iter().position(|a| a == "--permission-mode");
             (i.map(|i| c.args[i + 1].clone()), c.args.iter().any(|a| a == "--dangerously-skip-permissions"))
         };
-        assert_eq!(mode(CliFlags::ALL, AccessMode::Plan), (Some("plan".into()), false));
+        assert_eq!(mode(CliFlags::ALL, AccessMode::Plan), (Some("default".into()), false));
+        let plan = ClaudeProvider::with_flags(CliFlags::ALL).task_command("oi", Path::new("."), None, &TurnOptions { access: AccessMode::Plan, ..Default::default() });
+        assert!(plan.args.iter().any(|a| a == "Write") && plan.args.iter().any(|a| a == "Bash(git status:*)"));
         assert_eq!(mode(CliFlags::ALL, AccessMode::Bypass), (Some("bypassPermissions".into()), false));
         assert_eq!(mode(CliFlags::ALL, AccessMode::Normal), (Some("acceptEdits".into()), false));
         let old = CliFlags { plan: false, bypass: false, ..CliFlags::ALL };
         assert_eq!(mode(old, AccessMode::Bypass), (None, true));
-        assert_eq!(mode(old, AccessMode::Plan), (Some("acceptEdits".into()), false));
+        assert_eq!(mode(old, AccessMode::Plan), (Some("default".into()), false));
         let f = CliFlags::from_help(r#"--permission-mode <mode> (choices: "acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan")"#);
         assert!(f.plan && f.bypass);
     }

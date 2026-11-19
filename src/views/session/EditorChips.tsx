@@ -1,4 +1,5 @@
-import { baseName, type Path } from "@/api";
+import { baseName, samePath, type Path } from "@/api";
+import { useWorkbench } from "@/store";
 import { focusBelongsTo, lineRange, relativeTo, useEditorContext } from "@/views/workbench/editorContext";
 
 /**
@@ -10,8 +11,10 @@ export function EditorChips({ root }: { root: Path | null }) {
   const focus = useEditorContext((s) => s.focus);
   const attachFocus = useEditorContext((s) => s.attachFocus);
   const attachMarkers = useEditorContext((s) => s.attachMarkers);
+  // Aba do arquivo fechada: o chip some mesmo se o foco ainda não foi limpo.
+  const open = useWorkbench((s) => !!focus && s.groups.some((g) => g.tabs.some((t) => t.kind.type === "file" && samePath(t.kind.path, focus.path))));
   // Arquivo de outro projeto: não oferece (iria junto num pedido de outra pasta).
-  if (!focus || !focusBelongsTo(focus.path, root)) return null;
+  if (!focus || !open || !focusBelongsTo(focus.path, root)) return null;
   const lines = focus.selection ? ` · ${lineRange(focus.startLine, focus.endLine)}` : "";
   const errors = focus.markers.filter((m) => m.severity === "erro").length;
   const warns = focus.markers.length - errors;

@@ -6,6 +6,7 @@
  */
 import { create } from "zustand";
 import { useLayout, type Area } from "./layout";
+import { useApp } from "./app";
 import { api, baseName, samePath, type CmdSpec, type CommandSpec, type Path, type TaskId } from "@/api";
 
 export const MAX_GROUPS = 3;
@@ -234,6 +235,9 @@ export interface WorkbenchState {
   openMirror(preview?: boolean): void;
   /** Abre uma conversa nova (reaproveita a aba de conversa vazia do grupo, se houver). */
   openNewChat(project?: Path | null): void;
+  /** Deixa uma aba de conversa à vista (Alt+K com o editor em foco): a ativa de
+   * algum grupo, senão uma aberta (do projeto, de preferência), senão uma nova. */
+  revealChat(project?: Path | null): void;
   /** A conversa nova da aba `tab` virou a tarefa `task` (a aba continua a mesma). */
   bindChat(tab: number, task: TaskId): void;
   /** Troca o projeto de uma conversa ainda sem tarefa. */
@@ -333,6 +337,26 @@ export const useWorkbench = create<WorkbenchState>()((set, get) => {
         return s.activate(g.id, empty.id);
       }
       s.open({ type: "chat", task: null, project });
+    },
+    revealChat: (project = null) => {
+      const s = get();
+      const activeChat = s.groups.some((g) => g.tabs.find((t) => t.id === g.active)?.kind.type === "chat");
+      if (activeChat) return toChat();
+      const tasks = useApp.getState().tasks;
+      let pick: { gid: number; tab: number; match: boolean } | null = null;
+      for (const g of s.groups)
+        for (const t of g.tabs) {
+          const k = t.kind;
+          if (k.type !== "chat") continue;
+          const proj = k.task != null ? tasks.find((x) => x.id === k.task)?.project : k.project;
+          const match = !!project && !!proj && samePath(proj, project);
+          if (!pick || (match && !pick.match)) pick = { gid: g.id, tab: t.id, match };
+        }
+      if (pick) {
+        toChat();
+        return s.activate(pick.gid, pick.tab);
+      }
+      s.openNewChat(project);
     },
     bindChat: (tab, task) =>
       set((s) => ({

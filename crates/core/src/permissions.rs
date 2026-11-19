@@ -440,6 +440,19 @@ pub fn apply(mut spec: CommandSpec, project: &Path, levels: GitLevels, mode: Per
     spec
 }
 
+/// Argumentos do claude em Planejar: shell só de leitura (git de leitura e
+/// inspeção) e as ferramentas de escrita negadas.
+pub fn plan_args() -> Vec<String> {
+    let mut v = vec!["--allowedTools".to_string()];
+    for tool in ["Bash", "PowerShell"] {
+        v.extend(GIT_READ.iter().chain(INSPECT).map(|p| format!("{tool}({p})")));
+    }
+    v.extend(INSPECT_POWERSHELL.iter().map(|p| format!("PowerShell({p})")));
+    v.push("--disallowedTools".into());
+    v.extend(["Write", "Edit", "MultiEdit", "NotebookEdit"].map(String::from));
+    v
+}
+
 /// Como `apply`, considerando o modo de acesso da conversa: em Planejar e em
 /// Bypass os argumentos já vêm do provedor (`TurnOptions::access`) e a política
 /// de shell do Argus não entra (Planejar não altera nada; Bypass a desliga).

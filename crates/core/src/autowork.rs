@@ -15,6 +15,21 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub const FILE_NAME: &str = "PENDENCIAS.md";
+
+/// Arquivo de pendências do projeto: o mesmo que o inspetor › Pendências mostra
+/// (`PROXIMOS_PASSOS.md`, `PENDENCIAS.md` ou `TODO.md`, nessa ordem). Sem nenhum,
+/// o auto-work cria o `PENDENCIAS.md`.
+/// Chave das configurações por projeto: o mesmo projeto com `/` ou `\` (e sem a
+/// barra final) é uma pasta só.
+fn norm_key(p: &Path) -> PathBuf {
+    let s = p.to_string_lossy();
+    let s = if cfg!(windows) { s.replace('/', "\\") } else { s.into_owned() };
+    PathBuf::from(s.trim_end_matches(['\\', '/']))
+}
+
+pub fn file_name(dir: &Path) -> &'static str {
+    crate::checklist::CHECKLIST_FILES.into_iter().find(|n| dir.join(n).is_file()).unwrap_or(FILE_NAME)
+}
 /// Tentativas sem concluir antes de um item virar `- [!] bloqueado`.
 pub const MAX_ITEM_FAILURES: u32 = 3;
 pub const STOP_BY_USER: &str = "parado pelo usuário";
@@ -180,9 +195,10 @@ impl PendingDoc {
         self.items().iter().any(|i| states.contains(&i.status) && pred(&i.text))
     }
 
-    /// Lê `<dir>/PENDENCIAS.md`, criando-o (com cabeçalho) se não existir.
+    /// Lê o arquivo de pendências (`file_name`), criando o PENDENCIAS.md (com
+    /// cabeçalho) se o projeto não tiver nenhum.
     pub fn load_or_create(dir: &Path) -> std::io::Result<Self> {
-        let p = dir.join(FILE_NAME);
+        let p = dir.join(file_name(dir));
         match std::fs::read_to_string(&p) {
             Ok(s) => Ok(Self::parse(&s)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -194,7 +210,7 @@ impl PendingDoc {
     }
 
     pub fn save(&self, dir: &Path) -> std::io::Result<()> {
-        std::fs::write(dir.join(FILE_NAME), self.render())
+        std::fs::write(dir.join(file_name(dir)), self.render())
     }
 }
 
@@ -279,7 +295,7 @@ pub fn scan_todos(root: &Path) -> Vec<Finding> {
                 }
                 continue;
             }
-            if !ft.is_file() || name == FILE_NAME || e.metadata().map(|m| m.len() > 1_000_000).unwrap_or(true) {
+            if !ft.is_file() || crate::checklist::CHECKLIST_FILES.contains(&name.as_str()) || e.metadata().map(|m| m.len() > 1_000_000).unwrap_or(true) {
                 continue;
             }
             let Ok(bytes) = std::fs::read(&path) else { continue };
@@ -501,10 +517,10 @@ enum Decision {
     Finish(AutoWorkStatus),
 }
 
-pub fn prompt_for(item: &str) -> String {
+pub fn prompt_for(item: &str, file: &str) -> String {
     format!(
-        "[auto-work] Resolva o PRÓXIMO item pendente do arquivo {FILE_NAME} (na raiz do projeto):\n\n    {item}\n\n\
-         Ao concluir de verdade (com build/testes passando), marque esse item como `- [x]` no {FILE_NAME}. \
+        "[auto-work] Resolva o PRÓXIMO item pendente do arquivo {file} (na raiz do projeto):\n\n    {item}\n\n\
+         Ao concluir de verdade (com build/testes passando), marque esse item como `- [x]` no {file}. \
          Não marque como concluído sem ter concluído. Se não conseguir resolver, explique o motivo e deixe o item como `- [ ]`. \
          Trabalhe somente nesse item."
     )
@@ -562,6 +578,8 @@ impl AutoWork {
     // ------------------------------------------------------------ configuração
 
     pub fn settings(&self, project: &Path) -> AutoWorkSettings {
+        let key = norm_key(project);
+        let project = key.as_path();
         if let Some(s) = self.inner.settings.lock().unwrap().get(project) {
             return s.clone();
         }
@@ -596,6 +614,8 @@ impl AutoWork {
 
     /// Salva a configuração (no banco, se houver). Desligar para as execuções do projeto.
     pub fn set_settings(&self, project: &Path, s: AutoWorkSettings) {
+        let key = norm_key(project);
+        let project = key.as_path();
         if let Some(db) = self.inner.orch.db() {
             let _ = db.set_autowork(&project.to_string_lossy(), &serde_json::to_string(&s).unwrap_or_default());
         }
@@ -608,7 +628,7 @@ impl AutoWork {
                 .lock()
                 .unwrap()
                 .iter()
-                .filter(|(_, r)| r.project == project && matches!(r.status, AutoWorkStatus::Running | AutoWorkStatus::Paused))
+                .filter(|(_, r)| norm_key(&r.project) == project && matches!(r.status, AutoWorkStatus::Running | AutoWorkStatus::Paused))
                 .map(|(id, _)| *id)
                 .collect();
             for id in ids {
@@ -763,7 +783,7 @@ impl AutoWork {
 
         let mut dispatch_err = None;
         if let Decision::Dispatch(item) = &decision {
-            match self.inner.orch.reply(task, &prompt_for(item)) {
+            match self.inner.orch.reply(task, &prompt_for(item, file_name(&workdir))) {
                 Ok(()) => {}
                 Err(crate::agents::orchestrator::OrchestratorError::Busy) => {} // outro turno já começou
                 Err(e) => dispatch_err = Some(e.to_string()),
@@ -919,6 +939,18 @@ pub fn cap_tokens(u: &crate::agents::provider::TokenUsage) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn uses_the_same_file_as_the_inspector() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(file_name(dir.path()), FILE_NAME);
+        std::fs::write(dir.path().join("PROXIMOS_PASSOS.md"), "- [ ] a
+").unwrap();
+        assert_eq!(file_name(dir.path()), "PROXIMOS_PASSOS.md");
+        let d = PendingDoc::load_or_create(dir.path()).unwrap();
+        assert!(d.any(&[ItemStatus::Open], |t| t == "a"));
+        assert!(!dir.path().join(FILE_NAME).exists(), "não cria outro arquivo");
+    }
     use crate::agents::provider::{AgentEvent, AgentProvider, LoginStatus};
 
     #[test]
