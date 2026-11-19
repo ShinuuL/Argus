@@ -55,3 +55,7 @@
 .sa-fixed { table-layout: fixed; width: 100%; }
 .sa-fixed td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sa-mem-search { margin: 0; flex: 1; max-width: 360px; }
+/* Caixa de marcar das páginas de Configurações (Inicialização). */
+.sa-check { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text); cursor: pointer; }
+.sa-check input { accent-color: var(--accent); margin: 0; }
+.sa-check:has(input:disabled) { color: var(--text-2); cursor: default; }

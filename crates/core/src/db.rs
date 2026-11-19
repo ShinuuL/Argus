@@ -222,7 +222,10 @@ impl Db {
                 ended_at INTEGER,
                 artifact_path TEXT,
                 artifact_size INTEGER);
-             CREATE INDEX IF NOT EXISTS idx_build_runs ON build_runs(project, started_at);",
+             CREATE INDEX IF NOT EXISTS idx_build_runs ON build_runs(project, started_at);
+             CREATE TABLE IF NOT EXISTS schedules(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                data TEXT NOT NULL);",
         )?;
         // Migração de bancos antigos: colunas novas em `tasks`.
         for col in ["workdir TEXT", "session_id TEXT", "model TEXT", "mode TEXT", "provider_state TEXT", "handoff INTEGER NOT NULL DEFAULT 0", "context TEXT"] {
@@ -524,6 +527,29 @@ impl Db {
             ],
         )?;
         Ok(c.last_insert_rowid())
+    }
+
+    /// Tarefas agendadas (id, JSON de `schedules::Schedule`), na ordem de criação.
+    pub fn list_schedules(&self) -> rusqlite::Result<Vec<(i64, String)>> {
+        let c = self.c();
+        let mut st = c.prepare("SELECT id, data FROM schedules ORDER BY id")?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect()
+    }
+
+    pub fn insert_schedule(&self, data: &str) -> rusqlite::Result<i64> {
+        let c = self.c();
+        c.execute("INSERT INTO schedules(data) VALUES (?1)", [data])?;
+        Ok(c.last_insert_rowid())
+    }
+
+    /// false se o agendamento não existe mais.
+    pub fn update_schedule(&self, id: i64, data: &str) -> rusqlite::Result<bool> {
+        Ok(self.c().execute("UPDATE schedules SET data=?2 WHERE id=?1", params![id, data])? > 0)
+    }
+
+    pub fn delete_schedule(&self, id: i64) -> rusqlite::Result<bool> {
+        Ok(self.c().execute("DELETE FROM schedules WHERE id=?1", [id])? > 0)
     }
 
     /// Configuração do auto-work de um projeto (JSON).

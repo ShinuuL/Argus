@@ -801,3 +801,49 @@ export interface Checklist {
   name: string;
   sections: ChecklistSection[];
 }
+
+// ------------------------------------------------------- tarefas agendadas
+
+/** Quando a tarefa agendada dispara (espelha `schedules::Recurrence`). */
+export type Recurrence =
+  | { kind: "Once"; at: number }
+  | { kind: "Daily"; time: string }
+  | { kind: "Weekly"; days: number[]; time: string }
+  | { kind: "EveryHours"; hours: number }
+  | { kind: "Cron"; expr: string };
+
+/** "Agent" cria uma conversa com o pedido; "Reminder" só mostra uma notificação. */
+export type ScheduleKind = "Agent" | "Reminder";
+
+export type RunStatus = "Running" | "Completed" | "Cancelled" | "Reminded" | { Failed: string };
+
+export interface Schedule {
+  /** 0 = novo. */
+  id: number;
+  name: string;
+  kind: ScheduleKind;
+  project: Path | null;
+  provider: string;
+  model: string | null;
+  /** null = o padrão do projeto. */
+  mode: WorkMode | null;
+  prompt: string;
+  recurrence: Recurrence;
+  enabled: boolean;
+  /** Segundos desde 1970 (como todos os instantes abaixo). */
+  created_at: number;
+  last_run: number | null;
+  next_run: number | null;
+  last_task: TaskId | null;
+  last_status: RunStatus | null;
+  /** A última execução recuperou um horário perdido com o Argus fechado. */
+  last_late: boolean;
+}
+
+/** Opção "Iniciar com o Windows". */
+export interface AutostartInfo {
+  enabled: boolean;
+  /** false na cópia de desenvolvimento. */
+  available: boolean;
+  reason: string | null;
+}

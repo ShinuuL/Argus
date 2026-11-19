@@ -1,0 +1,31 @@
+/* Área Tarefas (agendadas). Cores e raios só por tokens. */
+.tka-scroll { flex: 1; min-height: 0; overflow: auto; }
+.tka-pad { padding: 12px 22px; }
+.tka-err { margin: 0; color: var(--err); font-size: 12px; }
+.tka-name { display: grid; gap: 2px; min-width: 0; }
+.tka-last { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tka-link { border: 0; background: none; padding: 0; color: var(--accent-text); font: inherit; font-size: 11.5px; cursor: pointer; }
+.tka-link:hover { text-decoration: underline; }
+.tka-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-sm); }
+.tka-row-actions { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.tka-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+.tka-check input { accent-color: var(--accent); margin: 0; }
+.tka-empty { display: grid; justify-items: center; gap: 10px; padding: 18px 0; max-width: 52ch; margin: 0 auto; line-height: 1.5; }
+
+.tka-panel { width: 360px; flex: none; border-left: 1px solid var(--border); background: var(--surface); overflow-y: auto; }
+.tka-form { display: grid; gap: 14px; padding: 16px; align-content: start; }
+.tka-h { margin: 0 0 2px; font-size: 13px; font-weight: 600; color: var(--text); }
+.tka-field { display: grid; gap: 5px; min-width: 0; font-size: 12px; color: var(--text-2); }
+.tka-field input, .tka-field textarea { color: var(--text); background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius); font-size: 12.5px; padding: 6px 8px; min-width: 0; }
+.tka-field textarea { resize: vertical; line-height: 1.45; }
+.tka-field input:focus-visible, .tka-field textarea:focus-visible { outline: 1px solid var(--focus); border-color: var(--focus); }
+.tka-field input::placeholder, .tka-field textarea::placeholder { color: var(--text-2); }
+.tka-narrow { max-width: 160px; }
+.tka-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tka-days { display: flex; gap: 4px; flex-wrap: wrap; }
+.tka-days button { min-width: 38px; padding: 3px 6px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: none; color: var(--text-2); font: inherit; font-size: 11.5px; cursor: pointer; }
+.tka-days button:hover { color: var(--text); }
+.tka-days button.on { background: var(--selection); color: var(--text); border-color: var(--focus); }
+.tka-days button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.tka-note { margin: 0; line-height: 1.45; }
+.tka-actions { display: flex; justify-content: flex-end; gap: 8px; }

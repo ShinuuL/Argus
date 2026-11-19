@@ -7,7 +7,7 @@ import { create } from "zustand";
 import type { Owner } from "@/api";
 
 /** Áreas do app. "agents" é a tela cheia de agentes, aberta pelo inspetor ou pela paleta. */
-export type Area = "chat" | "home" | "git" | "servers" | "devices" | "metrics" | "terminal" | "settings" | "agents";
+export type Area = "chat" | "home" | "git" | "servers" | "devices" | "metrics" | "terminal" | "tasks" | "settings" | "agents";
 
 export const AREAS: { id: Area; label: string }[] = [
   { id: "chat", label: "Conversas" },
@@ -17,6 +17,7 @@ export const AREAS: { id: Area; label: string }[] = [
   { id: "devices", label: "Dispositivos" },
   { id: "metrics", label: "Métricas" },
   { id: "terminal", label: "Terminal" },
+  { id: "tasks", label: "Tarefas" },
   { id: "settings", label: "Configurações" },
   { id: "agents", label: "Agentes" },
 ];

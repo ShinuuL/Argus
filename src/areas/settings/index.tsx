@@ -4,7 +4,7 @@
  * Permissões como tabela de ações. Reaproveita as views antigas e as APIs existentes.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, errorMessage, samePath, type Path } from "@/api";
+import { api, errorMessage, samePath, type AutostartInfo, type Path } from "@/api";
 import { THEMES, useApp, useTheme, useWorkbench } from "@/store";
 import { Chip, SideHeading, SideItem, SideList, type Tone, AreaStatus } from "@/ui";
 import ProvidersView, { useProviders } from "@/views/agents";
@@ -24,6 +24,7 @@ import "./settings-area.css";
 type Page =
   | "aparencia"
   | "atalhos"
+  | "inicializacao"
   | "provedores"
   | "subagentes"
   | "contexto"
@@ -66,6 +67,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
   {
     label: "Este computador",
     items: [
+      { id: "inicializacao", label: "Inicialização", keywords: "iniciar com o windows login abrir sozinho minimizado tarefas agendadas" },
       { id: "deps", label: "Dependências", keywords: "node npm instalar" },
       { id: "auxiliares", label: "Auxiliares", keywords: "helper elevado uac" },
       { id: "remoto", label: "Acesso remoto", keywords: "celular qr pareamento rede" },
@@ -199,6 +201,37 @@ function ContextPage() {
         ))}
         {limit != null && !COMPACT_OPTIONS.some((o) => o.value === limit) && <span className="small">Atual: {limit} tokens</span>}
       </div>
+    </PageBody>
+  );
+}
+
+function StartupPage() {
+  const [info, setInfo] = useState<AutostartInfo | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.autostartGet().then(setInfo, (e) => setErr(errorMessage(e)));
+  }, []);
+  const toggle = (on: boolean) => {
+    setBusy(true);
+    setErr(null);
+    api
+      .autostartSet(on)
+      .then(setInfo, (e) => setErr(errorMessage(e)))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <PageBody
+      title="Inicialização"
+      lead="As tarefas agendadas só rodam com o Argus aberto. Para não depender de lembrar de abri-lo, ele pode iniciar junto com o Windows, minimizado."
+    >
+      {err && <div className="err" role="alert">{err}</div>}
+      <label className="sa-check">
+        <input type="checkbox" checked={info?.enabled ?? false} disabled={!info?.available || busy} onChange={(e) => toggle(e.target.checked)} />
+        Iniciar com o Windows
+      </label>
+      {info && !info.available && info.reason && <p className="ui-sm ui-mut">{info.reason}</p>}
+      <p className="ui-sm ui-mut sa-lead">Vale só para o seu usuário do Windows e não pede permissão de administrador.</p>
     </PageBody>
   );
 }
@@ -382,6 +415,7 @@ export default function SettingsArea() {
           {page === "contexto" && <ContextPage />}
           {page === "memoria" && <MemoryPage />}
           {page === "mcp" && <McpPage />}
+          {page === "inicializacao" && <StartupPage />}
           {page === "deps" && (
             <PageBody title="Dependências" lead="Ferramentas que faltam no projeto, cada uma com o comando de correção.">
               <DepsView />

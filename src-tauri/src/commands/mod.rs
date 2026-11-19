@@ -16,6 +16,7 @@ pub mod monitor;
 pub mod pty;
 pub mod remote;
 pub mod runs;
+pub mod schedules;
 pub mod servers;
 pub mod system;
 pub mod workspace;

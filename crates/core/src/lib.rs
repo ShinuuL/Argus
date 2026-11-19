@@ -18,6 +18,7 @@ pub mod procs;
 pub mod pty;
 pub mod remote;
 pub mod runs;
+pub mod schedules;
 pub mod tunnels;
 pub mod tailscale;
 pub mod usage;

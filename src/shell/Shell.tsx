@@ -23,6 +23,7 @@ import DevicesArea from "@/areas/devices";
 import MetricsArea from "@/areas/metrics";
 import TerminalArea from "@/areas/terminal";
 import SettingsArea from "@/areas/settings";
+import TasksArea from "@/areas/tasks";
 import AgentsArea from "@/areas/agents";
 import { Tooltips } from "./Tooltips";
 import { BottomPanel } from "./BottomPanel";
@@ -42,6 +43,7 @@ const FULL: Partial<Record<Area, ComponentType>> = {
   servers: ServersArea,
   devices: DevicesArea,
   metrics: MetricsArea,
+  tasks: TasksArea,
   settings: SettingsArea,
   agents: AgentsArea,
 };

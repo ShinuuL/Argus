@@ -66,12 +66,13 @@ src/                                         interface em React 18 + TypeScript 
     autowork/, deps/, metrics/, remote/, terminal/, player/, pet/
 src-tauri/    crate argus-desktop (Tauri 2, identificador dev.argus.app)
   src/commands/  workspace, monitor, fs, pty, agents, autowork, servers, deps, metrics,
-                 remote, media, system, extra_agents, extra_chat  (84 comandos)
+                 remote, media, system, extra_agents, extra_chat, schedules (tarefas agendadas,
+                 notificação do sistema e "Iniciar com o Windows")
   src/events.rs  repassa os eventos do orquestrador e dos servidores para a interface
 src-mobile/   crate argus-celular (Tauri 2 Android, dev.argus.celular): casca do aplicativo do
               celular. Só a tela de pareamento (web/); depois disso a webview abre a interface
               servida pelo computador. Fora do workspace; gerar com `gerar-apk.ps1` (ver README)
-crates/core   (argus-core): workspace, monitor, pty, procs, deps, metrics, db, remote, autowork,
+crates/core   (argus-core): workspace, monitor, pty, procs, deps, metrics, db, remote, autowork, schedules,
               isolation (o que a cópia isolada não teria), permissions (comandos liberados ao agente),
               agents/{provider, claude, opencode, codex, gemini, orchestrator, handoff (resumo na troca de agente)}
               assets/remote (web app do celular: index.html, app.js, style.css, unauthorized.html,
@@ -336,6 +337,17 @@ Falta:
 - conferir as suposições: total acumulado do `turn.completed` do codex numa retomada (o Argus desconta o último total visto da thread; depois de reiniciar o app, o primeiro turno retomado pode contar o total inteiro), raciocínio dentro de `output_tokens`, `--skip-trust` aceito pela versão instalada do gemini, `gemini` sem `-p` entrando no modo sem interface;
 - sandbox do codex no Windows (é experimental na CLI): verificar se `workspace-write` realmente bloqueia escrita fora da pasta;
 - "Liberar este comando neste projeto" não vale para o codex (a lista de comandos permitidos é do claude).
+
+## Tarefas agendadas e "Iniciar com o Windows" (2026-11-19)
+
+Branch `feat/tarefas-agendadas`. **Estado: core testado; compila; a tela não foi exercitada na janela.**
+
+- **Core** (`crates/core/src/schedules.rs`, tabela `schedules(id, data JSON)` em `db.rs`): nome, tipo (pedir a um agente ou só lembrar), projeto, provedor, modelo, modo de trabalho (ausente = padrão do projeto), pedido, recorrência (`Once` em data/hora, `Daily` HH:MM, `Weekly` dias + HH:MM, `EveryHours` contadas da criação, `Cron` de 5 campos com `*`, listas, faixas e `/passo`), ligado, última e próxima execução, id da última tarefa, último resultado e "atrasada". Horários no fuso do computador (`chrono::Local`); hora inexistente na troca de horário de verão vira a primeira hora que existe depois.
+- **Laço** (`Scheduler::start`, a cada 30 s, a primeira volta logo ao abrir): o que venceu dispara criando uma tarefa normal por `Orchestrator::submit_with` (mesmo caminho de "Nova conversa": histórico, uso e permissões iguais). Venceu com o Argus fechado: roda UMA vez, marcada "atrasada", e a próxima conta a partir de agora (nada se acumula). "Uma vez" desliga depois de rodar. Lembrete puro só mostra a notificação.
+- **Notificação do sistema** (`src-tauri/src/commands/schedules.rs`, toast do Windows pelo crate `windows`, sem dependência nova): lembrete, tarefa agendada concluída, falhou, cancelada ou que nem iniciou. O app instalado usa o AUMID `dev.argus.app`; a cópia de desenvolvimento usa o do PowerShell (como o plugin oficial faz). O fim de turno das conversas comuns continua sem notificação do sistema.
+- **Tela**: área "Tarefas" no rail (ícone de calendário com relógio): lista (nome, projeto · agente, recorrência em pt-BR, próxima, último resultado com "Abrir conversa"), ligar/desligar, "Executar agora", apagar (confirmação nativa) e o painel de criar/editar ao lado. Paleta: "Nova tarefa agendada". Evento `schedules-changed` atualiza a lista.
+- **Iniciar com o Windows**: Configurações › Este computador › Inicialização. Grava `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` valor `Argus` = `"<exe>" --minimizado` pelo `reg.exe` (sem plugin, sem elevação); com `--minimizado` a janela abre minimizada. No perfil dev (`argus-dev`, qualquer build de depuração) a opção fica desabilitada com o motivo e o comando recusa.
+- **Falta ver na janela**: criar/editar cada tipo de recorrência, "Executar agora" criando a conversa, o link "Abrir conversa", o toast aparecendo (dev e instalado), recuperação ao abrir depois de um horário perdido, e o registro de verdade no app instalado (reiniciar o Windows e ver abrir minimizado).
 
 ## Próximos passos (em ordem)
 

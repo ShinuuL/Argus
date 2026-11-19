@@ -9,6 +9,8 @@ import { ensurePtyListeners, forgetPty } from "./events";
 import type {
   AgentEvent,
   AppInfo,
+  AutostartInfo,
+  Schedule,
   AutoWorkEvent,
   AutoWorkSettings,
   CmdSpec,
@@ -526,9 +528,9 @@ export const agentDefsSyncMd = (project: Path, body: string): Promise<Path> =>
 /** Slug sugerido a partir de um título digitado. */
 export const agentDefSlug = (text: string): Promise<string> => invoke("agentdefs_slug", { text });
 
-// ---------- preferências e memória (<raiz>/Argus) ----------
+// ---------- preferências e memória (<raiz>/_Argus) ----------
 
-/** Uma nota de `<raiz>/Argus/Memoria/` (frontmatter `tipo`, `projetos`, `atualizado`). */
+/** Uma nota de `<raiz>/_Argus/Memoria/` (frontmatter `tipo`, `projetos`, `atualizado`). */
 export interface MemoryNote {
   name: string;
   path: Path;
@@ -554,3 +556,24 @@ export const memoryGet = (): Promise<MemoryInfo> => invoke("memory_get");
 export const memorySetPrefs = (text: string): Promise<void> => invoke("memory_set_prefs", { text });
 /** Abre um arquivo da pasta Argus no Obsidian. */
 export const memoryOpenObsidian = (path: Path): Promise<void> => invoke("memory_open_obsidian", { path });
+// ------------------------------------------------------- tarefas agendadas
+
+/** Tarefas agendadas, na ordem de criação. */
+export const schedulesList = (): Promise<Schedule[]> => invoke("schedules_list");
+
+/** Cria (id 0) ou edita; devolve com a próxima execução calculada. */
+export const schedulesSave = (schedule: Schedule): Promise<Schedule> => invoke("schedules_save", { schedule });
+
+export const schedulesSetEnabled = (id: number, enabled: boolean): Promise<Schedule> =>
+  invoke("schedules_set_enabled", { id, enabled });
+
+export const schedulesDelete = (id: number): Promise<void> => invoke("schedules_delete", { id });
+
+/** Executa agora, sem mudar a próxima execução. */
+export const schedulesRunNow = (id: number): Promise<Schedule> => invoke("schedules_run_now", { id });
+
+/** Estado da opção "Iniciar com o Windows". */
+export const autostartGet = (): Promise<AutostartInfo> => invoke("autostart_get");
+
+/** Liga ou desliga "Iniciar com o Windows" (indisponível na cópia de desenvolvimento). */
+export const autostartSet = (enabled: boolean): Promise<AutostartInfo> => invoke("autostart_set", { enabled });
