@@ -3,7 +3,8 @@
  * split). Usa as mesmas linhas +/− do chat (`Diff` de ToolRow), com o número da
  * linha: clicar nele abre um comentário, que vai para o rascunho da conversa
  * da sessão ("arquivo:linha — comentário"). Nada é enviado sozinho: o usuário
- * revisa e envia pela caixa de composição.
+ * revisa e envia pela caixa de composição. Cada arquivo e cada trecho podem ser
+ * rejeitados (voltam ao último commit), com confirmação.
  */
 import { useEffect, useMemo, useState } from "react";
 import { api, errorMessage, type TaskId } from "@/api";
@@ -17,6 +18,10 @@ interface DiffFile {
   add: number;
   del: number;
   lines: DiffLine[];
+  /** Arquivo novo ou apagado: só a rejeição do arquivo inteiro. */
+  whole: boolean;
+  /** Trechos: cabeçalho `@@ -a,b +c,d @@` e índice da última linha do trecho em `lines`. */
+  hunks: { header: string; last: number }[];
 }
 
 /** Diff unificado (git) em arquivos com linhas numeradas; cabeçalhos de hunk viram uma linha "…". */
@@ -29,18 +34,22 @@ export function parseUnifiedDiff(diff: string): DiffFile[] {
     const line = raw.replace(/\r$/, "");
     const head = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
     if (head) {
-      cur = { path: head[2], add: 0, del: 0, lines: [] };
+      cur = { path: head[2], add: 0, del: 0, lines: [], whole: false, hunks: [] };
       files.push(cur);
       continue;
     }
     if (!cur) continue;
     const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(line);
     if (hunk) {
+      const prev = cur.hunks[cur.hunks.length - 1];
+      if (prev) prev.last = cur.lines.length - 1;
       oldNo = Number(hunk[1]);
       newNo = Number(hunk[2]);
       if (cur.lines.length) cur.lines.push({ sign: " ", text: `⋯${hunk[3] ? ` ${hunk[3].trim()}` : ""}` });
+      cur.hunks.push({ header: line.slice(0, line.indexOf(" @@", 2) + 3), last: -1 });
       continue;
     }
+    if (/^(new|deleted) file mode|^Binary files/.test(line) || line === "--- /dev/null" || line === "+++ /dev/null") cur.whole = true;
     if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("index ") || line.startsWith("\\")) continue;
     if (/^(new|deleted) file mode|^similarity|^rename |^old mode|^new mode|^Binary files/.test(line)) continue;
     if (line.startsWith("+")) {
@@ -53,6 +62,10 @@ export function parseUnifiedDiff(diff: string): DiffFile[] {
       cur.lines.push({ sign: " ", text: line.slice(1), no: newNo++ });
       oldNo++;
     }
+  }
+  for (const f of files) {
+    const prev = f.hunks[f.hunks.length - 1];
+    if (prev) prev.last = f.lines.length - 1;
   }
   return files;
 }
@@ -87,6 +100,26 @@ export default function DiffTab({ taskId }: { taskId: TaskId }) {
   }, [taskId, rev, reload, state, ended]);
 
   const files = useMemo(() => (diff ? parseUnifiedDiff(diff) : []), [diff]);
+  const busy = state === "Running" || state === "Queued";
+  const [reverting, setReverting] = useState(false);
+
+  /** Rejeita um arquivo inteiro ou um trecho, com confirmação do sistema. */
+  const reject = async (file: DiffFile, hunk?: string) => {
+    const what = hunk ? `o trecho ${hunk} de ${file.path}` : file.whole ? `${file.path} (o arquivo novo será apagado)` : `todas as alterações em ${file.path}`;
+    const ok = await api.systemConfirm("Rejeitar alterações", `Desfazer ${what}? Não dá para voltar atrás pelo Argus.`);
+    if (!ok) return;
+    setReverting(true);
+    try {
+      if (hunk) await api.taskRevertHunk(taskId, file.path, hunk);
+      else await api.taskRevertFile(taskId, file.path);
+      setError(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setReverting(false);
+      setReload((n) => n + 1);
+    }
+  };
 
   const addComment = (file: DiffFile, i: number) => {
     const body = text.trim();
@@ -135,6 +168,15 @@ export default function DiffTab({ taskId }: { taskId: TaskId }) {
               <span className="ellipsis">{f.path}</span>
               <span className="df-add">+{f.add}</span>
               <span className="df-del">−{f.del}</span>
+              <button
+                type="button"
+                className="wb-sbtn dt-reject"
+                disabled={reverting || busy}
+                title={busy ? "Aguarde o turno terminar." : f.whole ? "Rejeitar: apaga o arquivo novo (ou restaura o apagado)" : "Rejeitar todas as alterações deste arquivo"}
+                onClick={() => void reject(f)}
+              >
+                Rejeitar arquivo
+              </button>
             </header>
             <Diff
               lines={f.lines}
@@ -144,8 +186,22 @@ export default function DiffTab({ taskId }: { taskId: TaskId }) {
                 setEditing({ file: f.path, i });
                 setText("");
               }}
-              after={(i) =>
-                editing?.file === f.path && editing.i === i ? (
+              after={(i) => {
+                const h = !f.whole && f.hunks.length > 1 ? f.hunks.find((x) => x.last === i) : undefined;
+                const rejectHunk = h ? (
+                  <div className="dt-hunk-act">
+                    <button
+                      type="button"
+                      className="wb-sbtn dt-reject"
+                      disabled={reverting || busy}
+                      title={`Desfazer só o trecho ${h.header}`}
+                      onClick={() => void reject(f, h.header)}
+                    >
+                      Rejeitar trecho acima
+                    </button>
+                  </div>
+                ) : null;
+                const note = editing?.file === f.path && editing.i === i ? (
                   <form
                     className="dt-note"
                     onSubmit={(e) => {
@@ -181,8 +237,14 @@ export default function DiffTab({ taskId }: { taskId: TaskId }) {
                   <div className="dt-sent">
                     <Icon name="check" size={12} /> Comentário no rascunho da conversa
                   </div>
-                ) : null
-              }
+                ) : null;
+                return note || rejectHunk ? (
+                  <>
+                    {note}
+                    {rejectHunk}
+                  </>
+                ) : null;
+              }}
             />
           </section>
         ))}

@@ -257,6 +257,13 @@ export const taskSubagentHistory = (id: TaskId, subagent: string): Promise<Agent
 /** Diff da tarefa: o do worktree (isolada) ou o da pasta em relação ao último commit (direta). "" = sem alterações. */
 export const taskDiff = (id: TaskId): Promise<string> => invoke("task_diff", { id });
 
+/** Rejeita as alterações da tarefa num arquivo (caminho do diff): volta ao último commit ou apaga o arquivo novo. */
+export const taskRevertFile = (id: TaskId, path: string): Promise<void> => invoke("task_revert_file", { id, path });
+
+/** Rejeita um trecho do diff de um arquivo (`hunk` = a linha "@@ -a,b +c,d @@"). */
+export const taskRevertHunk = (id: TaskId, path: string, hunk: string): Promise<void> =>
+  invoke("task_revert_hunk", { id, path, hunk });
+
 /** Aplica as alterações da tarefa no projeto. */
 export const taskApply = (id: TaskId): Promise<void> => invoke("task_apply", { id });
 

@@ -337,6 +337,18 @@ pub async fn task_diff(ctx: State<'_, AppCtx>, id: TaskId) -> Result<String, Str
     ctx.orch.diff(id).await.map_err(err)
 }
 
+/// Rejeita as alterações da tarefa num arquivo (volta ao último commit).
+#[tauri::command]
+pub async fn task_revert_file(ctx: State<'_, AppCtx>, id: TaskId, path: String) -> Result<(), String> {
+    ctx.orch.revert_file(id, &path).await.map_err(err)
+}
+
+/// Rejeita um trecho do diff (`hunk` = a linha `@@ -a,b +c,d @@`).
+#[tauri::command]
+pub async fn task_revert_hunk(ctx: State<'_, AppCtx>, id: TaskId, path: String, hunk: String) -> Result<(), String> {
+    ctx.orch.revert_hunk(id, &path, &hunk).await.map_err(err)
+}
+
 /// Aplica as alterações da tarefa no projeto.
 #[tauri::command]
 pub async fn task_apply(ctx: State<'_, AppCtx>, id: TaskId) -> Result<(), String> {

@@ -997,6 +997,32 @@ impl Orchestrator {
         git(&wt, &["diff", "HEAD"]).await
     }
 
+    /// Pasta onde a tarefa altera arquivos: o worktree (isolado) ou o projeto (direto).
+    fn change_dir(&self, id: TaskId) -> Result<(Task, PathBuf), OrchestratorError> {
+        let t = self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
+        let dir = if t.mode == WorkMode::Direct { t.project.clone() } else { self.worktree_of(id)? };
+        Ok((t, dir))
+    }
+
+    /// Rejeita as alterações da tarefa num arquivo: volta ao último commit (ou
+    /// apaga o arquivo novo). `path` é relativo à pasta de trabalho, como no diff.
+    pub async fn revert_file(&self, id: TaskId, path: &str) -> Result<(), OrchestratorError> {
+        let (t, dir) = self.change_dir(id)?;
+        if t.state.is_active() {
+            return Err(OrchestratorError::Busy);
+        }
+        revert_file_in(&dir, path, t.mode == WorkMode::Isolated).await
+    }
+
+    /// Rejeita um trecho do diff de um arquivo (`hunk` = a linha `@@ -a,b +c,d @@`).
+    pub async fn revert_hunk(&self, id: TaskId, path: &str, hunk: &str) -> Result<(), OrchestratorError> {
+        let (t, dir) = self.change_dir(id)?;
+        if t.state.is_active() {
+            return Err(OrchestratorError::Busy);
+        }
+        revert_hunk_in(&dir, path, hunk, t.mode == WorkMode::Isolated).await
+    }
+
     /// Commita no worktree, faz merge da branch no projeto e remove o worktree.
     pub async fn apply(&self, id: TaskId) -> Result<(), OrchestratorError> {
         let wt = self.worktree_of(id)?;
@@ -1208,6 +1234,89 @@ async fn direct_diff(project: &Path) -> Result<String, OrchestratorError> {
         out.push_str(&String::from_utf8_lossy(&raw.stdout));
     }
     Ok(out)
+}
+
+/// Caminho relativo seguro vindo da tela (sem `..`, absoluto ou opção do git).
+fn safe_rel(path: &str) -> Result<String, OrchestratorError> {
+    let p = path.replace('\\', "/");
+    let bad = p.is_empty()
+        || p.starts_with('/')
+        || p.starts_with('-')
+        || p.contains(':')
+        || p.split('/').any(|c| c == ".." || c.is_empty());
+    if bad {
+        return Err(OrchestratorError::Git(format!("caminho inválido: {path}")));
+    }
+    Ok(p)
+}
+
+/// Volta um arquivo ao último commit; arquivo novo é apagado (e, no isolado, sai
+/// do índice, onde o `add -N` o pôs). No direto o índice do usuário não é tocado.
+async fn revert_file_in(dir: &Path, path: &str, isolated: bool) -> Result<(), OrchestratorError> {
+    let rel = safe_rel(path)?;
+    let tracked = git(dir, &["cat-file", "-e", &format!("HEAD:{rel}")]).await.is_ok();
+    if tracked {
+        git(dir, &["restore", "--source=HEAD", "--worktree", "--", &rel]).await?;
+    } else {
+        if isolated {
+            git(dir, &["rm", "--cached", "-q", "--ignore-unmatch", "--", &rel]).await?;
+        }
+        let f = dir.join(&rel);
+        if f.is_file() {
+            std::fs::remove_file(f)?;
+        }
+    }
+    Ok(())
+}
+
+/// Patch com só um trecho de um arquivo: o cabeçalho do arquivo e o hunk cujo
+/// cabeçalho começa com `hunk` (`@@ -a,b +c,d @@`). Mantém as quebras de linha
+/// originais. None se o trecho não está no diff (o diff mudou).
+pub fn hunk_patch(diff: &str, hunk: &str) -> Option<String> {
+    let want = hunk.trim_end_matches(['\r', '\n']);
+    let want = match want.find(" @@") {
+        Some(i) => &want[..i + 3],
+        None => want,
+    };
+    let lines: Vec<&str> = diff.split_inclusive('\n').collect();
+    let first = lines.iter().position(|l| l.starts_with("@@"))?;
+    let mut out: String = lines[..first].concat();
+    let start = lines.iter().position(|l| l.starts_with(want))?;
+    let end = lines[start + 1..].iter().position(|l| l.starts_with("@@") || l.starts_with("diff --git")).map(|i| start + 1 + i).unwrap_or(lines.len());
+    out.extend(lines[start..end].iter().copied());
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    Some(out)
+}
+
+/// Desfaz um trecho com `git apply -R` (só nos arquivos, sem índice). Arquivo novo
+/// ou apagado tem um trecho só: volta o arquivo inteiro.
+async fn revert_hunk_in(dir: &Path, path: &str, hunk: &str, isolated: bool) -> Result<(), OrchestratorError> {
+    let rel = safe_rel(path)?;
+    if isolated {
+        git(dir, &["add", "-A", "-N"]).await?;
+    }
+    let diff = git(dir, &["diff", "HEAD", "--", &rel]).await?;
+    if diff.trim().is_empty() || diff.lines().any(|l| l.starts_with("new file mode") || l.starts_with("deleted file mode")) {
+        return revert_file_in(dir, &rel, isolated).await;
+    }
+    let patch = hunk_patch(&diff, hunk).ok_or_else(|| OrchestratorError::Git("o trecho não está mais no diff: recarregue as alterações".into()))?;
+    let mut child = build_command(&CommandSpec::new("git"), Some(dir))
+        .args(["apply", "-R", "--whitespace=nowarn", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    if let Some(mut sin) = child.stdin.take() {
+        sin.write_all(patch.as_bytes()).await?;
+        sin.shutdown().await?;
+    }
+    let out = child.wait_with_output().await?;
+    if !out.status.success() {
+        return Err(OrchestratorError::Git(format!("git apply -R: {}", String::from_utf8_lossy(&out.stderr).trim())));
+    }
+    Ok(())
 }
 
 async fn git(dir: &Path, args: &[&str]) -> Result<String, OrchestratorError> {
@@ -1765,6 +1874,57 @@ mod tests {
         ] {
             git(dir, &a).await.unwrap();
         }
+    }
+
+    /// Rejeitar por arquivo e por trecho, nos dois modos (isolado usa `add -N`).
+    #[tokio::test]
+    async fn revert_file_and_hunk() {
+        for isolated in [false, true] {
+            let d = tempfile::tempdir().unwrap();
+            let dir = d.path();
+            git_repo(dir).await;
+            let base: String = (1..=30).map(|i| format!("l{i}\n")).collect();
+            std::fs::write(dir.join("b.txt"), &base).unwrap();
+            git(dir, &["-c", "user.email=t@t", "-c", "user.name=t", "add", "."]).await.unwrap();
+            git(dir, &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "b"]).await.unwrap();
+            // Dois trechos longe um do outro em b.txt, a.txt alterado e um arquivo novo.
+            let changed = base.replace("l2\n", "l2 mudou\n").replace("l28\n", "l28 mudou\n");
+            std::fs::write(dir.join("b.txt"), &changed).unwrap();
+            std::fs::write(dir.join("a.txt"), "outro\n").unwrap();
+            std::fs::write(dir.join("novo.txt"), "n\n").unwrap();
+            if isolated {
+                git(dir, &["add", "-A", "-N"]).await.unwrap();
+            }
+            let diff = git(dir, &["diff", "HEAD", "--", "b.txt"]).await.unwrap();
+            let hunks: Vec<&str> = diff.lines().filter(|l| l.starts_with("@@")).collect();
+            assert_eq!(hunks.len(), 2, "{diff}");
+            // Só o segundo trecho volta; o primeiro continua.
+            revert_hunk_in(dir, "b.txt", hunks[1], isolated).await.unwrap();
+            let now = std::fs::read_to_string(dir.join("b.txt")).unwrap();
+            assert!(now.contains("l2 mudou") && !now.contains("l28 mudou"), "{now}");
+            assert!(matches!(revert_hunk_in(dir, "b.txt", "@@ -90,1 +90,1 @@", isolated).await, Err(OrchestratorError::Git(_))));
+            revert_file_in(dir, "a.txt", isolated).await.unwrap();
+            assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap().replace('\r', ""), "a\n");
+            revert_file_in(dir, "novo.txt", isolated).await.unwrap();
+            assert!(!dir.join("novo.txt").exists());
+            // `diff` compara o conteúdo (o `status` pode acusar só a data do arquivo).
+            let st = git(dir, &["diff", "HEAD", "--name-only"]).await.unwrap();
+            assert_eq!(st.trim(), "b.txt", "isolado={isolated}");
+            assert!(git(dir, &["ls-files", "--others", "--exclude-standard"]).await.unwrap().trim().is_empty());
+            for bad in ["../x", "/etc/passwd", "C:/x", "-x", "a//b", ""] {
+                assert!(revert_file_in(dir, bad, isolated).await.is_err(), "{bad}");
+            }
+        }
+    }
+
+    #[test]
+    fn hunk_patch_keeps_header_and_one_hunk() {
+        let d = "diff --git a/f b/f\r\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1,2 +1,2 @@ fn x\n-a\n+b\n c\n@@ -9,1 +9,1 @@\n-y\n+z\n";
+        let p = hunk_patch(d, "@@ -9,1 +9,1 @@").unwrap();
+        assert_eq!(p, "diff --git a/f b/f\r\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -9,1 +9,1 @@\n-y\n+z\n");
+        let p = hunk_patch(d, "@@ -1,2 +1,2 @@ fn x").unwrap();
+        assert!(p.ends_with("@@ -1,2 +1,2 @@ fn x\n-a\n+b\n c\n"));
+        assert_eq!(hunk_patch(d, "@@ -5,1 +5,1 @@"), None);
     }
 
     fn plain_other(root: &tempfile::TempDir) -> PathBuf {
