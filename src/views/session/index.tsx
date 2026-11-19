@@ -61,6 +61,7 @@ import {
   type ChatEntry,
   type SubagentNode,
 } from "./events";
+import { ServerStoppedNotice } from "./ServerStoppedNotice";
 import { ACCESS_LABEL, AgentModelPill, BypassBadge, ComposerOptions, DirectHold, hasGaps, IsolationHold, useWorkModeInfo, WORK_MODE_LABEL } from "./pills";
 import { ContextMeter } from "./ContextMeter";
 import { UsagePill } from "@/views/chat/UsagePill";
@@ -879,6 +880,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
         {!current && !missing && (
           <div className="cv-foot">
             <div className="cv-col">
+              {!closed && <ServerStoppedNotice events={events} project={project} busy={busy} />}
               {notice && !error && (
                 <div className="chat-notice" role="status">
                   <pre>{notice}</pre>
