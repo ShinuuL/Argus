@@ -41,6 +41,22 @@ $projeto = Split-Path -Parent $raiz
 function Passo($texto) { Write-Output "`n==> $texto" }
 function Aviso($texto) { Write-Output "    $texto" }
 
+<#
+.SYNOPSIS
+  Roda um programa externo sem deixar o PowerShell confundir aviso com falha.
+.DESCRIPTION
+  No PowerShell 5.1, com o stderr capturado (terminal de agente, redirecionamento,
+  CI), qualquer linha que o programa escreva ali vira NativeCommandError — e com
+  $ErrorActionPreference = 'Stop' isso derruba o script mesmo quando o comando
+  terminou bem. O `tauri android init`, por exemplo, escreve "Info Using installed
+  NDK" no stderr. Quem decide se deu certo é o código de saída, conferido depois.
+#>
+function Nativo([scriptblock]$bloco) {
+    $antes = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $bloco } finally { $ErrorActionPreference = $antes }
+}
+
 # ---------------------------------------------------------------- requisitos
 
 Passo 'Conferindo os requisitos'
@@ -63,13 +79,13 @@ if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
 }
 
 $alvos = @('aarch64-linux-android', 'armv7-linux-androideabi', 'i686-linux-android', 'x86_64-linux-android')
-$instalados = (rustup target list --installed) -split "`r?`n"
+$instalados = (Nativo { rustup target list --installed }) -split "`r?`n"
 # O @(...) é necessário: sem ele, nenhum alvo faltando vira $null e o .Count
 # falha com Set-StrictMode.
 $faltamAlvos = @($alvos | Where-Object { $instalados -notcontains $_ })
 if ($faltamAlvos.Count -gt 0) {
     Aviso "Instalando os alvos Rust do Android: $($faltamAlvos -join ', ')"
-    rustup target add @faltamAlvos
+    Nativo { rustup target add @faltamAlvos }
     if ($LASTEXITCODE -ne 0) { throw 'Não foi possível instalar os alvos do Android.' }
 }
 
@@ -77,7 +93,7 @@ if (-not (Test-Path (Join-Path $projeto 'node_modules'))) {
     Passo 'Instalando as dependências do npm (a CLI do Tauri vem daqui)'
     Push-Location $projeto
     try {
-        npm install --no-audit --no-fund
+        Nativo { npm install --no-audit --no-fund }
         if ($LASTEXITCODE -ne 0) { throw 'npm install falhou.' }
     } finally { Pop-Location }
 }
@@ -89,7 +105,7 @@ try {
     $gen = Join-Path $raiz 'gen\android'
     if (-not (Test-Path $gen)) {
         Passo 'Criando o projeto Android (primeira vez)'
-        npx tauri android init
+        Nativo { npx tauri android init }
         if ($LASTEXITCODE -ne 0) { throw 'tauri android init falhou.' }
     }
     else {
@@ -139,7 +155,7 @@ try {
     $argumentos = @('tauri', 'android', 'build')
     if (-not $Aab) { $argumentos += '--apk' }
     if ($debug) { $argumentos += '--debug' }
-    npx @argumentos
+    Nativo { npx @argumentos }
     if ($LASTEXITCODE -ne 0) { throw 'A compilação falhou. A saída acima diz o motivo.' }
 
     $saidas = Join-Path $gen 'app\build\outputs'
@@ -158,7 +174,7 @@ try {
         $adb = Join-Path $env:ANDROID_HOME 'platform-tools\adb.exe'
         if (-not (Test-Path $adb)) { throw "adb não encontrado em $adb." }
         Passo "Instalando no aparelho: $($apk.Name)"
-        & $adb install -r $apk.FullName
+        Nativo { & $adb install -r $apk.FullName }
         if ($LASTEXITCODE -ne 0) { throw 'adb install falhou. Confira se a depuração USB está ligada e autorizada.' }
     }
 }
