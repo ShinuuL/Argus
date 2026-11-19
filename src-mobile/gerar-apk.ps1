@@ -62,7 +62,9 @@ if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
 
 $alvos = @('aarch64-linux-android', 'armv7-linux-androideabi', 'i686-linux-android', 'x86_64-linux-android')
 $instalados = (rustup target list --installed) -split "`r?`n"
-$faltamAlvos = $alvos | Where-Object { $instalados -notcontains $_ }
+# O @(...) é necessário: sem ele, nenhum alvo faltando vira $null e o .Count
+# falha com Set-StrictMode.
+$faltamAlvos = @($alvos | Where-Object { $instalados -notcontains $_ })
 if ($faltamAlvos.Count -gt 0) {
     Aviso "Instalando os alvos Rust do Android: $($faltamAlvos -join ', ')"
     rustup target add @faltamAlvos
@@ -139,9 +141,9 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'A compilação falhou. A saída acima diz o motivo.' }
 
     $saidas = Join-Path $gen 'app\build\outputs'
-    $arquivos = Get-ChildItem -Path $saidas -Recurse -Include *.apk, *.aab -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending
-    if (-not $arquivos) { throw "Compilou, mas não achei nenhum .apk em $saidas." }
+    $arquivos = @(Get-ChildItem -Path $saidas -Recurse -Include *.apk, *.aab -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending)
+    if ($arquivos.Count -eq 0) { throw "Compilou, mas não achei nenhum .apk em $saidas." }
 
     Passo 'Pronto'
     foreach ($a in $arquivos | Select-Object -First 4) {
@@ -149,8 +151,8 @@ try {
     }
 
     if ($Instalar) {
-        $apk = $arquivos | Where-Object { $_.Extension -eq '.apk' } | Select-Object -First 1
-        if (-not $apk) { throw 'Nenhum .apk para instalar (gere sem -Aab).' }
+        $apk = @($arquivos | Where-Object { $_.Extension -eq '.apk' }) | Select-Object -First 1
+        if ($null -eq $apk) { throw 'Nenhum .apk para instalar (gere sem -Aab).' }
         $adb = Join-Path $env:ANDROID_HOME 'platform-tools\adb.exe'
         if (-not (Test-Path $adb)) { throw "adb não encontrado em $adb." }
         Passo "Instalando no aparelho: $($apk.Name)"
