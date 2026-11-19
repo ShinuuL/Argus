@@ -338,6 +338,10 @@ struct Inner {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TrackedProc {
     pub pid: u32,
+    /// Quem o criou. Permite ligar um processo à execução do ancestral dele —
+    /// um build é uma corrente (`npm` → `cargo` → `rustc`), e cada elo que
+    /// termina não significa que o build acabou.
+    pub parent: Option<u32>,
     pub owner: Owner,
     pub cmdline: String,
     pub cwd: Option<PathBuf>,
@@ -481,7 +485,14 @@ impl ProcTracker {
             .iter()
             .filter_map(|(pid, (owner, _))| {
                 let r = by_pid.get(pid)?;
-                Some(TrackedProc { pid: *pid, owner: *owner, cmdline: r.cmdline.clone(), cwd: r.cwd.clone(), started_at: r.started_at })
+                Some(TrackedProc {
+                    pid: *pid,
+                    parent: r.parent,
+                    owner: *owner,
+                    cmdline: r.cmdline.clone(),
+                    cwd: r.cwd.clone(),
+                    started_at: r.started_at,
+                })
             })
             .collect();
         g.owned = owned;
@@ -887,6 +898,14 @@ Conexões ativas
         assert_eq!(p.iter().map(|x| x.pid).collect::<Vec<_>>(), [101, 102]);
         assert_eq!(p[1].port, Some(5173));
         assert_eq!(p[0].port, None);
+        // O pai acompanha cada processo rastreado: é com ele que a tela de
+        // builds liga um `rustc` ao `cargo` que o chamou, em vez de achar que a
+        // execução acabou quando um elo da corrente morre.
+        let owned = t.owned();
+        let pai = |pid: u32| owned.iter().find(|x| x.pid == pid).and_then(|x| x.parent);
+        assert_eq!(pai(102), Some(101));
+        assert_eq!(pai(101), Some(100));
+
         // Órfão continua listado depois que a raiz morre.
         fake.rows.lock().unwrap().retain(|r| r.pid != 100 && r.pid != 101);
         t.poll();
