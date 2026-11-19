@@ -36,8 +36,10 @@ Set-StrictMode -Version Latest
 $raiz = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projeto = Split-Path -Parent $raiz
 
-function Passo($texto) { Write-Host "`n==> $texto" -ForegroundColor Cyan }
-function Aviso($texto) { Write-Host "    $texto" -ForegroundColor Yellow }
+# Write-Output (e não Write-Host): assim `.\gerar-apk.ps1 > log.txt` guarda o
+# andamento. O Write-Host escreve só na tela e deixava o arquivo de log vazio.
+function Passo($texto) { Write-Output "`n==> $texto" }
+function Aviso($texto) { Write-Output "    $texto" }
 
 # ---------------------------------------------------------------- requisitos
 
@@ -147,7 +149,7 @@ try {
 
     Passo 'Pronto'
     foreach ($a in $arquivos | Select-Object -First 4) {
-        Write-Host ("    {0}  ({1:N1} MB)" -f $a.FullName, ($a.Length / 1MB))
+        Write-Output ("    {0}  ({1:N1} MB)" -f $a.FullName, ($a.Length / 1MB))
     }
 
     if ($Instalar) {
