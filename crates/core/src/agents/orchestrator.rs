@@ -864,9 +864,13 @@ impl Orchestrator {
         let spec = crate::permissions::apply(spec, &task.project, self.git_levels(&task.project, task.mode), self.permission_mode(&task.project));
         // Os anexos do chat ficam fora da pasta de trabalho: libera a leitura deles.
         let mut dirs = crate::attachments::dirs_for(&crate::attachments::root(), id, &[&task.prompt, prompt]);
-        // Preferências e memória (`<raiz>/Argus`), que o aviso de sistema aponta.
-        if let Some((_, d)) = crate::memory::for_project(&task.project) {
-            dirs.push(d);
+        // Preferências, memória e notas de projeto: o aviso de sistema aponta
+        // `<raiz>/_Argus` e `<raiz>/<Projeto>.md`. A raiz inteira fica legível
+        // (decisão do usuário), para a nota do projeto e as outras do vault.
+        if crate::memory::for_project(&task.project).is_some() {
+            if let Some(root) = crate::memory::root() {
+                dirs.push(root);
+            }
         }
         let spec = crate::attachments::apply_add_dirs(spec, &dirs);
         // Celulares Android: MCP do Screen-Mirror, se configurado e ligado.

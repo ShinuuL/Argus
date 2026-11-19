@@ -1,9 +1,9 @@
 //! Preferências globais e memória dos agentes, em Markdown dentro da pasta raiz
 //! (que pode ser parte de um vault do Obsidian):
 //!
-//! - `<raiz>/Argus/Preferencias.md`: o prompt que vale para todos os projetos;
-//! - `<raiz>/Argus/Memoria.md`: índice da memória, uma linha por nota;
-//! - `<raiz>/Argus/Memoria/*.md`: uma nota por fato, com frontmatter
+//! - `<raiz>/_Argus/Preferencias.md`: o prompt que vale para todos os projetos;
+//! - `<raiz>/_Argus/Memoria.md`: índice da memória, uma linha por nota;
+//! - `<raiz>/_Argus/Memoria/*.md`: uma nota por fato, com frontmatter
 //!   (`tipo`, `projetos`, `atualizado`) e links `[[nota]]`;
 //! - `<raiz>/<Projeto>.md`: nota do projeto, se existir.
 //!
@@ -14,7 +14,10 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-pub const DIR: &str = "Argus";
+/// Pasta da memória dentro da raiz. Não pode ser `Argus`: na raiz real essa é
+/// a pasta do próprio repositório do Argus. O `_` a põe no topo do Obsidian, e
+/// `workspace::scan` não a lista como projeto.
+pub const DIR: &str = "_Argus";
 pub const PREFS: &str = "Preferencias.md";
 pub const INDEX: &str = "Memoria.md";
 pub const NOTES: &str = "Memoria";
@@ -178,7 +181,7 @@ fn unquote(s: &str) -> String {
     s.trim().trim_matches(['"', '\'']).trim_start_matches("[[").trim_end_matches("]]").to_string()
 }
 
-/// Notas de `<raiz>/Argus/Memoria/`, as mais recentes primeiro.
+/// Notas de `<raiz>/_Argus/Memoria/`, as mais recentes primeiro.
 pub fn list_notes(root: &Path) -> std::io::Result<Vec<MemoryNote>> {
     let rd = match std::fs::read_dir(notes_dir(root)) {
         Ok(r) => r,
@@ -295,7 +298,7 @@ mod tests {
 
     #[test]
     fn obsidian_url_encodes_path() {
-        assert_eq!(obsidian_url(Path::new(r"D:\Raiz\Argus\Memoria\tom da conversa.md")), "obsidian://open?path=D:/Raiz/Argus/Memoria/tom%20da%20conversa.md");
+        assert_eq!(obsidian_url(Path::new(r"D:\Raiz\_Argus\Memoria\tom da conversa.md")), "obsidian://open?path=D:/Raiz/_Argus/Memoria/tom%20da%20conversa.md");
         assert!(obsidian_url(Path::new("/r/Mem\u{f3}ria.md")).ends_with("Mem%C3%B3ria.md"));
     }
 

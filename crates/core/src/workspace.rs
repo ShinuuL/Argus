@@ -63,7 +63,8 @@ pub fn scan(root: &Path) -> Result<Vec<Project>, WorkspaceError> {
         let entry = entry?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
-        if !path.is_dir() || name.starts_with('.') || name == "node_modules" {
+        // `_Argus` é a pasta de preferências e memória (crate::memory), não um projeto.
+        if !path.is_dir() || name.starts_with('.') || name == "node_modules" || name == crate::memory::DIR {
             continue;
         }
         let kinds = detect_kinds(&path);

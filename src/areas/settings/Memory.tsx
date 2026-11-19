@@ -1,7 +1,7 @@
 /**
  * Configurações › Preferências e memória: o prompt que vale para todos os projetos
- * (`<raiz>/Argus/Preferencias.md`) e as notas que os agentes gravam em
- * `<raiz>/Argus/Memoria/`. Tudo é Markdown na pasta raiz, abrível no Obsidian.
+ * (`<raiz>/_Argus/Preferencias.md`) e as notas que os agentes gravam em
+ * `<raiz>/_Argus/Memoria/`. Tudo é Markdown na pasta raiz, abrível no Obsidian.
  */
 import { useEffect, useMemo, useState } from "react";
 import { api, errorMessage, type MemoryInfo } from "@/api";
@@ -56,7 +56,7 @@ export default function MemoryPage() {
   return (
     <PageBody
       title="Preferências e memória"
-      lead="Instruções que valem para todos os projetos e agentes, e as notas que os agentes gravam ao aprender algo durável. Ficam em Markdown na pasta Argus da raiz, abríveis no Obsidian."
+      lead="Instruções que valem para todos os projetos e agentes, e as notas que os agentes gravam ao aprender algo durável. Ficam em Markdown na pasta _Argus da raiz, abríveis no Obsidian."
     >
       {err && <div className="err" role="alert">{err}</div>}
       {info == null ? (
@@ -84,7 +84,7 @@ export default function MemoryPage() {
               <span className="ui-mut ui-sm">
                 {info.active
                   ? "Cada agente é avisado para ler este arquivo e o índice da memória antes de começar. Vale a partir da próxima conversa (o Claude Code também nas atuais)."
-                  : "Ao salvar, o Argus cria a pasta Argus com este arquivo, o índice Memoria.md e a pasta de notas, e os agentes passam a ser avisados."}
+                  : "Ao salvar, o Argus cria a pasta _Argus com este arquivo, o índice Memoria.md e a pasta de notas, e os agentes passam a ser avisados."}
               </span>
             </label>
             <div className="sa-row">
