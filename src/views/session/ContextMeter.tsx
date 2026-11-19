@@ -1,5 +1,5 @@
 import type { ContextUsage } from "@/api/types";
-import { formatTokens } from "@/api/util";
+import { formatTokensPt } from "@/api/util";
 import { useId } from "react";
 
 /** A partir daqui a barra fica em --warn; acima de CONTEXT_ERR, em --err. */
@@ -17,7 +17,7 @@ export function ContextMeter({ ctx }: { ctx: ContextUsage }) {
   const total = ctx.input_tokens + ctx.cache_read + ctx.cache_write;
   const pct = ctx.window ? Math.min(100, (total / ctx.window) * 100) : null;
   const level = pct == null ? "" : pct >= CONTEXT_ERR ? "err" : pct >= CONTEXT_WARN ? "warn" : "";
-  const label = pct == null ? `${formatTokens(total)} tokens` : `${pct < 1 && pct > 0 ? "<1" : Math.round(pct)}%`;
+  const label = pct == null ? `${formatTokensPt(total)} tokens` : `${pct < 1 && pct > 0 ? "<1" : Math.round(pct)}%`;
   const alert = level === "err" ? " (quase cheio)" : level === "warn" ? " (acima de 80%)" : "";
   const text =
     pct == null

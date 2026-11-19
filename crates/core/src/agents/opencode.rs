@@ -58,7 +58,7 @@ impl AgentProvider for OpencodeProvider {
         // Sem argumento de mensagem, `opencode run` lê o prompt da entrada padrão.
         // A pasta da sessão é a do processo; a CLI confia na variável `PWD` quando ela
         // existe, por isso `build_command` a acerta junto com o diretório.
-        let mut c = CommandSpec::new("opencode").arg("run").arg("--format").arg("json");
+        let mut c = CommandSpec::new("opencode").arg("run").arg("--standalone").arg("--format").arg("json");
         if let Some(m) = opts.model.as_deref().filter(|m| valid_model_name(m)) {
             c = c.arg("-m").arg(m);
         }
@@ -386,7 +386,7 @@ mod tests {
         assert_eq!(p.default_model().as_deref(), Some("openai/gpt"));
         let opts = TurnOptions { model: Some("google/gemini".into()), system_note: Some("cópia isolada".into()), ..Default::default() };
         let c = p.task_command("a \"b\" %PATH%\nc", Path::new("."), Some("ses_1"), &opts);
-        assert_eq!(c.args, ["run", "--format", "json", "-m", "google/gemini", "--session", "ses_1"]);
+        assert_eq!(c.args, ["run", "--standalone", "--format", "json", "-m", "google/gemini", "--session", "ses_1"]);
         assert_eq!(c.cwd.as_deref(), Some(Path::new(".")));
         // Sessão existente: o aviso de ambiente já foi dado no primeiro pedido.
         assert_eq!(c.stdin.as_deref(), Some("a \"b\" %PATH%\nc"));
@@ -394,12 +394,12 @@ mod tests {
         assert_eq!(c.stdin.as_deref(), Some("[Aviso do ambiente] cópia isolada\n\noi"));
         // Sem modelo na tarefa, vale o padrão da CLI (nenhum `-m`); nome inválido é ignorado.
         let c = p.task_command("oi", Path::new("."), None, &TurnOptions::default());
-        assert_eq!(c.args, ["run", "--format", "json"]);
+        assert_eq!(c.args, ["run", "--standalone", "--format", "json"]);
         let bad = TurnOptions { model: Some("--auto".into()), ..Default::default() };
-        assert_eq!(p.task_command("oi", Path::new("."), None, &bad).args, ["run", "--format", "json"]);
+        assert_eq!(p.task_command("oi", Path::new("."), None, &bad).args, ["run", "--standalone", "--format", "json"]);
         use crate::permissions::AccessMode;
         let c = p.task_command("oi", Path::new("."), None, &TurnOptions { access: AccessMode::Plan, ..Default::default() });
-        assert_eq!(c.args, ["run", "--format", "json", "--agent", "plan"]);
+        assert_eq!(c.args, ["run", "--standalone", "--format", "json", "--agent", "plan"]);
         assert!(c.env.is_empty());
         let c = p.task_command("oi", Path::new("."), None, &TurnOptions { access: AccessMode::Bypass, ..Default::default() });
         assert_eq!(c.env, [("OPENCODE_CONFIG_CONTENT".to_string(), crate::permissions::OPENCODE_BYPASS_CONFIG.to_string())]);

@@ -4,7 +4,7 @@
  * no turno terminado, os passos intermediários agrupados em "N passos".
  */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { api, errorMessage, formatTokens, formatUsd, type Path, type Pricing, type TokenUsage } from "@/api";
+import { api, errorMessage, formatTokensPt, formatUsdPt, type Path, type Pricing, type TokenUsage } from "@/api";
 import { Icon } from "@/shell/icons";
 import { MessageView } from "@/views/chat";
 import { isAskTool, parseAsk, splitAskBlock } from "./ask";
@@ -40,10 +40,10 @@ function Notices({ lines }: { lines: string[] }) {
 function UsageLine({ usage, pricing }: { usage: TokenUsage; pricing: Pricing | null }) {
   return (
     <div className="cv-usage">
-      {formatTokens(usage.input_tokens)} entrada · {formatTokens(usage.output_tokens)} saída · cache{" "}
-      {formatTokens(usage.cache_read)} lido · {formatTokens(usage.cache_write)} gravado
+      {formatTokensPt(usage.input_tokens)} entrada · {formatTokensPt(usage.output_tokens)} saída · cache{" "}
+      {formatTokensPt(usage.cache_read)} lido · {formatTokensPt(usage.cache_write)} gravado
       {usage.model && ` · ${usage.model}`}
-      {pricing && ` · ${formatUsd(usageCost(usage, pricing))} equivalente em API`}
+      {pricing && ` · ${formatUsdPt(usageCost(usage, pricing))} equivalente em API`}
     </div>
   );
 }

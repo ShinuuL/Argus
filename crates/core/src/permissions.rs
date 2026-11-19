@@ -251,6 +251,44 @@ pub fn disallowed_tools(project_cmds: &[String], levels: GitLevels) -> Vec<Strin
     ["Bash", "PowerShell"].iter().flat_map(|t| FORCE_PUSH.iter().map(move |p| format!("{t}({p})"))).collect()
 }
 
+/// Política do opencode no modo Restrito: edição liberada, shell só nos padrões
+/// liberados (os mesmos do claude) e o resto negado. Sem regra "ask": num `run`
+/// não há quem aprove (e o serviço em segundo plano aprovava sozinho).
+pub fn opencode_restricted_config(project_cmds: &[String], levels: GitLevels) -> String {
+    let mut bash = serde_json::Map::new();
+    bash.insert("*".into(), "deny".into());
+    let mut allow = |p: &str| {
+        let p = p.trim();
+        if p.is_empty() {
+            return;
+        }
+        match p.strip_suffix(":*") {
+            Some(base) => {
+                bash.insert(base.to_string(), "allow".into());
+                bash.insert(format!("{base} *"), "allow".into());
+            }
+            None => {
+                bash.insert(p.to_string(), "allow".into());
+            }
+        }
+    };
+    for p in shell_patterns(levels).into_iter().chain(INSPECT_POWERSHELL.iter().copied()) {
+        allow(p);
+    }
+    for c in project_cmds {
+        // `Bash(npm test:*)` e afins: só o que está dentro dos parênteses.
+        let c = c.trim();
+        let inner = c.find('(').filter(|_| c.ends_with(')')).map(|i| &c[i + 1..c.len() - 1]).unwrap_or(c);
+        allow(inner);
+    }
+    if levels.remote {
+        for p in FORCE_PUSH {
+            bash.insert(p.trim_end_matches(":*").to_string() + "*", "deny".into());
+        }
+    }
+    serde_json::json!({ "permission": { "edit": "allow", "bash": bash, "external_directory": "deny" } }).to_string()
+}
+
 /// Argumentos de permissão para a linha de comando do claude.
 pub fn args(project_cmds: &[String], levels: GitLevels) -> Vec<String> {
     let mut v = vec!["--allowedTools".to_string()];
@@ -391,8 +429,13 @@ pub fn apply(mut spec: CommandSpec, project: &Path, levels: GitLevels, mode: Per
             spec.args.push("--admin-policy".into());
             spec.args.push(f.to_string_lossy().into_owned());
         }
-    } else if auto && program_is(&spec, "opencode") {
-        spec.env.push(("OPENCODE_CONFIG_CONTENT".into(), crate::harmful::opencode_config_json()));
+    } else if program_is(&spec, "opencode") {
+        let cfg = if auto {
+            crate::harmful::opencode_config_json()
+        } else {
+            opencode_restricted_config(&crate::procs::allowed_commands(project), levels)
+        };
+        spec.env.push(("OPENCODE_CONFIG_CONTENT".into(), cfg));
     }
     spec
 }
@@ -557,7 +600,12 @@ mod tests {
         assert_eq!(c.args[1], "--allowedTools");
         assert!(c.args.contains(&"Bash(git status:*)".to_string()));
         assert_eq!(apply(CommandSpec::new("opencode").arg("run"), dir, lv, r).args, ["run"]);
-        assert!(apply(CommandSpec::new("opencode").arg("run"), dir, lv, r).env.is_empty());
+        // Restrito: shell negado por padrão, liberados os padrões de leitura.
+        let env = apply(CommandSpec::new("opencode").arg("run"), dir, lv, r).env;
+        let cfg: serde_json::Value = serde_json::from_str(&env[0].1).unwrap();
+        assert_eq!(cfg["permission"]["bash"]["*"], "deny");
+        assert_eq!(cfg["permission"]["bash"]["git status *"], "allow");
+        assert_eq!(cfg["permission"]["edit"], "allow");
         let g = CommandSpec::new("gemini").arg("--approval-mode").arg("auto_edit");
         assert_eq!(apply(g, dir, lv, r).args, ["--approval-mode", "auto_edit"]);
     }

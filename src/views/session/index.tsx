@@ -13,8 +13,9 @@ import {
   api,
   baseName,
   errorMessage,
-  formatTokens,
-  formatUsd,
+  formatIntPt,
+  formatTokensPt,
+  formatUsdPt,
   isTaskActive,
   onTaskEvent,
   samePath,
@@ -767,12 +768,12 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
           {totals.turns > 0 && (
             <span
               className="cv-total"
-              title={`Total desta conversa\nentrada ${totals.input_tokens} · saída ${totals.output_tokens} · cache lido ${totals.cache_read} · cache gravado ${totals.cache_write}\nO custo é o equivalente em API (com assinatura você não paga por token).`}
+              title={`Total desta conversa\nentrada ${formatIntPt(totals.input_tokens)} · saída ${formatIntPt(totals.output_tokens)} · cache lido ${formatIntPt(totals.cache_read)} · cache gravado ${formatIntPt(totals.cache_write)}\nO custo é o equivalente em API (com assinatura você não paga por token).`}
             >
               <span className="cv-total-tok">
-                {formatTokens(tokens)} tokens{totals.cost != null && " · "}
+                {formatTokensPt(tokens)} tokens{totals.cost != null && " · "}
               </span>
-              {totals.cost != null && <span>{formatUsd(totals.cost)} equivalente em API</span>}
+              {totals.cost != null && <span>{formatUsdPt(totals.cost)} equivalente em API</span>}
             </span>
           )}
         </header>

@@ -12,6 +12,44 @@ A conferência na janela foi feita pelo protocolo de depuração do WebView2 (cl
 - **Colar imagem:** evento `paste` sintético com um PNG no `DataTransfer`. Limite: a área de transferência real do sistema (Ctrl+V depois de um print) não é coberta.
 - **Caixas nativas de confirmação** (Aplicar, Descartar, "Parar e enviar"): a página fica parada até a resposta; o teste respondeu mandando a mensagem de clique ao botão "Sim" da caixa.
 
+## Pendências por prioridade (2026-11-19)
+
+Fila de trabalho. P1 a P3 em andamento; P4 é conferência que o usuário faz em casa (aparelho, sistema, chave).
+
+### P1 — uso e custo do dia a dia
+- [ ] Números em pt-BR na conversa: total e tooltip (`session/index.tsx`), `Transcript.tsx`, `ContextMeter.tsx`.
+- [ ] `cd <pasta>; git status` negado no PowerShell: conferir que `cd`/`Set-Location` encadeado passa.
+- [ ] Aviso do modo Isolado não impede o agente de procurar o que não existe na cópia.
+- [ ] OpenCode: regras "ask" sem quem aprove no `run`; edição de arquivos no v2.
+- [ ] Worktree preso por processo do OpenCode ao Aplicar/Descartar.
+- [ ] Turno cancelado registra uso (conferir com cancelamento real).
+
+### P2 — funções novas sem conferência real
+- [ ] Tarefas agendadas: recorrências, "Executar agora", toast, horário perdido (o boot do Windows fica no P4).
+- [ ] Planejar/Bypass num turno real: "Executar o plano", selos na aba e na barra de status.
+- [ ] Extensão VS Code: Alt+K com seleção, chip de erros, rejeitar trecho em CRLF, "Liberar e repetir".
+- [ ] Inspetor › Pendências: atualização ao vivo, destaque no turno, quatro abas em 340 px.
+- [ ] Auto-work: Pausar, Retomar, Parar, travas, verificação de build/testes.
+- [ ] Codex e gemini: `--add-dir`/`--include-directories` na pasta `_Argus` (CLIs não instaladas aqui).
+
+### P3 — melhorias
+- [ ] Checkpoints por turno ("Voltar a este ponto").
+- [ ] Alt+K sem conversa aberta.
+- [ ] Aviso de custo de cache na pílula de modelo (1ª tarefa haiku, troca de modelo).
+- [ ] Servidor aberto pelo agente morre no fim do turno.
+- [ ] Página de Aparência com espaço vazio; ícones por item na paleta Ctrl+K.
+- [ ] Laços de "rodando": deixar o anel como único foco.
+
+### P4 — o usuário confere em casa
+- [ ] Celular: pareamento pelo QR (cookie `Lax`), fonte Geist, divisória de troca de agente / comando negado / subtítulo na web app.
+- [ ] Métricas: virada do "Hoje" depois das 21h.
+- [ ] OpenCode real: modelo `-free` com custo 0, uso do último passo.
+- [ ] Selo de auto-work sem "Reiniciar" em sessão aplicada/descartada.
+- [ ] Arrastar do Explorer, Ctrl+V de print, login do claude no terminal.
+- [ ] Player tocando música.
+- [ ] "Iniciar com o Windows" no app instalado (reiniciar e ver abrir minimizado).
+- [ ] APK assinado (chave do usuário).
+
 ## Como rodar
 
 Requisitos: Rust (stable, MSVC), Node.js 20 ou mais novo e o WebView2 (já vem no Windows 11).

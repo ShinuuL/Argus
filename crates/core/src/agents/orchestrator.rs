@@ -130,6 +130,9 @@ pub struct Task {
 /// aspas nem caracteres especiais de shell: vai como argumento de linha de comando.
 /// Como o agente faz uma pergunta com opções: no `-p` não há ferramenta de
 /// pergunta, então o bloco `argus-ask` vira o cartão clicável no chat.
+/// O claude nega `cd <pasta>` seguido de `git` no mesmo comando (proteção da
+/// própria CLI, não da política do Argus): orienta o `git -C`.
+pub const SHELL_NOTE: &str = "Para rodar git em outra pasta use git -C pasta comando, sem encadear cd com git: a CLI nega essa combinação.";
 pub const ASK_NOTE: &str = "Quando precisar que o usuário escolha entre opções antes de continuar, termine a resposta com um bloco de código de linguagem argus-ask contendo um objeto JSON com a chave questions: uma lista de perguntas, cada uma com header (rótulo curto), question (a pergunta completa), multiSelect (true ou false) e options (de 2 a 4, cada uma com label e description). Pare logo depois do bloco: a interface mostra as opções e a escolha volta como a próxima mensagem. Pergunta aberta vai em texto normal.";
 
 /// Aviso de sistema completo: isolamento (se for o caso), preferências e memória
@@ -144,6 +147,7 @@ pub fn compose_note(mode: WorkMode, project: &Path, memory: Option<&str>) -> Str
         parts.push(m.to_string());
     }
     parts.push(ASK_NOTE.to_string());
+    parts.push(SHELL_NOTE.to_string());
     parts.join(" ")
 }
 
@@ -2088,13 +2092,13 @@ mod tests {
         crate::memory::ensure(root).unwrap();
         let mem = crate::memory::note(root, &proj).unwrap();
         let iso = compose_note(WorkMode::Isolated, &proj, Some(&mem));
-        assert!(iso.starts_with(&isolation_note(&proj)) && iso.ends_with(ASK_NOTE) && iso.contains(&mem), "{iso}");
+        assert!(iso.starts_with(&isolation_note(&proj)) && iso.ends_with(SHELL_NOTE) && iso.contains(&mem), "{iso}");
         let direct = compose_note(WorkMode::Direct, &proj, Some(&mem));
-        assert_eq!(direct, format!("{mem} {ASK_NOTE}"));
+        assert_eq!(direct, format!("{mem} {ASK_NOTE} {SHELL_NOTE}"));
         assert!(direct.contains("Preferencias.md") && direct.contains("Memoria.md"));
         assert!(!iso.contains('\n') && !iso.contains('"'));
         assert_eq!(compose_note(WorkMode::Isolated, &proj, Some(&mem)), iso, "estável entre turnos");
-        assert_eq!(compose_note(WorkMode::Direct, &proj, None), ASK_NOTE);
+        assert_eq!(compose_note(WorkMode::Direct, &proj, None), format!("{ASK_NOTE} {SHELL_NOTE}"));
     }
 
     /// O modo de trabalho é da tarefa: no mesmo orquestrador, uma roda no worktree
