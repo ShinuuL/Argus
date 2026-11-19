@@ -9,6 +9,7 @@ pub mod harmful;
 pub mod deps;
 pub mod devices;
 pub mod isolation;
+pub mod memory;
 pub mod metrics;
 pub mod monitor;
 pub mod paths;

@@ -16,6 +16,7 @@ import PlayerPage from "@/views/player/Page";
 import { Select } from "@/shell/Select";
 import AgentDefsPage from "./AgentDefs";
 import PermissionsPage from "./Permissions";
+import MemoryPage from "./Memory";
 import { PageBody } from "./PageBody";
 import "@/views/settings/settings.css";
 import "./settings-area.css";
@@ -26,6 +27,7 @@ type Page =
   | "provedores"
   | "subagentes"
   | "contexto"
+  | "memoria"
   | "permissoes"
   | "mcp"
   | "deps"
@@ -56,6 +58,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
       { id: "provedores", label: "Provedores", keywords: "claude codex gemini opencode login modelo" },
       { id: "subagentes", label: "Subagentes", keywords: "agentes skills frontmatter AGENTS.md claude agents arquivo" },
       { id: "contexto", label: "Contexto", keywords: "compactar compact tokens janela resumo economia" },
+      { id: "memoria", label: "Preferências e memória", keywords: "prompt global instruções obsidian notas vault lembrar" },
       { id: "permissoes", label: "Permissões", keywords: "política comandos git push permitir bloquear modo trabalho" },
       { id: "mcp", label: "Ferramentas MCP", keywords: "celular screen-mirror" },
     ],
@@ -377,6 +380,7 @@ export default function SettingsArea() {
           )}
           {page === "subagentes" && <AgentDefsPage />}
           {page === "contexto" && <ContextPage />}
+          {page === "memoria" && <MemoryPage />}
           {page === "mcp" && <McpPage />}
           {page === "deps" && (
             <PageBody title="Dependências" lead="Ferramentas que faltam no projeto, cada uma com o comando de correção.">

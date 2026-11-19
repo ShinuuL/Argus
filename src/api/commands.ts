@@ -525,3 +525,32 @@ export const agentDefsSyncMd = (project: Path, body: string): Promise<Path> =>
 
 /** Slug sugerido a partir de um título digitado. */
 export const agentDefSlug = (text: string): Promise<string> => invoke("agentdefs_slug", { text });
+
+// ---------- preferências e memória (<raiz>/Argus) ----------
+
+/** Uma nota de `<raiz>/Argus/Memoria/` (frontmatter `tipo`, `projetos`, `atualizado`). */
+export interface MemoryNote {
+  name: string;
+  path: Path;
+  tipo: string | null;
+  projetos: string[];
+  atualizado: string | null;
+  summary: string;
+}
+
+export interface MemoryInfo {
+  root: Path;
+  dir: Path;
+  /** A pasta Argus existe: os agentes recebem o aviso de preferências e memória. */
+  active: boolean;
+  prefs_path: Path;
+  index_path: Path;
+  prefs: string | null;
+  notes: MemoryNote[];
+}
+
+export const memoryGet = (): Promise<MemoryInfo> => invoke("memory_get");
+/** Grava `Preferencias.md` (cria a pasta Argus, o índice e a pasta de notas se faltarem). */
+export const memorySetPrefs = (text: string): Promise<void> => invoke("memory_set_prefs", { text });
+/** Abre um arquivo da pasta Argus no Obsidian. */
+export const memoryOpenObsidian = (path: Path): Promise<void> => invoke("memory_open_obsidian", { path });

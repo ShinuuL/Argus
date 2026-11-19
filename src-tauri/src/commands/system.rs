@@ -58,7 +58,12 @@ pub async fn system_open_url(url: String) -> Result<(), String> {
     if !is_web_url(&url) {
         return Err("Só é possível abrir endereços http:// ou https://.".into());
     }
-    let url = url.trim().to_string();
+    open_with_system(url.trim().to_string()).await
+}
+
+/// Entrega a URL ao programa padrão do sistema (navegador, Obsidian...). Quem chama
+/// valida a URL antes.
+pub async fn open_with_system(url: String) -> Result<(), String> {
     blocking(move || {
         #[cfg(windows)]
         let r = {
@@ -73,7 +78,7 @@ pub async fn system_open_url(url: String) -> Result<(), String> {
         let r = std::process::Command::new("open").arg(&url).spawn();
         #[cfg(all(unix, not(target_os = "macos")))]
         let r = std::process::Command::new("xdg-open").arg(&url).spawn();
-        r.map(|_| ()).map_err(|e| format!("Não foi possível abrir o navegador: {e}"))
+        r.map(|_| ()).map_err(|e| format!("Não foi possível abrir {url}: {e}"))
     })
     .await
 }
