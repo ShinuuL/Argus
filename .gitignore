@@ -1,3 +1,6 @@
 /target
 /node_modules
 /dist
+
+# Build compartilhado dos agentes em worktree
+/target-agents/
