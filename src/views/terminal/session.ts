@@ -102,10 +102,20 @@ function termTheme() {
   };
 }
 
-// Os terminais abertos acompanham a troca de tema.
-useTheme.subscribe(() => {
+// Os terminais abertos acompanham a troca de tema e de fonte.
+useTheme.subscribe((st, prev) => {
   const theme = termTheme();
-  for (const s of sessions.values()) s.term.options.theme = theme;
+  for (const s of sessions.values()) {
+    s.term.options.theme = theme;
+    if (st.codeFont !== prev.codeFont) {
+      s.term.options.fontSize = st.codeFont;
+      try {
+        s.fit.fit();
+      } catch {
+        // terminal escondido: ajusta quando aparecer
+      }
+    }
+  }
 });
 
 function create(key: string): TerminalSession {
@@ -113,7 +123,7 @@ function create(key: string): TerminalSession {
   host.className = "term-host";
   const term = new XTerm({
     cursorBlink: true,
-    fontSize: 13,
+    fontSize: useTheme.getState().codeFont,
     fontFamily: "Cascadia Mono, Consolas, monospace",
     theme: termTheme(),
     allowProposedApi: false,

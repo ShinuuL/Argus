@@ -33,9 +33,44 @@ function apply(theme: ThemeId): void {
   document.documentElement.dataset.theme = theme;
 }
 
+/** Tamanho da interface (zoom da página, em %). */
+export const UI_SCALES = [90, 100, 110, 125] as const;
+export type UiScale = (typeof UI_SCALES)[number];
+/** Tamanho da fonte do editor e dos terminais (px). */
+export const CODE_FONTS = [12, 13, 14, 16] as const;
+export type CodeFont = (typeof CODE_FONTS)[number];
+
+function storedNum<T extends number>(key: string, allowed: readonly T[], fallback: T): T {
+  try {
+    const v = Number(localStorage.getItem(key));
+    return (allowed as readonly number[]).includes(v) ? (v as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function save(key: string, v: string): void {
+  try {
+    localStorage.setItem(key, v);
+  } catch {
+    // sem armazenamento: vale só nesta abertura
+  }
+}
+
+/** Zoom nativo do WebView (o `zoom` do CSS desalinha o mouse no Monaco e no xterm). */
+function applyScale(scale: UiScale): void {
+  void import("@tauri-apps/api/webview")
+    .then((m) => m.getCurrentWebview().setZoom(scale / 100))
+    .catch(() => undefined);
+}
+
 export interface ThemeState {
   theme: ThemeId;
   setTheme(theme: ThemeId): void;
+  uiScale: UiScale;
+  setUiScale(v: UiScale): void;
+  codeFont: CodeFont;
+  setCodeFont(v: CodeFont): void;
 }
 
 export const useTheme = create<ThemeState>()((set) => ({
@@ -49,10 +84,22 @@ export const useTheme = create<ThemeState>()((set) => ({
     }
     set({ theme });
   },
+  uiScale: storedNum("argus.escala", UI_SCALES, 100),
+  setUiScale: (uiScale) => {
+    applyScale(uiScale);
+    save("argus.escala", String(uiScale));
+    set({ uiScale });
+  },
+  codeFont: storedNum("argus.fonteCodigo", CODE_FONTS, 13),
+  setCodeFont: (codeFont) => {
+    save("argus.fonteCodigo", String(codeFont));
+    set({ codeFont });
+  },
 }));
 
 // Aplica antes da primeira renderização.
 apply(useTheme.getState().theme);
+applyScale(useTheme.getState().uiScale);
 
 let probe: HTMLSpanElement | null = null;
 

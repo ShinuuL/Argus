@@ -9,6 +9,8 @@ import { requestNewTask } from "@/areas/tasks/intent";
 import { AREAS, PAGES, useApp, useLayout, useWorkbench, type Area } from "@/store";
 import { sessionTitle } from "@/views/session/events";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { Icon, type IconName } from "./icons";
+import { areaIcon } from "./NavRail";
 import "./CommandPalette.css";
 
 type Group = "Sessões" | "Projetos" | "Arquivos" | "Portas" | "Ações" | "Ir para";
@@ -24,6 +26,15 @@ interface Cmd {
   meta?: ReactNode;
   run(): void;
 }
+
+/** Ícone padrão de cada grupo (itens sem `lead` próprio). */
+const GROUP_ICON: Record<string, IconName> = {
+  Sessões: "chat",
+  Projetos: "folder",
+  Arquivos: "file",
+  Ações: "plus",
+  "Ir para": "gear",
+};
 
 function commands(): Cmd[] {
   const layout = useLayout.getState();
@@ -105,7 +116,10 @@ function commands(): Cmd[] {
     { id: "mirror", group: "Ações", label: "Espelhar celular como aba", keys: "celular espelhamento screen mirror android", run: () => wb.openMirror() },
   );
 
-  for (const a of AREAS) list.push({ id: `area-${a.id}`, group: "Ir para", label: a.label, keys: "tela area", run: go(a.id) });
+  for (const a of AREAS) {
+    const I = areaIcon(a.id);
+    list.push({ id: `area-${a.id}`, group: "Ir para", label: a.label, keys: "tela area", lead: I ? <I size={14} className="pal-ic" aria-hidden="true" /> : undefined, run: go(a.id) });
+  }
   for (const s of [
     ["theme", "Tema"],
     ["agents", "Política de agentes"],
@@ -214,7 +228,7 @@ function Palette() {
                 const n = i;
                 return (
                   <button key={c.id} role="option" aria-selected={n === sel} className={n === sel ? "pal-it on" : "pal-it"} onMouseMove={() => n !== sel && setSel(n)} onClick={() => run(c)}>
-                    {c.lead}
+                    {c.lead ?? <Icon name={GROUP_ICON[c.group] ?? "chevronRight"} size={14} className="pal-ic" />}
                     <span className="grow">{c.label}</span>
                     {n === sel && !c.meta ? <span className="kbd">Enter</span> : c.meta}
                   </button>

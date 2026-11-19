@@ -5,7 +5,8 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, errorMessage, samePath, type AutostartInfo, type Path } from "@/api";
-import { THEMES, useApp, useTheme, useWorkbench } from "@/store";
+import { CODE_FONTS, THEMES, UI_SCALES, useApp, useTheme, useWorkbench } from "@/store";
+import { Seg } from "@/ui/components";
 import { Chip, SideHeading, SideItem, SideList, type Tone, AreaStatus } from "@/ui";
 import ProvidersView, { useProviders } from "@/views/agents";
 import AutoWorkPanel from "@/views/autowork";
@@ -126,8 +127,9 @@ function useSideStatus(project: Path | null) {
 function ThemePage() {
   const theme = useTheme((s) => s.theme);
   const setTheme = useTheme((s) => s.setTheme);
+  const { uiScale, setUiScale, codeFont, setCodeFont } = useTheme();
   return (
-    <PageBody title="Aparência" lead="Tema de cores. Vale para toda a interface, o editor e os terminais. A escolha fica lembrada.">
+    <PageBody title="Aparência" lead="Tema, tamanho da interface e fonte do código. Vale para toda a interface, o editor e os terminais; a escolha fica lembrada.">
       <div className="set-themes" role="radiogroup" aria-label="Tema de cores">
         {THEMES.map((t) => (
           <button
@@ -152,6 +154,32 @@ function ThemePage() {
             </span>
           </button>
         ))}
+      </div>
+      <div className="set-appear-rows">
+        <div className="set-appear-row">
+          <div>
+            <b>Tamanho da interface</b>
+            <p className="small">Aumenta ou diminui tudo: textos, botões e painéis.</p>
+          </div>
+          <Seg
+            label="Tamanho da interface"
+            value={String(uiScale)}
+            options={UI_SCALES.map((v) => ({ value: String(v), label: `${v}%` }))}
+            onChange={(v) => setUiScale(Number(v) as typeof uiScale)}
+          />
+        </div>
+        <div className="set-appear-row">
+          <div>
+            <b>Fonte do editor e dos terminais</b>
+            <p className="small">Só o código: arquivos abertos, diffs no editor e terminais.</p>
+          </div>
+          <Seg
+            label="Fonte do editor e dos terminais"
+            value={String(codeFont)}
+            options={CODE_FONTS.map((v) => ({ value: String(v), label: `${v} px` }))}
+            onChange={(v) => setCodeFont(Number(v) as typeof codeFont)}
+          />
+        </div>
       </div>
     </PageBody>
   );

@@ -16,3 +16,7 @@
 .pal { animation: pal-in var(--dur-fast) var(--ease-out); transform-origin: 50% 0; }
 @keyframes pal-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
 @media (prefers-reduced-motion: reduce) { .pal { animation: none; } }
+
+/* Ícone à esquerda de cada item: mesma coluna para ícones e para o ":porta" das Portas. */
+.pal-ic { flex: none; color: var(--text-2); }
+.pal-it.on .pal-ic { color: var(--text); }

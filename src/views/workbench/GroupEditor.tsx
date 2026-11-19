@@ -3,7 +3,7 @@ import type * as Monaco from "monaco-editor";
 import { errorMessage, samePath, type Path } from "@/api";
 import { loadMonaco } from "./lazy";
 import { MONACO_THEME } from "./theme";
-import { useApp, useLayout, useWorkbench } from "@/store";
+import { useApp, useLayout, useTheme, useWorkbench } from "@/store";
 import { addToChatText, useEditorContext, type EditorFocus } from "./editorContext";
 
 type Editor = Monaco.editor.IStandaloneCodeEditor;
@@ -42,7 +42,7 @@ export function GroupEditor({ path, focused }: Props) {
           automaticLayout: true,
           theme: MONACO_THEME,
           model: null,
-          fontSize: 13,
+          fontSize: useTheme.getState().codeFont,
           dropIntoEditor: { enabled: false },
         });
         ed.onKeyDown((e) => {
@@ -137,6 +137,11 @@ export function GroupEditor({ path, focused }: Props) {
             setTimeout(() => useLayout.getState().insertInComposer(text), 0);
           },
         });
+        // Fonte do código escolhida em Aparência: vale na hora para editores abertos.
+        const fontSub = useTheme.subscribe((st, prev) => {
+          if (st.codeFont !== prev.codeFont) ed.updateOptions({ fontSize: st.codeFont });
+        });
+        ed.onDidDispose(fontSub);
         created = ed;
         setLoading(false);
         setEditor(ed);

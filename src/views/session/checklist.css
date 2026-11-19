@@ -34,10 +34,7 @@ button.ck-ask:hover { background: var(--bg-hover); }
 .ck-mark { flex: none; display: inline-grid; place-items: center; width: 12px; height: 12px; margin-top: 2px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); color: var(--on-accent); }
 .ck-mark.done { background: var(--ok); border-color: var(--ok); }
 .ck-mark.doing { border-color: var(--run); background: radial-gradient(circle, var(--run) 0 3px, transparent 3.5px); }
-@media (prefers-reduced-motion: no-preference) {
-  .ck-mark.doing { animation: ck-pulse 1.6s ease-in-out infinite; }
-}
-@keyframes ck-pulse { 50% { opacity: 0.45; } }
+.ck-mark.doing { box-shadow: 0 0 0 2px color-mix(in srgb, var(--run) 30%, transparent); }
 
 /* Linha que recolhe os itens feitos de uma seção. */
 .ck-done-toggle { display: inline-flex; align-items: center; gap: 4px; margin: 2px 0; padding: 2px 4px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-2); font: inherit; font-size: 12px; cursor: pointer; }

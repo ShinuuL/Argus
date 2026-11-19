@@ -57,17 +57,16 @@
 .cv-center { min-height: 100%; display: flex; align-items: center; justify-content: center; }
 .cv-note { color: var(--text-2); font-size: 12px; }
 /*
- * "Trabalhando": três pontos em onda e o passo atual com um brilho que
- * percorre o texto. Sem movimento quando o sistema pede menos animação.
+ * "Trabalhando": três pontos fixos e o passo atual. O movimento fica só no anel
+ * da linha do tempo (um laço focal por tela).
  */
 .cv-working { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 12px; min-height: 18px; }
 .cv-working-wave { display: inline-flex; align-items: center; gap: 3px; flex: none; }
-.cv-working-wave i { width: 5px; height: 5px; border-radius: 50%; background: var(--run); animation: cv-wave 1.2s ease-in-out infinite; }
-.cv-working-wave i:nth-child(2) { animation-delay: .16s; }
-.cv-working-wave i:nth-child(3) { animation-delay: .32s; }
+/* Pontos fixos: o anel da linha do tempo (tl-halo) é o único laço de "rodando" na tela. */
+.cv-working-wave i { width: 5px; height: 5px; border-radius: 50%; background: var(--run); opacity: .45; }
+.cv-working-wave i:first-child { opacity: 1; }
 /* Texto fixo: a onda ao lado já diz "rodando" (dois laços na mesma linha competiam com o halo). */
 .cv-working-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-2); }
-@keyframes cv-wave { 0%, 60%, 100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-3px); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .cv-working-wave i { animation: none; }
 }
@@ -193,7 +192,7 @@
 .agent-state { display: inline-flex; align-items: center; gap: var(--space-1, 4px); flex: none; color: var(--text-2); line-height: 1; }
 .agent-state .ic { flex: none; }
 .agent-state.working { color: var(--run); }
-.agent-state.working .ic { animation: agent-spin 1s linear infinite; }
+.agent-state.working .ic { color: var(--run); }
 .agent-state.queued, .agent-state.idle, .agent-state.interrupted { color: var(--text-faint, var(--text-2)); }
 .agent-state.attention { color: var(--warn); }
 .agent-state.failed { color: var(--err); }
@@ -203,8 +202,6 @@
 .agent-state.with-label.failed { background: var(--err-bg); }
 .agent-state-label { color: var(--text); }
 @container (max-width: 520px) { .agent-state-label { display: none; } .agent-state.with-label { padding: 2px 4px; } }
-@keyframes agent-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .agent-state.working .ic { animation: none; } }
 
 /*
  * Linha do tempo da resposta (estilo do painel de chat do Claude Code):

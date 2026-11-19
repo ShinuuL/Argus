@@ -712,6 +712,11 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
           providerHint="Agente que vai atender (a CLI oficial, com o seu login)."
           model={newModel}
           onModel={(v) => void changeModel(v)}
+          modelHint={
+            providerId === "claude"
+              ? "Custo: a 1ª mensagem de cada conversa grava o contexto no cache (cerca de 35 mil tokens, US$ 0,04 no Haiku); as seguintes leem esse cache, bem mais barato. Para perguntas avulsas, continue numa conversa aberta."
+              : undefined
+          }
         />
       ) : (
         task && (

@@ -12,12 +12,13 @@ import {
   MessageSquare,
   Server,
   Settings,
+  Bot,
   Smartphone,
   SquareTerminal,
 } from "lucide-react";
 import { useLayout, type Area } from "@/store";
 
-const TOP: { id: Area; label: string; icon: LucideIcon }[] = [
+export const TOP: { id: Area; label: string; icon: LucideIcon }[] = [
   { id: "chat", label: "Conversas", icon: MessageSquare },
   { id: "home", label: "Início", icon: House },
   // Pull requests abre a área; o git-branch ficava pesado embaixo e à esquerda,
@@ -29,6 +30,13 @@ const TOP: { id: Area; label: string; icon: LucideIcon }[] = [
   { id: "terminal", label: "Terminal", icon: SquareTerminal },
   { id: "tasks", label: "Tarefas agendadas", icon: CalendarClock },
 ];
+
+/** Ícone de cada área (o mesmo da barra), para a paleta Ctrl+K. */
+export function areaIcon(id: Area): LucideIcon | undefined {
+  if (id === "settings") return Settings;
+  if (id === "agents") return Bot;
+  return TOP.find((t) => t.id === id)?.icon;
+}
 
 function RailItem({ id, label, icon: I }: { id: Area; label: string; icon: LucideIcon }) {
   const on = useLayout((s) => s.area === id || (id === "chat" && s.area === "agents"));

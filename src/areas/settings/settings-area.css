@@ -30,6 +30,11 @@
 .sa-panel-empty { padding: 14px; }
 .sa-soon { display: flex; gap: 8px; align-items: center; }
 .sa .set-themes { max-width: 760px; }
+.set-appear-rows { max-width: 760px; margin-top: 24px; border-top: 1px solid var(--border); }
+.set-appear-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.set-appear-row b { font-size: 13px; color: var(--text); font-weight: 600; }
+.set-appear-row .small { margin: 2px 0 0; color: var(--text-2); }
+@container (max-width: 520px) { .set-appear-row { flex-direction: column; align-items: flex-start; } }
 @media (max-width: 900px) { .sa-panel { display: none; } }
 .sa-modes > .sa-grow { flex: 1 1 auto; white-space: nowrap; }
 .sa-modes > :not(.sa-grow) { flex: 0 0 300px; width: 300px; max-width: 50%; }
