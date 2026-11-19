@@ -43,7 +43,6 @@ select, textarea, input { background: var(--bg-panel); color: inherit; border: 1
 .pad { padding: 16px; } .scroll { overflow: auto; height: 100%; }
 .small { font-size: 11px; } .muted { opacity: .6; }
 .err { color: var(--err); } .warn { color: var(--warn); } .ok { color: var(--ok); }
-.banner { padding: 6px 12px; background: var(--err-bg); }
 table.grid { border-collapse: collapse; width: 100%; }
 .grid th, .grid td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); }
 .grid tbody tr:hover { background: var(--bg-hover); cursor: pointer; }
@@ -76,11 +75,7 @@ div.log pre.log-text { margin: 0; white-space: pre-wrap; word-break: break-word;
 pre.diff { margin: 0 10px 10px; padding: 8px; background: var(--bg-code); border-radius: var(--radius-sm); max-height: 320px; overflow: auto; white-space: pre-wrap; font: 12px var(--font-mono-family); }
 
 /* ---------- Workbench: activity bar, abas, editor, chat da sessão, status bar ---------- */
-.wb-notice { color: var(--text-faint); font-size: 11px; margin: 2px 0; }
-.wb-notice summary { cursor: pointer; list-style: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .75; }
-.wb-notice summary::-webkit-details-marker { display: none; }
 .wb-notice[open] summary { opacity: 1; }
-.wb-notice pre { margin: 4px 0 0; padding: 6px; background: var(--bg-code); border-radius: var(--radius-sm); white-space: pre-wrap; word-break: break-word; font: 11px var(--font-mono-family); color: var(--text-faint); }
 .wb { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .wb-main { flex: 1; min-height: 0; display: flex; }
 .wb-side { width: 270px; flex: none; background: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
@@ -91,7 +86,7 @@ pre.diff { margin: 0 10px 10px; padding: 8px; background: var(--bg-code); border
 .wb-groups.wb-row { flex-direction: row; } .wb-groups.wb-col { flex-direction: column; }
 .wb-group { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); border-top: 1px solid var(--border); }
 .wb-group:first-child { border-left: 0; border-top: 0; }
-.wb-group.focused .wb-tab.active { border-top-color: var(--accent); }
+.wb-group.focused .wb-tab.active { border-top-color: var(--focus); }
 .wb-tabs { display: flex; background: var(--bg-tabs); overflow-x: auto; flex: none; min-height: var(--tab-height); }
 .wb-tabs::-webkit-scrollbar { height: 3px; }
 .wb-tab { display: flex; align-items: center; gap: 6px; padding: 0 6px 0 10px; height: var(--tab-height); cursor: pointer; white-space: nowrap; border-right: 1px solid var(--border); border-top: 1px solid transparent; color: var(--text-dim); user-select: none; }
@@ -118,7 +113,7 @@ pre.diff { margin: 0 10px 10px; padding: 8px; background: var(--bg-code); border
 .wb-err { padding: 4px 8px; }
 .wb-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--text-faint); }
 .wb-empty-actions { display: flex; gap: 6px; }
-.wb-status { height: 24px; flex: none; display: flex; justify-content: space-between; align-items: center; background: var(--bg-status); color: var(--text-on-status); font-size: 12px; padding: 0 6px; gap: 8px; }
+.wb-status { height: var(--status-height); flex: none; display: flex; justify-content: space-between; align-items: center; background: var(--bg-status); color: var(--text-on-status); font-size: 12px; padding: 0 6px; gap: 8px; }
 .wb-status-l, .wb-status-r { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .wb-status .wb-sbtn { color: var(--text-on-status); }
 .wb-chat { position: absolute; inset: 0; display: flex; flex-direction: column; }
@@ -139,7 +134,7 @@ pre.diff { margin: 0 10px 10px; padding: 8px; background: var(--bg-code); border
 
 /* ---------- Auto-work ---------- */
 .aw-badge { display: inline-flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 12px; }
-.aw-pill { border-radius: 10px; padding: 1px 8px; background: var(--border); white-space: nowrap; }
+.aw-pill { border-radius: var(--radius-lg); padding: 1px 8px; background: var(--border); white-space: nowrap; }
 .aw-pill.run { background: var(--run-bg); color: var(--run); }
 .aw-pill.done { background: var(--ok-bg); color: var(--ok); }
 .aw-pill.stop { background: var(--err-bg); color: var(--err); }
@@ -155,14 +150,14 @@ pre.diff { margin: 0 10px 10px; padding: 8px; background: var(--bg-code); border
 .srv-panel { width: 340px; flex: none; display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border-left: 1px solid var(--border); overflow-y: auto; min-height: 0; box-sizing: border-box; }
 .srv-window { width: 100%; height: 100vh; border: 0; }
 .srv-head { display: flex; align-items: center; gap: 6px; }
-.srv-chip, .srv-badge { font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--ok); background: var(--ok-bg); color: inherit; cursor: pointer; white-space: nowrap; }
+.srv-chip, .srv-badge { font-size: 11px; padding: 1px 8px; border-radius: var(--radius-lg); border: 1px solid var(--ok); background: var(--ok-bg); color: inherit; cursor: pointer; white-space: nowrap; }
 .srv-group { border: 1px solid var(--border); border-radius: var(--radius); padding: 6px; display: flex; flex-direction: column; gap: 6px; }
 .srv-group-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
 .srv-item { display: flex; flex-direction: column; gap: 3px; padding-top: 4px; border-top: 1px dashed var(--border); min-width: 0; }
 .srv-line { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .srv-actions { display: flex; gap: 4px; flex-wrap: wrap; }
 .srv-actions button, .srv-group-head button { font-size: 11px; }
-.srv-danger { color: var(--danger); }
+.srv-danger { color: var(--err); }
 .srv-allowed { display: flex; flex-direction: column; gap: 4px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--border); }
 .srv-allowed textarea { width: 100%; box-sizing: border-box; font-family: var(--font-mono-family); font-size: 12px; }
 

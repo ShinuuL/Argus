@@ -6,7 +6,7 @@
 .hm-sp { flex: 1; }
 .hm-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .hm-cols { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; flex: 1; min-height: 0; }
-.hm-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; color: var(--text); }
+.hm-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; color: var(--text); }
 .hm-stat { display: grid; gap: 2px; text-align: left; font: inherit; cursor: pointer; min-width: 0; }
 .hm-stat:hover { border-color: var(--border-strong); }
 .hm-num { font-size: 22px; font-weight: 600; }

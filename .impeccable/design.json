@@ -1,0 +1,618 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-19T00:34:17.126Z",
+  "title": "Design System: Argus",
+  "extensions": {
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Só o título de boas-vindas de uma conversa nova, com o nome do projeto em 700."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Título das telas de apoio abertas como aba (Configurações, Remoto)."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Cabeçalho das áreas em tela cheia."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Fonte base da interface (--font-ui: 13px/1.35)."
+      },
+      "reading": {
+        "displayName": "Reading",
+        "purpose": "Resposta do agente em Markdown, na coluna de ~688px."
+      },
+      "dense": {
+        "displayName": "Dense",
+        "purpose": "Itens de lista, abas, paleta, avisos de conversa."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Cabeçalho de coluna de tabela, grupo da barra lateral de área e grupo da paleta; maiúsculas, nunca acima de um título."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Diff, IN/OUT de ferramenta, código, caminho, comando; kbd a 10px."
+      }
+    },
+    "shadows": [
+      {
+        "name": "modal",
+        "value": "0 30px 80px -20px rgba(0,0,0,0.45)",
+        "purpose": "Paleta de comandos."
+      },
+      {
+        "name": "menu",
+        "value": "0 8px 24px rgba(0,0,0,0.45)",
+        "purpose": "Menu de contexto das abas."
+      },
+      {
+        "name": "popover",
+        "value": "0 6px 18px rgba(0,0,0,0.45)",
+        "purpose": "Dica de contexto e popover de conversa."
+      },
+      {
+        "name": "suggest",
+        "value": "0 -6px 18px rgba(0,0,0,0.45)",
+        "purpose": "Lista de sugestões @ e / acima da composição."
+      },
+      {
+        "name": "dot-knockout",
+        "value": "0 0 0 3px var(--bg)",
+        "purpose": "Recorte do ponto da linha do tempo sobre o traço; não é elevação."
+      },
+      {
+        "name": "scrim",
+        "value": "rgba(0,0,0,0.6)",
+        "purpose": "Véu atrás de modais, zoom de imagem e soltura de arquivo."
+      }
+    ],
+    "motion": [
+      {
+        "name": "hover-fast",
+        "value": "120ms (transform/opacity/background)",
+        "purpose": "Chevron que gira 90°, ações da mensagem que aparecem, sash que acende."
+      },
+      {
+        "name": "drop-mark",
+        "value": "80ms ease-out (inset)",
+        "purpose": "Marca de soltura de aba se movendo entre metade e grupo inteiro."
+      },
+      {
+        "name": "timeline-in",
+        "value": "180ms ease-out; from opacity 0, translateY(4px)",
+        "purpose": "Entrada de cada item da linha do tempo."
+      },
+      {
+        "name": "run-halo",
+        "value": "1.4s ease-out infinite; scale .6 → 2.1, opacity .8 → 0",
+        "purpose": "Halo do ponto Rodando."
+      },
+      {
+        "name": "run-pulse",
+        "value": "1.4s ease-in-out infinite; opacity → .35",
+        "purpose": "Ponto de sessão rodando e texto 'trabalhando'."
+      },
+      {
+        "name": "working-wave",
+        "value": "1.2s ease-in-out infinite, atrasos de 160ms",
+        "purpose": "Três pontos em onda do estado Trabalhando."
+      },
+      {
+        "name": "working-shimmer",
+        "value": "2.4s linear infinite",
+        "purpose": "Brilho que percorre o passo atual."
+      },
+      {
+        "name": "agent-spin",
+        "value": "1s linear infinite",
+        "purpose": "Ícone do estado Trabalhando."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "prefers-reduced-motion: reduce → animações contínuas desligadas, durações 0.01ms",
+        "purpose": "Obrigatório para toda animação nova."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "min-window",
+        "value": "1100px",
+        "purpose": "Menor largura suportada."
+      },
+      {
+        "name": "narrow-window",
+        "value": "max-width: 1240px",
+        "purpose": "Inspetor 280px, barra lateral 236px, rótulos da barra superior somem."
+      },
+      {
+        "name": "container-680",
+        "value": "@container max-width: 680px",
+        "purpose": "Some o nome do agente no cabeçalho da conversa."
+      },
+      {
+        "name": "container-520",
+        "value": "@container max-width: 520px",
+        "purpose": "Somem rótulo de estado, pílulas com rótulo; sugestões em uma coluna."
+      },
+      {
+        "name": "container-460",
+        "value": "@container max-width: 460px",
+        "purpose": "Coluna da conversa com 12px de margem."
+      },
+      {
+        "name": "container-440",
+        "value": "@container max-width: 440px",
+        "purpose": "Pílula de agente/modelo mostra só o modelo."
+      }
+    ],
+    "themes": [
+      {
+        "id": "oceano",
+        "label": "Oceano",
+        "status": "padrão, aprovado",
+        "bg": "#0d1b2a",
+        "surface": "#1b263b",
+        "accent": "#778da9",
+        "accentText": "color-mix(in srgb, #778da9 55%, #e0e1dd)",
+        "selection": "color-mix(in srgb, #1b263b 35%, #415a77)"
+      },
+      {
+        "id": "ciano",
+        "label": "Ardósia",
+        "status": "redesign, aprovado",
+        "bg": "#0b1418",
+        "surface": "#121e24",
+        "accent": "#2bb3b1",
+        "accentText": "#5fd4d1",
+        "selection": "#163a3d"
+      },
+      {
+        "id": "ambar",
+        "label": "Grafite",
+        "status": "redesign, aprovado",
+        "bg": "#131211",
+        "surface": "#1c1a18",
+        "accent": "#e0a23b",
+        "accentText": "#f0bd66",
+        "selection": "#3a2e1c"
+      },
+      {
+        "id": "violeta",
+        "label": "Noite",
+        "status": "redesign, aprovado",
+        "bg": "#100f19",
+        "surface": "#181725",
+        "accent": "#8b7cf6",
+        "accentText": "#b0a6ff",
+        "selection": "#2c2752"
+      }
+    ],
+    "colorMeta": {
+      "ink-deep": {
+        "role": "neutral",
+        "displayName": "Tinta Funda",
+        "canonical": "oklch(21.8% 0.036 251.3)",
+        "approxHex": "#0d1b2a",
+        "tonalRamp": [
+          "#050c13",
+          "#1c2631",
+          "#374351",
+          "#546374",
+          "#748496",
+          "#98a7b7",
+          "#becbd9",
+          "#e5f0fc"
+        ]
+      },
+      "page-abyss": {
+        "role": "neutral",
+        "displayName": "Abismo",
+        "canonical": "oklch(19.4% 0.029 251.1)",
+        "approxHex": "#0a1622",
+        "tonalRamp": [
+          "#060c12",
+          "#1e262f",
+          "#39434f",
+          "#566371",
+          "#778493",
+          "#9aa6b4",
+          "#c0cad6",
+          "#e7f0fa"
+        ]
+      },
+      "slate-surface": {
+        "role": "neutral",
+        "displayName": "Ardósia",
+        "canonical": "oklch(26.9% 0.042 262.7)",
+        "approxHex": "#1b263b",
+        "tonalRamp": [
+          "#060b15",
+          "#1d2533",
+          "#384255",
+          "#556278",
+          "#76839b",
+          "#9aa6bb",
+          "#bfcadd",
+          "#e6efff"
+        ]
+      },
+      "slate-surface-raised": {
+        "role": "neutral",
+        "displayName": "Ardósia Elevada",
+        "canonical": "oklch(32.9% 0.046 258.8)",
+        "approxHex": "#26364d",
+        "tonalRamp": [
+          "#050b16",
+          "#1c2535",
+          "#364356",
+          "#52627a",
+          "#73839d",
+          "#97a6bd",
+          "#bdcade",
+          "#e5efff"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Linha Fina",
+        "canonical": "oklch(34.2% 0.035 262.5)",
+        "approxHex": "#2f394b",
+        "tonalRamp": [
+          "#070b14",
+          "#1f2531",
+          "#3a4252",
+          "#576275",
+          "#788397",
+          "#9ba5b8",
+          "#c1cada",
+          "#e7effc"
+        ]
+      },
+      "steel-border": {
+        "role": "neutral",
+        "displayName": "Borda de Aço",
+        "canonical": "oklch(46.0% 0.056 252.7)",
+        "approxHex": "#415a77",
+        "tonalRamp": [
+          "#030c18",
+          "#172638",
+          "#30445a",
+          "#4c637f",
+          "#6c85a2",
+          "#91a7c2",
+          "#b8cbe2",
+          "#e3f0ff"
+        ]
+      },
+      "bone-text": {
+        "role": "neutral",
+        "displayName": "Osso",
+        "canonical": "oklch(90.8% 0.005 117.9)",
+        "approxHex": "#e0e1dd",
+        "tonalRamp": [
+          "#0b0b0a",
+          "#252523",
+          "#424240",
+          "#61625e",
+          "#82837f",
+          "#a5a5a2",
+          "#c9c9c7",
+          "#eeefec"
+        ]
+      },
+      "mist-text": {
+        "role": "neutral",
+        "displayName": "Névoa",
+        "canonical": "oklch(71.4% 0.033 252.6)",
+        "approxHex": "#94a5b8",
+        "tonalRamp": [
+          "#060c13",
+          "#1d2630",
+          "#384350",
+          "#556373",
+          "#758495",
+          "#99a6b6",
+          "#bfcad8",
+          "#e6f0fb"
+        ]
+      },
+      "harbor-blue": {
+        "role": "primary",
+        "displayName": "Azul Porto",
+        "canonical": "oklch(63.6% 0.049 254.6)",
+        "approxHex": "#778da9",
+        "tonalRamp": [
+          "#040b17",
+          "#1a2635",
+          "#334357",
+          "#4f637b",
+          "#70849e",
+          "#94a7be",
+          "#bbcbdf",
+          "#e4f0ff"
+        ]
+      },
+      "harbor-blue-hover": {
+        "role": "primary",
+        "displayName": "Azul Porto (hover)",
+        "canonical": "oklch(73.3% 0.029 251.8)",
+        "approxHex": "#9caabb",
+        "tonalRamp": [
+          "#060c12",
+          "#1e262f",
+          "#39434f",
+          "#566371",
+          "#778493",
+          "#9ba6b4",
+          "#c0cad6",
+          "#e7f0fa"
+        ]
+      },
+      "harbor-blue-text": {
+        "role": "primary",
+        "displayName": "Azul Porto Claro",
+        "canonical": "oklch(76.1% 0.024 250.3)",
+        "approxHex": "#a6b3c0",
+        "tonalRamp": [
+          "#070c11",
+          "#1f262d",
+          "#3a434c",
+          "#58626e",
+          "#798490",
+          "#9ca6b1",
+          "#c1cad4",
+          "#e8eff8"
+        ]
+      },
+      "on-harbor": {
+        "role": "primary",
+        "displayName": "Tinta sobre Porto",
+        "canonical": "oklch(21.8% 0.036 251.3)",
+        "approxHex": "#0d1b2a",
+        "tonalRamp": [
+          "#050c13",
+          "#1c2631",
+          "#374351",
+          "#546374",
+          "#748496",
+          "#98a7b7",
+          "#becbd9",
+          "#e5f0fc"
+        ]
+      },
+      "tide-selection": {
+        "role": "neutral",
+        "displayName": "Maré",
+        "canonical": "oklch(39.6% 0.051 255.3)",
+        "approxHex": "#344862",
+        "tonalRamp": [
+          "#040b17",
+          "#192636",
+          "#334358",
+          "#4f637d",
+          "#6f849f",
+          "#94a7bf",
+          "#bacbe0",
+          "#e5f0fe"
+        ]
+      },
+      "focus-ring": {
+        "role": "neutral",
+        "displayName": "Anel de Foco",
+        "canonical": "oklch(77.4% 0.021 249.3)",
+        "approxHex": "#acb7c3",
+        "tonalRamp": [
+          "#070c10",
+          "#20262c",
+          "#3b434b",
+          "#59626c",
+          "#79848e",
+          "#9da6b0",
+          "#c2cad3",
+          "#e9eff6"
+        ]
+      },
+      "state-ok": {
+        "role": "tertiary",
+        "displayName": "Estado Ok",
+        "canonical": "oklch(78.2% 0.146 154.5)",
+        "approxHex": "#5fd38d",
+        "tonalRamp": [
+          "#000f05",
+          "#042d17",
+          "#03502b",
+          "#137442",
+          "#279a5c",
+          "#62bb83",
+          "#93ddac",
+          "#c7fed8"
+        ]
+      },
+      "state-warn": {
+        "role": "tertiary",
+        "displayName": "Aviso",
+        "canonical": "oklch(79.1% 0.134 79.5)",
+        "approxHex": "#e8b04a",
+        "tonalRamp": [
+          "#120900",
+          "#322203",
+          "#583c01",
+          "#7e5a0c",
+          "#aa7802",
+          "#c99d50",
+          "#e9c383",
+          "#ffeccd"
+        ]
+      },
+      "state-err": {
+        "role": "tertiary",
+        "displayName": "Erro",
+        "canonical": "oklch(76.6% 0.140 31.7)",
+        "approxHex": "#ff8f7a",
+        "tonalRamp": [
+          "#1d0100",
+          "#490902",
+          "#722317",
+          "#9e3e2e",
+          "#c4614f",
+          "#e38978",
+          "#fdb4a6",
+          "#ffe9e4"
+        ]
+      },
+      "state-run": {
+        "role": "tertiary",
+        "displayName": "Rodando",
+        "canonical": "oklch(75.8% 0.129 249.6)",
+        "approxHex": "#6cb6ff",
+        "tonalRamp": [
+          "#000c1b",
+          "#032645",
+          "#014477",
+          "#1d64a3",
+          "#4286c8",
+          "#70aae4",
+          "#a0cefd",
+          "#e2f0ff"
+        ]
+      }
+    }
+  },
+  "components": [
+    {
+      "name": "Botão primário",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Ação principal de uma área ou cartão (Aplicar, Criar, Salvar).",
+      "html": "<button class=\"ds-btn\">Aplicar alterações</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: var(--accent, #778da9); color: var(--on-accent, #0d1b2a); border: 1px solid transparent; border-radius: 7px; padding: 4px 12px; font-family: \"Geist Variable\", \"Segoe UI\", system-ui, sans-serif; font-weight: 500; font-size: 12px; white-space: nowrap; cursor: pointer; transition: background .12s; } .ds-btn:hover { background: var(--accent-hover, #9caabb); } .ds-btn:focus-visible { outline: 2px solid var(--focus, #acb7c3); outline-offset: 1px; }"
+    },
+    {
+      "name": "Botão fantasma",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Ação secundária ao lado da primária (Descartar, Cancelar).",
+      "html": "<button class=\"ds-btn-g\">Descartar</button>",
+      "css": ".ds-btn-g { display: inline-flex; align-items: center; gap: 6px; background: transparent; color: var(--text, #e0e1dd); border: 1px solid var(--border-strong, #415a77); border-radius: 7px; padding: 4px 12px; font-family: \"Geist Variable\", \"Segoe UI\", system-ui, sans-serif; font-weight: 500; font-size: 12px; cursor: pointer; transition: background .12s; } .ds-btn-g:hover { background: var(--surface-2, #26364d); } .ds-btn-g:focus-visible { outline: 2px solid var(--focus, #acb7c3); outline-offset: 1px; }"
+    },
+    {
+      "name": "Botão de perigo",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Ação destrutiva; sempre com rótulo explícito.",
+      "html": "<button class=\"ds-btn-bad\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6\"/></svg>Apagar worktree</button>",
+      "css": ".ds-btn-bad { display: inline-flex; align-items: center; gap: 6px; background: transparent; color: var(--err, #ff8f7a); border: 1px solid color-mix(in srgb, var(--err, #ff8f7a) 55%, transparent); border-radius: 7px; padding: 4px 12px; font-family: \"Geist Variable\", \"Segoe UI\", system-ui, sans-serif; font-weight: 500; font-size: 12px; cursor: pointer; } .ds-btn-bad:hover { background: color-mix(in srgb, var(--err, #ff8f7a) 14%, transparent); } .ds-btn-bad:focus-visible { outline: 2px solid var(--focus, #acb7c3); outline-offset: 1px; }"
+    },
+    {
+      "name": "Chip de estado",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Pílula de metadado ou estado; a cor vem sempre com o texto.",
+      "html": "<span class=\"ds-chip\">main</span> <span class=\"ds-chip ok\">concluído</span> <span class=\"ds-chip warn\">aguardando</span> <span class=\"ds-chip bad\">falhou</span>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border-strong, #415a77); border-radius: 999px; padding: 1px 8px; font: 11px/1.5 \"Geist Variable\", \"Segoe UI\", system-ui, sans-serif; color: var(--text-2, #94a5b8); white-space: nowrap; } .ds-chip.ok { color: var(--ok, #5fd38d); border-color: color-mix(in srgb, var(--ok, #5fd38d) 45%, transparent); } .ds-chip.warn { color: var(--warn, #e8b04a); border-color: color-mix(in srgb, var(--warn, #e8b04a) 45%, transparent); } .ds-chip.bad { color: var(--err, #ff8f7a); border-color: color-mix(in srgb, var(--err, #ff8f7a) 45%, transparent); }"
+    },
+    {
+      "name": "Abas de área",
+      "kind": "nav",
+      "refersTo": "tab",
+      "description": "Abas dentro de uma área ou do inspetor; ativa em Maré.",
+      "html": "<div class=\"ds-tabs\"><button class=\"ds-tab on\">Alterações <span class=\"ds-count\">4</span></button><button class=\"ds-tab\">Subagentes</button><button class=\"ds-tab\">Servidores</button></div>",
+      "css": ".ds-tabs { display: flex; gap: 2px; padding: 6px 8px; border-bottom: 1px solid var(--border, #2f394b); } .ds-tab { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 0; border-radius: 6px; background: none; color: var(--text-2, #94a5b8); font: 12.5px \"Geist Variable\", \"Segoe UI\", system-ui, sans-serif; cursor: pointer; } .ds-tab:hover { color: var(--text, #e0e1dd); background: color-mix(in srgb, var(--selection, #344862) 50%, transparent); } .ds-tab.on { background: var(--selection, #344862); color: var(--text, #e0e1dd); } .ds-tab:focus-visible { outline: 2px solid var(--focus, #acb7c3); outline-offset: 1px; } .ds-count { font-size: 10.5px; color: var(--text-2, #94a5b8); font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Barra de ícones",
+      "kind": "nav",
+      "refersTo": "rail-item",
+      "description": "Navegação principal entre áreas em tela cheia, à esquerda.",
+      "html": "<nav class=\"ds-rail\" aria-label=\"Áreas\"><button class=\"ds-ri on\" aria-label=\"Conversa\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z\"/></svg></button><button class=\"ds-ri\" aria-label=\"Terminal\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 17l6-6-6-6M12 19h8\"/></svg></button><button class=\"ds-ri\" aria-label=\"Git\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"6\" cy=\"6\" r=\"2\"/><circle cx=\"6\" cy=\"18\" r=\"2\"/><circle cx=\"18\" cy=\"8\" r=\"2\"/><path d=\"M6 8v8M18 10c0 4-6 4-10 6\"/></svg></button></nav>",
+      "css": ".ds-rail { width: 48px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0; background: var(--bg, #0d1b2a); border-right: 1px solid var(--border, #2f394b); } .ds-ri { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--text-2, #94a5b8); background: none; border: 0; padding: 0; cursor: pointer; } .ds-ri:hover { color: var(--text, #e0e1dd); background: color-mix(in srgb, var(--selection, #344862) 50%, transparent); } .ds-ri.on { background: var(--selection, #344862); color: var(--text, #e0e1dd); } .ds-ri:focus-visible { outline: 2px solid var(--focus, #acb7c3); outline-offset: 1px; }"
+    },
+    {
+      "name": "Cartão",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Contêiner de bloco nas áreas em tela cheia; plano, sem sombra.",
+      "html": "<section class=\"ds-card\"><h3 class=\"ds-card-h\">Uso de hoje <span class=\"ds-chip-mini\">equivalente em API</span></h3><p class=\"ds-card-v\">US$ 4,82</p></section>",
+      "css": ".ds-card { background: var(--surface, #1b263b); border: 1px solid var(--border, #2f394b); border-radius: 10px; padding: 12px; color: var(--text, #e0e1dd); font-family: \"Geist Variable\", \"Segoe UI\", system-ui, sans-serif; max-width: 280px; } .ds-card-h { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 12.5px; font-weight: 600; } .ds-chip-mini { font-size: 11px; font-weight: 400; color: var(--text-2, #94a5b8); border: 1px solid var(--border-strong, #415a77); border-radius: 999px; padding: 0 8px; } .ds-card-v { margin: 0; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Caixa de composição",
+      "kind": "input",
+      "refersTo": "composer",
+      "description": "Onde o usuário escreve para o agente; pílulas de projeto/agente/modelo e envio na mesma linha.",
+      "html": "<div class=\"ds-box\"><textarea class=\"ds-in\" rows=\"2\" placeholder=\"Peça algo ao agente — @arquivo, /comando\"></textarea><div class=\"ds-bar\"><span class=\"ds-pill on\">Isolado</span><span class=\"ds-pill\">claude · sonnet</span><span style=\"flex:1\"></span><button class=\"ds-send\" aria-label=\"Enviar\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 19V5M5 12l7-7 7 7\"/></svg></button></div></div>",
+      "css": ".ds-box { display: flex; flex-direction: column; max-width: 560px; border: 1px solid var(--border-strong, #415a77); border-radius: 12px; background: var(--surface, #1b263b); font-family: \"Geist Variable\", \"Segoe UI\", system-ui, sans-serif; } .ds-box:focus-within { border-color: var(--focus, #acb7c3); } .ds-in { resize: none; border: 0; outline: 0; background: transparent; color: var(--text, #e0e1dd); font-family: inherit; font-size: 13px; line-height: 1.45; padding: 10px 12px 2px; } .ds-in::placeholder { color: var(--text-2, #94a5b8); opacity: .8; } .ds-bar { display: flex; align-items: center; gap: 8px; padding: 4px 10px 8px; } .ds-pill { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border: 1px solid var(--border-strong, #415a77); border-radius: 999px; color: var(--text-2, #94a5b8); font-size: 11px; white-space: nowrap; } .ds-pill.on { border-color: var(--accent, #778da9); background: color-mix(in srgb, var(--accent, #778da9) 22%, transparent); color: var(--text, #e0e1dd); } .ds-send { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border-radius: 50%; border: 1px solid var(--accent, #778da9); background: var(--accent, #778da9); color: var(--on-accent, #0d1b2a); cursor: pointer; } .ds-send:hover { background: var(--accent-hover, #9caabb); } .ds-send:focus-visible { outline: 2px solid var(--focus, #acb7c3); outline-offset: 1px; }"
+    },
+    {
+      "name": "Linha do tempo do agente",
+      "kind": "custom",
+      "refersTo": "timeline",
+      "description": "Assinatura do produto: pontos de estado ligados por traço, ferramentas em linha compacta.",
+      "html": "<div class=\"ds-tl\"><div class=\"ds-tli\"><span class=\"ds-mk\"><i class=\"ds-dot ok\"></i></span><button class=\"ds-row\"><b>Read</b><span class=\"ds-sum\">src/views/chat/Composer.tsx</span></button></div><div class=\"ds-tli\"><span class=\"ds-mk\"><i class=\"ds-dot err\"></i></span><button class=\"ds-row\"><b>Bash</b><span class=\"ds-sum\">npm test — falhou</span></button></div><div class=\"ds-tli\"><span class=\"ds-mk\"><i class=\"ds-dot run\"></i></span><button class=\"ds-row\"><b>Edit</b><span class=\"ds-sum\">src/store/workbench.ts</span></button></div></div>",
+      "css": ".ds-tl { display: flex; flex-direction: column; gap: 10px; font-family: \"Geist Variable\", \"Segoe UI\", system-ui, sans-serif; max-width: 520px; } .ds-tli { position: relative; display: grid; grid-template-columns: 14px minmax(0,1fr); column-gap: 10px; } .ds-mk { position: relative; display: flex; justify-content: center; padding-top: 8.5px; } .ds-mk::after { content: \"\"; position: absolute; left: 50%; top: 0; bottom: -10px; width: 1px; transform: translateX(-50%); background: color-mix(in srgb, var(--text-2, #94a5b8) 38%, transparent); } .ds-tli:first-child .ds-mk::after { top: 12px; } .ds-tli:last-child .ds-mk::after { bottom: auto; height: 12px; } .ds-dot { position: relative; z-index: 1; width: 7px; height: 7px; border-radius: 50%; background: var(--text-2, #94a5b8); box-shadow: 0 0 0 3px var(--bg, #0d1b2a); } .ds-dot.ok { background: var(--ok, #5fd38d); } .ds-dot.err { background: var(--err, #ff8f7a); } .ds-dot.run { background: var(--run, #6cb6ff); } .ds-dot.run::after { content: \"\"; position: absolute; inset: -2px; border-radius: 50%; border: 1.5px solid var(--run, #6cb6ff); animation: ds-halo 1.4s ease-out infinite; } @keyframes ds-halo { from { transform: scale(.6); opacity: .8; } to { transform: scale(2.1); opacity: 0; } } @media (prefers-reduced-motion: reduce) { .ds-dot.run::after { animation: none; opacity: .5; } } .ds-row { display: flex; align-items: center; gap: 6px; min-height: 25px; padding: 2px 6px; margin-left: -6px; background: none; border: 0; border-radius: 6px; color: var(--text-2, #94a5b8); font-size: 12.5px; text-align: left; cursor: pointer; min-width: 0; } .ds-row:hover { background: color-mix(in srgb, var(--surface, #1b263b) 70%, var(--border, #2f394b)); } .ds-row:focus-visible { outline: 2px solid var(--focus, #acb7c3); outline-offset: -2px; } .ds-row b { color: var(--text, #e0e1dd); font-weight: 600; } .ds-sum { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 12px \"Cascadia Mono\", Consolas, monospace; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "O Vigia de Muitos Olhos",
+    "overview": "O Argus é uma sala de vigília escura onde vários agentes trabalham ao mesmo tempo e o usuário precisa saber, de relance e de longe, quem está rodando, quem terminou, quem falhou e quem espera resposta. O sistema visual existe para isso: um fundo de tinta funda e quase sem cor, superfícies que sobem por tom (fundo, superfície, superfície elevada) separadas por linhas finas, e toda a informação viva concentrada em pequenos sinais de estado — bolinhas, halos, chips e ícones — que mantêm o mesmo significado em qualquer tema.\n\nA densidade é de IDE, não de site: texto de interface em 13 px, rótulos de 10,5 a 12,5 px, linhas de ferramenta recolhidas, tabelas com números tabulares e nenhum espaço gasto explicando o que o usuário já sabe. A única área que respira é a coluna de leitura da conversa (~688 px, texto a 13,5 px com entrelinha 1,62), porque é onde a resposta do agente é lida e revisada. O resto da tela é instrumento.\n\nA cor de destaque de cada tema é rara e funcional: ação primária, envio, pílula ligada, preenchimento de barra, marca de soltura. A seleção usa um tom próprio e mais escuro, não o destaque. Os estados (ok, aviso, erro, rodando) ficam fora das paletas, iguais nos quatro temas, para continuarem distinguíveis mesmo quando o destaque do tema é vermelho ou âmbar. Nada de cor fica fora de `src/styles/tokens.css`.",
+    "keyCharacteristics": [
+      "Escuro sempre (`color-scheme: dark`); quatro temas trocam só a paleta, nunca a estrutura.",
+      "Profundidade por tom e linha fina de 1 px; sombra só em camada flutuante.",
+      "Estado lido por forma + cor (bolinha, quadrado, anel, halo, ícone), nunca só por cor.",
+      "Tipografia única (Geist) em escala curta; monoespaçada para caminho, comando e diff.",
+      "Barra de ícones à esquerda, áreas em tela cheia, inspetor opcional à direita, paleta Ctrl+K."
+    ],
+    "rules": [
+      {
+        "name": "A Regra do Cofre de Tokens",
+        "body": "Toda cor da interface sai de `src/styles/tokens.css`. Componente nenhum escreve hex; tom intermediário é `color-mix` de dois tokens. O Monaco e o xterm montam o tema dos mesmos tokens.",
+        "section": "colors"
+      },
+      {
+        "name": "A Regra do Estado Fora da Paleta",
+        "body": "Ok, aviso, erro e rodando têm os mesmos valores nos quatro temas e nunca são substituídos pelo destaque. O erro sempre vem com ícone ou rótulo, nunca só com a cor.",
+        "section": "colors"
+      },
+      {
+        "name": "A Regra do Destaque Raro",
+        "body": "O destaque marca ação e progresso, não seleção nem decoração. Seleção é Maré; hover é Maré diluída; foco é o Anel.",
+        "section": "colors"
+      },
+      {
+        "name": "A Regra dos Números Tabulares",
+        "body": "Contagem, custo, tokens, porcentagem de contexto e coluna numérica usam `font-variant-numeric: tabular-nums`.",
+        "section": "typography"
+      },
+      {
+        "name": "A Regra da Escala Curta",
+        "body": "Nada passa de 21px. Hierarquia vem de peso (500/600) e da Névoa contra o Osso, não de tamanho.",
+        "section": "typography"
+      },
+      {
+        "name": "A Regra do Plano em Repouso",
+        "body": "Superfície parada não tem sombra. Se precisa se destacar, sobe um degrau de tom ou ganha a Borda de Aço.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** tirar toda cor de `src/styles/tokens.css`, misturando tokens com `color-mix(in srgb, …)` quando precisar de tom intermediário.",
+      "**Do** acompanhar todo erro e estado de um ícone, forma ou rótulo, além da cor (ponto quadrado para erro, anel para interrompido, ícone no aviso).",
+      "**Do** usar Maré para seleção e Maré a 45–50% para hover de lista, aba e item da barra de ícones.",
+      "**Do** usar números tabulares em contagem, custo, tokens e porcentagens.",
+      "**Do** desligar toda animação contínua (pulso, onda, halo, giro, brilho) sob `prefers-reduced-motion: reduce`.",
+      "**Do** esconder rótulos secundários por container query antes de deixar uma barra quebrar linha.",
+      "**Do** manter estados fora das paletas: um tema novo redefine só os papéis de base (bg, surface, border, text, accent, selection, focus, status)."
+    ],
+    "donts": [
+      "**Don't** escrever hex ou `rgb()` direto num componente.",
+      "**Don't** usar o destaque do tema para Parar, erro ou seleção; Parar é Osso sobre Tinta.",
+      "**Don't** dar sombra a cartão, aba, inspetor ou caixa de composição em repouso.",
+      "**Don't** passar de 21px em texto de interface nem usar uma segunda família sans.",
+      "**Don't** criar um raio novo fora de 4, 6, 7, 10, 12 px e pílula.",
+      "**Don't** mostrar marca, logotipo ou nome de empresa de terceiros em tela."
+    ]
+  }
+}

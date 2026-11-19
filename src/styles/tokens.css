@@ -5,7 +5,7 @@
  * Cada tema define os mesmos tokens de base usando só as cores da própria
  * paleta (tons intermediários por color-mix entre duas cores da paleta). Os
  * tokens derivados (mais abaixo) são calculados a partir da base e valem para
- * os três temas. As cores de estado são iguais em todos os temas.
+ * todos os temas. As cores de estado são iguais em todos os temas.
  *
  * Tema escolhido: atributo data-theme em <html> (src/store/theme.ts).
  */
@@ -33,46 +33,6 @@
   --on-status: color-mix(in srgb, #778da9 72%, #e0e1dd);
   /* Fundo mais escuro que o app (vale para os temas que não definem o próprio). */
   --page: color-mix(in srgb, var(--bg) 80%, #000000);
-}
-
-/* ---------- Nebulosa: #10002b #240046 #3c096c #5a189a #7b2cbf #9d4edd #c77dff #e0aaff ---------- */
-[data-theme="nebulosa"] {
-  /* Fundo quase preto com um toque da paleta; o roxo fica no destaque, na borda forte e na seleção. */
-  --bg: #0d061c;
-  --surface: #1a0a2a;
-  --surface-2: #281140;
-  --border: color-mix(in srgb, #eee2f7 9%, #1a0a2a);
-  --border-strong: #441770;
-  --text: #eee2f7;
-  --text-2: #bf9edc;
-  --accent: #7b2cbf;
-  --accent-hover: color-mix(in srgb, #7b2cbf 50%, #9d4edd);
-  --on-accent: #ffffff;
-  --accent-text: #c77dff;
-  --selection: #37105c;
-  --focus: #c77dff;
-  --status-bg: #0d061c;
-  --on-status: #bf9edc;
-}
-
-/* ---------- Brasa: #0b090a #161a1d #660708 #a4161a #ba181b #e5383b #b1a7a6 #d3d3d3 #f5f3f4 #ffffff ---------- */
-[data-theme="brasa"] {
-  /* Os vermelhos escuros da paleta entram nos controles, na borda forte e na seleção. */
-  --bg: #0b090a;
-  --surface: #161a1d;
-  --surface-2: #2e1417;
-  --border: color-mix(in srgb, #f5f3f4 7%, #1f1416);
-  --border-strong: #660708;
-  --text: #f5f3f4;
-  --text-2: #b1a7a6;
-  --accent: #ba181b;
-  --accent-hover: color-mix(in srgb, #ba181b 50%, #e5383b);
-  --on-accent: #ffffff;
-  --accent-text: color-mix(in srgb, #e5383b 65%, #f5f3f4);
-  --selection: #560b0c;
-  --focus: #e5383b;
-  --status-bg: #0b090a;
-  --on-status: #b1a7a6;
 }
 
 /* ---------- Temas do redesign (docs/mockups/argus-telas.html) ---------- */
@@ -110,15 +70,11 @@
 :root {
   color-scheme: dark;
 
-  /* Estado: iguais nos três temas, fora das paletas, para continuarem distinguíveis. */
+  /* Estado: iguais ntodos os temas, fora das paletas, para continuarem distinguíveis. */
   --ok: #5fd38d;
   --warn: #e8b04a;
   --err: #ff8f7a;
-  --danger: #ff8f7a;
   --run: #6cb6ff;
-  /* Estado do redesign (mockup): ok/warn acima, bad = erro, info = em andamento. */
-  --bad: #e06b6b;
-  --info: #6aa6e0;
   --term-bg: color-mix(in srgb, var(--bg) 70%, #000000);
   --ok-bg: color-mix(in srgb, var(--ok) 16%, var(--surface));
   --warn-bg: color-mix(in srgb, var(--warn) 16%, var(--surface));
@@ -170,7 +126,8 @@
   --radius-sm: 4px;
   --radius: 6px;
   --radius-lg: 10px;
-  --radius-xl: 14px;
+  --radius-xl: 12px;
+  --radius-pill: 999px;
 
   --sidebar-width: 272px;
   --right-width: 320px;
@@ -179,14 +136,7 @@
   --title-ctl-w: 212px;
   --win-close-bg: #c42b1c;
   --win-close-text: #ffffff;
-  --status-height: 24px;
+  --status-height: 22px;
   --tab-height: 34px;
   --chat-width: 820px;
-}
-
-/* Brasa: painéis laterais e faixa de abas com um toque do vermelho escuro da paleta. */
-[data-theme="brasa"] {
-  --bg-panel: #20181a;
-  --bg-raised: #20181a;
-  --bg-tabs: #170f11;
 }

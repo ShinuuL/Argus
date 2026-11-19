@@ -11,7 +11,7 @@
 .gt-conns { display: grid; gap: 6px; }
 .gt-conn { display: flex; align-items: center; gap: 8px; }
 .gt-sb { height: 22px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 8px; padding: 0 10px; font-size: 11px; color: var(--text-2); flex: none; }
-.gt-err { padding: 6px 14px; color: var(--bad); border-bottom: 1px solid var(--border); font-size: 12px; }
+.gt-err { padding: 6px 14px; color: var(--err); border-bottom: 1px solid var(--border); font-size: 12px; }
 
 /* 05 · revisão */
 .gt-rhead { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--border); flex: none; flex-wrap: wrap; }
@@ -24,7 +24,7 @@
 .gt-file input { margin: 0; accent-color: var(--accent); }
 .gt-fname { all: unset; cursor: pointer; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono-family); font-size: 11px; }
 .gt-add { color: var(--ok); }
-.gt-del { color: var(--bad); }
+.gt-del { color: var(--err); }
 .gt-msg { margin: 0 12px; border: 1px solid var(--border-strong); border-radius: 8px; padding: 8px; min-height: 70px; resize: vertical; background: transparent; color: var(--text); font: inherit; }
 .gt-note { margin: 6px 12px 0; }
 .gt-center { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
@@ -37,8 +37,8 @@
 .gt-split > div:first-child { border-right: 1px solid var(--border); }
 .gt-ln { padding: 0 10px; white-space: pre; color: var(--text-2); min-height: 1.5em; line-height: 1.5; }
 .gt-ln.a { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--text); }
-.gt-ln.d { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--text); }
-.gt-hunk { color: var(--info); background: color-mix(in srgb, var(--info) 8%, transparent); }
+.gt-ln.d { background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--text); }
+.gt-hunk { color: var(--run); background: color-mix(in srgb, var(--run) 8%, transparent); }
 .gt-blank { background: color-mix(in srgb, var(--surface) 60%, transparent); }
 .gt-no { display: inline-block; width: 4ch; text-align: right; margin-right: 8px; color: var(--text-2); opacity: 0.7; user-select: none; }
 .gt-sign { display: inline-block; width: 1.5ch; user-select: none; }

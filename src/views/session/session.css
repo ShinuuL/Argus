@@ -176,7 +176,7 @@
 /* Chat do subagente (somente leitura) */
 .ses-sub-bar { display: flex; align-items: center; gap: 10px; padding: 5px 12px; border-bottom: 1px solid var(--border); background: var(--bg-tabs); flex: none; min-width: 0; }
 .ses-sub-bar-name { flex: 1; }
-.ses-readonly { flex: none; font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border-strong); color: var(--text-2); white-space: nowrap; }
+.ses-readonly { flex: none; font-size: 11px; padding: 1px 8px; border-radius: var(--radius-lg); border: 1px solid var(--border-strong); color: var(--text-2); white-space: nowrap; }
 .ses-sub-block { display: flex; flex-direction: column; gap: 5px; }
 .ses-sub-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); }
 .ses-sub-box { padding: 10px 13px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; max-height: 320px; overflow: auto; }
@@ -199,7 +199,7 @@
 .agent-state.attention { color: var(--warn); }
 .agent-state.failed { color: var(--err); }
 .agent-state.done, .agent-state.applied { color: var(--ok); }
-.agent-state.with-label { padding: 2px 8px 2px 6px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-size: 11px; white-space: nowrap; }
+.agent-state.with-label { padding: 2px 8px 2px 6px; border-radius: var(--radius-pill); background: var(--surface); border: 1px solid var(--border); font-size: 11px; white-space: nowrap; }
 .agent-state.with-label.attention { background: var(--warn-bg); }
 .agent-state.with-label.failed { background: var(--err-bg); }
 .agent-state-label { color: var(--text); }

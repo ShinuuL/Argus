@@ -9,7 +9,7 @@
 .dv-devs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; min-width: 0; }
 .dv-spacer { flex: 1; }
 .dv-chip {
-  font-size: 12px; padding: 2px 8px; border-radius: var(--radius-lg, 999px);
+  font-size: 12px; padding: 2px 8px; border-radius: var(--radius-pill);
   border: 1px solid var(--border); color: var(--text-2); white-space: nowrap;
 }
 .dv-chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }

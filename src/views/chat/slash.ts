@@ -44,7 +44,11 @@ const TERMINAL_ONLY = new Set([
   "doctor",
 ]);
 
-/** Reconhece "/comando args" pelos nomes e apelidos locais; o resto não é comando local. */
+/**
+ * Reconhece "/comando args" pelos nomes e apelidos locais; o resto não é comando
+ * local. Só vale com a barra no começo: no meio de uma frase, a sugestão ajuda a
+ * escrever, mas o texto vai inteiro ao agente.
+ */
 export function readLocalCommand(text: string): { command: LocalCommand; args: string } | null {
   const m = /^\/(\S+)\s*([\s\S]*)$/.exec(text.trim());
   if (!m) return null;
@@ -75,10 +79,31 @@ export function allSlashItems(cliCommands: string[]): SlashItem[] {
   return [...local, ...cli];
 }
 
-/** O "/trecho" digitado, quando a caixa só tem isso (sem espaço ainda). */
-export function slashQuery(text: string): string | null {
-  const m = /^\/([\w:.?-]*)$/.exec(text);
-  return m ? m[1].toLowerCase() : null;
+export interface SlashToken {
+  /** Posição da "/" no texto. */
+  start: number;
+  /** Posição do cursor (fim do trecho digitado). */
+  end: number;
+  /** O que foi digitado depois da "/". */
+  query: string;
+}
+
+/**
+ * A "/trecho" que está sendo digitada na posição do cursor, em qualquer ponto da
+ * mensagem (começo de linha, depois de um espaço ou de um parêntese). Como o "@",
+ * não dispara dentro de um caminho ("src/views") nem de uma URL.
+ */
+export function slashCursor(text: string, cursor: number): SlashToken | null {
+  const m = /(^|[\s(])\/([\w:.?-]*)$/.exec(text.slice(0, cursor));
+  if (!m) return null;
+  return { start: m.index + m[1].length, end: cursor, query: m[2].toLowerCase() };
+}
+
+/** Troca a "/trecho" pelo comando escolhido; devolve o texto novo e onde fica o cursor. */
+export function replaceSlash(text: string, token: SlashToken, name: string): { text: string; cursor: number } {
+  const inserted = `/${name} `;
+  const rest = text.slice(token.end).replace(/^ /, "");
+  return { text: text.slice(0, token.start) + inserted + rest, cursor: token.start + inserted.length };
 }
 
 /** Primeiro os que começam com o que foi digitado, depois os que contêm. */

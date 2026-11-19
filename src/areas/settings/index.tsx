@@ -45,7 +45,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
   {
     label: "Você",
     items: [
-      { id: "aparencia", label: "Aparência", keywords: "tema cores ardósia grafite noite oceano nebulosa brasa" },
+      { id: "aparencia", label: "Aparência", keywords: "tema cores ardósia grafite noite oceano" },
       { id: "atalhos", label: "Atalhos", keywords: "teclado ctrl" },
     ],
   },

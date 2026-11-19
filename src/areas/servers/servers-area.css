@@ -6,7 +6,7 @@
 .srva-q:focus { outline: 1px solid var(--focus); }
 .ui-chip.srva-on { color: var(--text); background: var(--selection); }
 .srva-scroll { flex: 1; min-height: 0; overflow: auto; }
-.srva-err { padding: 6px 14px; color: var(--bad); font-size: 12px; border-bottom: 1px solid var(--border); }
+.srva-err { padding: 6px 14px; color: var(--err); font-size: 12px; border-bottom: 1px solid var(--border); }
 .srva-panel { width: 290px; flex: none; border-left: 1px solid var(--border); background: var(--surface); overflow-y: auto; }
 .srva-detail { padding: 14px; display: grid; gap: 10px; align-content: start; }
 .srva-h { margin: 0; font-size: 13px; font-weight: 600; color: var(--text); }

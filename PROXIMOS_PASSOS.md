@@ -224,7 +224,7 @@ Tudo em `src/views/chat`, com os comandos Rust em `src-tauri/src/commands/extra_
 | 1.2 Fila de mensagens | com o agente ocupado, Enter põe na fila; a fila sai quando o turno termina; Ctrl+Enter para o turno e envia | ✓ na janela com agente real: Enter, saída da fila e Ctrl+Enter (pergunta, para o turno e manda a mensagem) |
 | 1.3 Menções | `@arquivo` (busca no projeto) e `@agente` (arquivos de `.claude/agents` e `.opencode/agents`) | ✓ na janela |
 | 1.4 e 1.5 Anexos | clipe, arrastar e soltar, colar print, texto colado grande vira anexo; miniaturas na mensagem | ✓ na janela: clipe (.txt e .png), texto grande colado, miniatura, imagem colada (evento sintético) e lida pelo claude numa tarefa real, arquivo arrastado da aba Arquivos (vira `@caminho`). Arquivo arrastado do Explorer do Windows e Ctrl+V de um print de verdade não conferidos |
-| 1.6 Comandos de barra | `/nova`, `/parar`, `/diff`, `/aplicar`, `/descartar`, `/sessoes`, `/modelo`, `/ajuda` e os comandos da CLI do claude | ✓ na janela: menu com os do Argus e os da CLI, `/ajuda`, `/diff`; `/modelo` abre a lista de modelos da pílula (visto); `/nova` abre uma conversa nova e `/diff` abre a aba Alterações do painel direito (não reconferidos depois do redesenho) |
+| 1.6 Comandos de barra | `/nova`, `/parar`, `/diff`, `/aplicar`, `/descartar`, `/sessoes`, `/modelo`, `/ajuda` e os comandos da CLI do claude | ✓ na janela: menu com os do Argus e os da CLI, `/ajuda`, `/diff`; `/modelo` abre a lista de modelos da pílula (visto); `/nova` abre uma conversa nova e `/diff` abre a aba Alterações do painel direito (não reconferidos depois do redesenho). Desde 2026-11-18, a barra abre o menu **em qualquer ponto da mensagem** (começo, depois de um espaço ou de um parêntese), como o `@`, e a escolha troca só o trecho sob o cursor; os comandos do Argus continuam executando apenas quando a barra é a primeira coisa escrita (no meio da frase, o texto vai inteiro ao agente). Não conferido na janela |
 | 1.7 Chamada de ferramenta escrita como texto | aviso com o botão "Executar de verdade" | ⚠ compila; detecção testada por script |
 | 1.8 Uso do dia | pílula "hoje: X tokens · ≈ US$ Y (equivalente em API)" | ✓ na janela (status bar; atualiza a cada turno) |
 | 2.4 (atalho) Detecção de loop | cancela o turno quando o agente repete a mesma chamada; só vale com a conversa aberta numa aba | ✓ na janela com agente real: o turno foi cancelado no terceiro `Read` igual, com o aviso "Parei: o agente repetiu Read 3 vezes seguidas" |
@@ -396,7 +396,11 @@ Falta:
     - Se a porta estiver em uso, escolher a livre mais próxima quando o comando aceitar a porta por parâmetro.
     - Lembrar o último comando usado em cada projeto e permitir "iniciar todos" de um conjunto.
     - Aproveita o rastreamento de processos e portas de `crates/core/src/procs.rs`.
-14. **Refazer o ícone do app (não crítico).** O olho atual é provisório; redesenhar o ícone do Argus (janela, barra de tarefas, instalador e web app do celular).
+14. **Memória como vault do Obsidian.**
+    - Tratar a memória do Argus (notas, contexto e decisões que os agentes leem e gravam) como um vault do Obsidian: arquivos Markdown simples numa pasta, com links `[[nota]]` e frontmatter, abríveis e editáveis direto no Obsidian.
+    - Hoje o vault é a própria pasta onde o app está aberto (a raiz do projeto). Ainda não existe pasta `.obsidian/` nela; decidir se o vault continua sendo a raiz do projeto ou uma subpasta dedicada (ex.: `memoria/`), para não misturar notas com código nem com o que vai para o git.
+    - Pendente: definir o local, o formato das notas (uma por fato, com links entre elas), o que entra ou não no git, e como os agentes leem e gravam nessas notas.
+15. **Refazer o ícone do app (não crítico).** O olho atual é provisório; redesenhar o ícone do Argus (janela, barra de tarefas, instalador e web app do celular).
 
 ## Notas
 

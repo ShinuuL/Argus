@@ -32,9 +32,11 @@ import {
   filterSlash,
   LOCAL_COMMANDS,
   readLocalCommand,
-  slashQuery,
+  replaceSlash,
+  slashCursor,
   type LocalCommand,
   type LocalCommandName,
+  type SlashToken,
 } from "./slash";
 import { chatKey, markUrgent, selectAttachments, selectQueue, sendNextQueued, useChat, type QueueItem } from "./store";
 import { SuggestPopover, type SuggestItem } from "./SuggestPopover";
@@ -109,7 +111,7 @@ interface Notice {
 }
 
 type Suggest =
-  | { mode: "slash"; items: SuggestItem[]; index: number; loading: boolean }
+  | { mode: "slash"; items: SuggestItem[]; index: number; loading: boolean; token: SlashToken }
   | { mode: "at"; items: SuggestItem[]; index: number; loading: boolean; token: AtToken };
 
 /** Espera depois da última tecla antes de buscar arquivos. */
@@ -233,10 +235,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       const commands = caps?.slash_commands ?? [];
       if (commands.length) setCliCommands(commands);
       // a resposta chegou com o menu aberto: refaz com o que já está digitado
-      const q = slashQuery(useChat.getState().drafts[key] ?? "");
-      if (q !== null) {
+      const draft = useChat.getState().drafts[key] ?? "";
+      const token = slashCursor(draft, input.current?.selectionStart ?? draft.length);
+      if (token) {
         setSuggest((prev) =>
-          prev?.mode === "slash" ? { mode: "slash", items: slashItems(commands, q), index: 0, loading: false } : prev,
+          prev?.mode === "slash"
+            ? { mode: "slash", token, items: slashItems(commands, token.query), index: 0, loading: false }
+            : prev,
         );
       }
     });
@@ -245,10 +250,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const refreshSuggest = useCallback(
     (value: string, cursor: number) => {
       window.clearTimeout(searchTimer.current);
-      const q = slashQuery(value);
-      if (q !== null) {
+      const slash = slashCursor(value, cursor);
+      if (slash) {
         const waiting = !!workdir && provider === "claude" && !cliCommands.length && capsAsked.current !== workdir;
-        setSuggest({ mode: "slash", items: slashItems(cliCommands, q), index: 0, loading: waiting });
+        setSuggest({ mode: "slash", token: slash, items: slashItems(cliCommands, slash.query), index: 0, loading: waiting });
         loadCliCommands();
         return;
       }
@@ -301,14 +306,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 
   const pick = (item: SuggestItem) => {
     if (!suggest) return;
-    if (suggest.mode === "slash") {
-      setText(`${item.label} `);
-      closeSuggest();
-      input.current?.focus();
-      return;
-    }
-    const value = item.key.startsWith("file:") ? item.key.slice(5) : item.label;
-    const next = replaceAt(text, suggest.token, value);
+    // os dois modos trocam só o trecho sob o cursor: o resto da mensagem fica
+    const next =
+      suggest.mode === "slash"
+        ? replaceSlash(text, suggest.token, item.label.slice(1))
+        : replaceAt(text, suggest.token, item.key.startsWith("file:") ? item.key.slice(5) : item.label);
     setText(next.text);
     closeSuggest();
     requestAnimationFrame(() => {
@@ -326,6 +328,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         tone: "info",
         text:
           lines.join("\n") +
+          "\n/ abre os comandos em qualquer ponto da mensagem; os do Argus acima só executam se a barra for a primeira coisa escrita." +
           "\n@ menciona arquivos e agentes · Enter envia · Shift+Enter quebra a linha" +
           "\nCom o agente trabalhando, Enter põe na fila e Ctrl+Enter para o turno e envia.",
       });
@@ -460,19 +463,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     }
   };
 
-  /** Botões "/" e "@": escrevem o caractere e abrem as sugestões. */
+  /** Botões "/" e "@": escrevem o caractere na posição do cursor e abrem as sugestões. */
   const startToken = (ch: "/" | "@") => {
     const el = input.current;
     if (!el || disabled) return;
-    const value = ch === "/" ? (text.trim() ? text : "/") : text && !/\s$/.test(text) ? `${text} @` : `${text}@`;
-    if (ch === "/" && text.trim()) {
-      setNotice({ tone: "info", text: "Os comandos de barra valem no começo da mensagem: apague o texto e digite /." });
-      el.focus();
-      return;
-    }
+    const at = el.selectionStart ?? text.length;
+    const before = text.slice(0, at);
+    const sep = before && !/[\s(]$/.test(before) ? " " : "";
+    const value = `${before}${sep}${ch}${text.slice(at)}`;
+    const cursor = at + sep.length + 1;
     setText(value);
     el.focus();
-    refreshSuggest(value, value.length);
+    requestAnimationFrame(() => el.setSelectionRange(cursor, cursor));
+    refreshSuggest(value, cursor);
   };
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -603,25 +606,25 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           </button>
           <button
             type="button"
-            className="chat-ibtn chat-ibtn-txt"
+            className="chat-ibtn"
             title="Comandos de barra (/)"
             aria-label="Comandos de barra"
             disabled={disabled}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => startToken("/")}
           >
-            /
+            <Icon name="slash" size={15} />
           </button>
           <button
             type="button"
-            className="chat-ibtn chat-ibtn-txt"
+            className="chat-ibtn"
             title="Mencionar arquivo ou agente (@)"
             aria-label="Mencionar arquivo ou agente"
             disabled={disabled}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => startToken("@")}
           >
-            @
+            <Icon name="at" size={15} />
           </button>
           <div className="chat-pills">{toolbar}</div>
           {busy && canSend && (

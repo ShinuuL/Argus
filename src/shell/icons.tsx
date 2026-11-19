@@ -6,6 +6,8 @@
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowUp,
+  AtSign,
+  SquareSlash,
   TabletSmartphone,
   Bot,
   Brain,
@@ -88,6 +90,9 @@ const ICONS = {
   devices: TabletSmartphone,
   gear: Settings,
   clip: Paperclip,
+  /** Botões da caixa de composição: comandos de barra e menção. */
+  slash: SquareSlash,
+  at: AtSign,
   send: ArrowUp,
   stop: Square,
   file: File,

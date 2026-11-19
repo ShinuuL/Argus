@@ -14,7 +14,7 @@
   pointer-events: none;
 }
 .chat-usage {
-  flex: none; padding: 2px 9px; border-radius: 10px; white-space: nowrap;
+  flex: none; padding: 2px 9px; border-radius: var(--radius-lg); white-space: nowrap;
   background: var(--bg-control); color: var(--text); font-size: 12px; cursor: default;
 }
 .chat-usage small { color: var(--text-faint); }
@@ -138,8 +138,8 @@ button.chat-sub:hover { background: var(--bg-hover); }
 }
 .chat-zoom img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .chat-att-chip {
-  display: inline-block; padding: 1px 7px; border-radius: 9px; font-size: 12px;
-  background: var(--shadow); border: 1px solid var(--border-control);
+  display: inline-block; padding: 1px 7px; border-radius: var(--radius-pill); font-size: 12px;
+  background: var(--bg-control); border: 1px solid var(--border-control);
 }
 .chat-atts { display: flex; flex-wrap: wrap; gap: 6px; }
 .chat-att {
@@ -172,7 +172,7 @@ button.chat-sub:hover { background: var(--bg-hover); }
 .chat-queue-resume { padding: 1px 8px; font-size: 12px; }
 .chat-queue-item {
   display: inline-flex; align-items: center; gap: 2px; max-width: 260px;
-  padding: 1px 2px 1px 8px; border-radius: 10px; background: var(--bg-control);
+  padding: 1px 2px 1px 8px; border-radius: var(--radius-lg); background: var(--bg-control);
 }
 .chat-queue-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .chat-queue-item button { padding: 0 5px; border: 0; background: transparent; color: var(--text-dim); }
@@ -195,30 +195,28 @@ button.chat-sub:hover { background: var(--bg-hover); }
 .chat-box {
   position: relative; display: flex; flex-direction: column;
   border: 1px solid var(--border-strong); border-radius: var(--radius-xl); background: var(--surface);
-  box-shadow: 0 2px 10px var(--shadow);
 }
 .chat-box:focus-within { border-color: var(--focus); }
 .chat-input {
   display: block; width: 100%; box-sizing: border-box; resize: none;
-  min-height: 40px; max-height: 200px; padding: 12px 14px 4px;
-  border: 0; outline: 0; background: transparent; line-height: 1.45; font-size: 13.5px; color: var(--text);
+  min-height: 40px; max-height: 200px; padding: 10px 12px 2px;
+  border: 0; outline: 0; background: transparent; line-height: 1.45; font-size: 13px; color: var(--text);
 }
 .chat-input:focus-visible { outline: none; }
-.chat-bar { display: flex; align-items: flex-end; gap: 4px; padding: 4px 8px 8px; min-width: 0; }
+.chat-bar { display: flex; align-items: center; gap: 8px; padding: 4px 10px 8px; min-width: 0; color: var(--text-2); font-size: 11.5px; container-type: inline-size; }
 .chat-ibtn {
   display: inline-flex; align-items: center; justify-content: center; flex: none;
   width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--radius); background: none; color: var(--text-2);
 }
 .chat-ibtn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
-.chat-ibtn-txt { font: 600 14px/1 var(--font-mono-family); }
 .chat-pills { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 1px 0 1px 4px; }
 .chat-pill-group { display: inline-flex; gap: 1px; }
-.chat-pill-group .chat-pill:first-child { border-radius: 12px 0 0 12px; }
-.chat-pill-group .chat-pill:last-child { border-radius: 0 12px 12px 0; padding: 0 6px; }
+.chat-pill-group .chat-pill:first-child { border-radius: var(--radius-pill) 0 0 var(--radius-pill); }
+.chat-pill-group .chat-pill:last-child { border-radius: 0 var(--radius-pill) var(--radius-pill) 0; padding: 0 6px; }
 .chat-pill {
-  display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; max-width: 100%;
-  border: 1px solid var(--border); border-radius: 12px; background: none; color: var(--text-2);
-  font-size: 11.5px; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; max-width: 100%;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-pill); background: none; color: var(--text-2);
+  font-size: 11px; white-space: nowrap;
 }
 button.chat-pill:hover:not(:disabled), .chat-pill-select:hover { background: var(--bg-hover); color: var(--text); }
 .chat-pill.on { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
@@ -237,8 +235,8 @@ button.chat-pill:hover:not(:disabled), .chat-pill-select:hover { background: var
 /* Parar é neutro (não usa o destaque): claro sobre escuro em qualquer tema. */
 .chat-stop { background: var(--text); border-color: var(--text); color: var(--bg); }
 .chat-stop:hover { background: var(--text-2); border-color: var(--text-2); }
-.chat-queue-btn { flex: none; height: 30px; padding: 0 10px; border-radius: 15px; font-size: 12px; }
-.chat-hint { text-align: center; color: var(--text-2); font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; opacity: 0.85; }
+.chat-queue-btn { flex: none; height: 30px; padding: 0 10px; border-radius: var(--radius-pill); font-size: 12px; }
+.chat-hint { text-align: center; color: var(--text-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; opacity: .7; font-size: 10.5px; }
 
 .chat-suggest {
   position: absolute; left: 0; right: 0; bottom: calc(100% + 4px); z-index: 30;
@@ -261,7 +259,6 @@ button.chat-pill:hover:not(:disabled), .chat-pill-select:hover { background: var
 
 
 /* Barra numa linha só: as pílulas não quebram; a de agente e modelo encolhe. */
-.chat-bar { container-type: inline-size; align-items: center; }
 .chat-pills { flex-wrap: nowrap; overflow: hidden; }
 .chat-pills > * { flex: none; }
 .chat-pills > .sel-pill { min-width: 0; flex: 0 1 auto; max-width: 160px; }
@@ -287,12 +284,7 @@ button.chat-pill:hover:not(:disabled), .chat-pill-select:hover { background: var
 .am-model-resolved { color: var(--text-dim, inherit); }
 @media (max-width: 900px) { .am-model-resolved { display: none; } }
 
-/* Redesign (mockup .composer): caixa de 12px de raio, chips de modelo/modo, estado, contexto e uso na mesma linha. */
-.chat-box { border-radius: 12px; box-shadow: none; }
-.chat-input { padding: 10px 12px 2px; font-size: 13px; }
-.chat-bar { padding: 4px 10px 8px; gap: 8px; color: var(--text-2); font-size: 11.5px; }
-.chat-pill { height: 20px; padding: 0 8px; border-color: var(--border-strong); border-radius: 99px; font-size: 11px; }
-.chat-hint { font-size: 10.5px; opacity: .7; }
+
 /* Redesign: os seletores (projeto, agente, modelo) não encolhem a ponto de sumir o nome. */
 .chat-pills > .sel-pill { min-width: 84px; flex: 0 0 auto; }
 .chat-pills { flex-wrap: nowrap; overflow: hidden; }

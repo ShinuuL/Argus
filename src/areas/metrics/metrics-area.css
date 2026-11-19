@@ -6,6 +6,6 @@
 .mxa-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mxa-chart { flex: 1; }
 .mxa-ct { font-weight: 400; }
-.mxa-err { color: var(--bad); margin: 0; }
+.mxa-err { color: var(--err); margin: 0; }
 .mxa-warn { color: var(--warn); margin: 0; }
 .mxa-sb { flex: none; display: flex; gap: 8px; padding: 4px 12px; font-size: 11px; color: var(--text-2); border-top: 1px solid var(--border); background: var(--surface); }
