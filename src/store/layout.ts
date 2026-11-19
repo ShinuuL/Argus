@@ -17,7 +17,7 @@ export const AREAS: { id: Area; label: string }[] = [
   { id: "devices", label: "Dispositivos" },
   { id: "metrics", label: "Métricas" },
   { id: "terminal", label: "Terminal" },
-  { id: "tasks", label: "Tarefas" },
+  { id: "tasks", label: "Tarefas agendadas" },
   { id: "settings", label: "Configurações" },
   { id: "agents", label: "Agentes" },
 ];

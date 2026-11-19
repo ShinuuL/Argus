@@ -491,7 +491,7 @@ export interface ComposerOptionsProps {
 export const ACCESS_LABEL: Record<AccessMode, string> = { plan: "Planejar", normal: "Normal", bypass: "Bypass" };
 /** Uma linha no menu; o texto completo (`ACCESS_HELP`) fica no tooltip. */
 const ACCESS_SHORT: Record<AccessMode, string> = {
-  plan: "Só lê e propõe; nada é alterado.",
+  plan: "Só lê e propõe; no fim, \"Executar o plano\".",
   normal: "Edita sem perguntar; shell só com comandos permitidos.",
   bypass: "Qualquer comando, sem aprovação. Só nesta conversa.",
 };
@@ -500,12 +500,6 @@ const ACCESS_SHORT: Record<AccessMode, string> = {
 const WORK_MODE_SHORT: Record<WorkMode, string> = {
   Isolated: "Numa cópia (worktree); você revisa e aplica.",
   Direct: "Na própria pasta; vale na hora.",
-};
-
-const ACCESS_HELP: Record<AccessMode, string> = {
-  plan: "O agente só lê e propõe um plano; nada é alterado. Ao fim do turno aparece \"Executar o plano\".",
-  normal: "Edições automáticas: o agente edita arquivos sem perguntar; o shell só roda os comandos permitidos do projeto.",
-  bypass: "O agente roda qualquer comando sem pedir aprovação e sem a política de shell do Argus. Só nesta conversa.",
 };
 
 export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditable, noGit, onMode, access = "normal", onAccess }: ComposerOptionsProps) {
@@ -543,6 +537,9 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
         {changed > 0 && <span className="opt-count">{changed}</span>}
       </button>
       <Popover anchor={btn} open={open} onClose={close} ariaLabel="Opções da conversa" width={360} className="opt-pop">
+        {/* Sem projeto, modo de trabalho e auto-work não se aplicam: some a seção, fica uma dica. */}
+        {!project && <p className="pop-help pop-note">Escolha o projeto na pílula ao lado para definir o modo de trabalho e o auto-work.</p>}
+        {project && (
         <div className="pop-sec">
           <div className="pop-title">Modo de trabalho</div>
           {modeEditable ? (
@@ -554,7 +551,6 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
                   role="radio"
                   aria-checked={m === mode}
                   className={`sel-opt pop-opt pop-opt-tall${m === mode ? " cur" : ""}`}
-                  title={WORK_MODE_HELP[m]}
                   onClick={() => onMode(m)}
                 >
                   <span className="pop-opt-text">
@@ -572,10 +568,11 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
             <p className="pop-help" title={WORK_MODE_HELP[mode]}>
               <b>{WORK_MODE_LABEL[mode]}</b>
               {" · "}
-              {noGit ? "o projeto não é um repositório git" : taskId == null ? "escolha um projeto" : "fixo nesta conversa"}
+              {noGit ? "o projeto não é um repositório git" : "fixo nesta conversa"}
             </p>
           )}
         </div>
+        )}
         <div className="pop-sec">
           <div className="pop-title">Acesso nesta conversa</div>
           {onAccess ? (
@@ -587,7 +584,6 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
                   role="radio"
                   aria-checked={a === access}
                   className={`sel-opt pop-opt pop-opt-tall${a === access ? " cur" : ""}`}
-                  title={ACCESS_HELP[a]}
                   onClick={() => {
                     if (a !== access) onAccess(a);
                   }}
@@ -619,9 +615,10 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
             Comandos permitidos
           </button>
         </div>
+        {project && (
         <div className="pop-sec">
           <div className="pop-title">Auto-work</div>
-          {project ? (
+          {(
             <>
               <div className="pop-row">
                 <label
@@ -643,10 +640,9 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
                 </button>
               </div>
             </>
-          ) : (
-            <p className="pop-help">Escolha um projeto para usar o auto-work.</p>
           )}
         </div>
+        )}
       </Popover>
     </>
   );

@@ -61,12 +61,12 @@ function FocusInfo() {
   );
 }
 
-/** Atalhos à direita, como no mockup; com o inspetor aberto, só o aviso. */
+/** Atalhos à direita, como no mockup. */
 function Hints() {
   const area = useLayout((s) => s.area);
   const inspector = useLayout((s) => s.inspectorOpen);
   if (area !== "chat") return null;
-  return <span className="sb-item sb-hint">{inspector ? "inspetor aberto" : "Ctrl+J terminal · Ctrl+. inspetor"}</span>;
+  return <span className="sb-item sb-hint">{`Ctrl+J terminal · Ctrl+. ${inspector ? "fecha o inspetor" : "inspetor"}`}</span>;
 }
 
 /** Barra de status: agentes rodando, servidores e uso de hoje à esquerda; player, divisão e pet à direita. */

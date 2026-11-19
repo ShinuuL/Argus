@@ -291,15 +291,13 @@ export default function ProjectsView() {
       <div className="pj-list" role="tree">
         {!root && ready && (
           <div className="pj-empty">
-            <p>Escolha a pasta raiz onde ficam seus projetos.</p>
+            {/* O botão "Abrir pasta raiz" fica só no centro (e no ícone de pasta acima): aqui, só o texto. */}
+            <p>Nenhuma pasta raiz aberta. Os projetos dela aparecem aqui.</p>
             {tasks.length > 0 && (
               <p className="pj-empty-note">
                 {tasks.length} {tasks.length === 1 ? "sessão anterior continua" : "sessões anteriores continuam"} na paleta (Ctrl+K).
               </p>
             )}
-            <button onClick={() => void pickRoot()}>
-              <Icon name="folderOpen" size={14} /> Abrir pasta raiz
-            </button>
           </div>
         )}
         {root && projects.length === 0 && <div className="pj-empty">Nenhum projeto encontrado nesta pasta.</div>}

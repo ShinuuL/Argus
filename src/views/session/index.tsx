@@ -330,7 +330,6 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   const selectedProject = useApp((s) => s.selected);
   const selectedSub = useApp((s) => (taskId == null ? null : (s.subagentOf[taskId] ?? null)));
   const unread = useApp((s) => taskId != null && !!s.unread[taskId]);
-  const rightOpen = useLayout((s) => s.rightOpen);
   const providers = useProviders();
 
   const busy = task ? isTaskActive(task.state) : false;
@@ -636,7 +635,9 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
     : noSession
       ? "Esta tarefa não tem sessão da CLI para continuar."
       : taskId == null
-        ? "Descreva a tarefa…"
+        ? newProject
+          ? "Descreva a tarefa…"
+          : "Escolha um projeto na pílula abaixo para escrever o pedido."
         : undefined;
 
   /** O último turno do agente principal escreveu a chamada de ferramenta como texto? */
@@ -774,15 +775,6 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
               {totals.cost != null && <span>{formatUsd(totals.cost)} equivalente em API</span>}
             </span>
           )}
-          <button
-            className="cv-hbtn"
-            aria-pressed={rightOpen}
-            title={rightOpen ? "Ocultar o painel direito" : "Mostrar o painel direito (arquivos, alterações, subagentes, servidores)"}
-            aria-label="Alternar o painel direito"
-            onClick={() => useLayout.getState().toggleRight()}
-          >
-            <Icon name="sidebarRight" size={15} />
-          </button>
         </header>
 
         {current && <SubagentBar node={current} taskActive={busy} now={now} onBack={() => selectSub(null)} />}

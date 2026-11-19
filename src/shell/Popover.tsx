@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import { useLayout } from "@/store/layout";
 import "./select.css";
 
 export interface PopoverProps {
@@ -16,6 +17,12 @@ export interface PopoverProps {
 }
 
 const MAX_HEIGHT = 440;
+
+/** Evento que fecha os popovers abertos (paleta, troca de área ou de aba). */
+export const CLOSE_LAYERS = "argus:close-layers";
+export function closeLayers() {
+  window.dispatchEvent(new Event(CLOSE_LAYERS));
+}
 
 /**
  * Painel flutuante preso a um botão, no visual das listas do Argus (`.sel-pop`).
@@ -60,11 +67,24 @@ export function Popover({ anchor, open, onClose, ariaLabel, width = 320, classNa
       if (!pop.current?.contains(t) && !anchor.current?.contains(t)) onClose(false);
     };
     const shut = () => onClose(false);
+    // Esc fecha mesmo com o foco fora do painel (ex.: de volta no composer).
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose(true);
+    };
     document.addEventListener("mousedown", onDown, true);
+    document.addEventListener("keydown", onKey);
     window.addEventListener("resize", shut);
+    window.addEventListener(CLOSE_LAYERS, shut);
+    // Trocar de área ou abrir a paleta fecha o painel (não fica por cima de outra tela).
+    const unsub = useLayout.subscribe((s, prev) => {
+      if (s.area !== prev.area || (s.paletteOpen && !prev.paletteOpen)) shut();
+    });
     return () => {
+      unsub();
       document.removeEventListener("mousedown", onDown, true);
+      document.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", shut);
+      window.removeEventListener(CLOSE_LAYERS, shut);
     };
   }, [open, onClose, anchor]);
 

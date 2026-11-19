@@ -329,6 +329,24 @@ function EditorGroup({
     strip.current?.querySelector(".wb-tab.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [group.active, group.tabs.length]);
 
+  // Abas escondidas à direita/esquerda: a borda some num degradê em vez de cortar o título no meio.
+  useEffect(() => {
+    const el = strip.current;
+    if (!el) return;
+    const mark = () => {
+      el.toggleAttribute("data-more-right", el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+      el.toggleAttribute("data-more-left", el.scrollLeft > 1);
+    };
+    mark();
+    const ro = new ResizeObserver(mark);
+    ro.observe(el);
+    el.addEventListener("scroll", mark, { passive: true });
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("scroll", mark);
+    };
+  }, [group.tabs.length]);
+
   const allow = (e: DragEvent) => {
     if (drag == null) return false;
     e.preventDefault();

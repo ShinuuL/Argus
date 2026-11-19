@@ -74,6 +74,7 @@
 .pop-sec + .pop-sec { border-top: 1px solid var(--border); }
 .pop-title { padding: 0 8px 4px; color: var(--text-2); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 .pop-help { margin: 0 8px 6px; color: var(--text-2); font-size: 12px; line-height: 1.45; white-space: normal; }
+.pop-note { margin: 10px 12px 4px; }
 .pop-help b { color: var(--text); font-weight: 600; }
 .pop-list { display: flex; flex-direction: column; }
 .pop-opt { width: 100%; border: 0; background: none; color: inherit; font: inherit; text-align: left; }
