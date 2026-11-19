@@ -16,29 +16,28 @@ A conferência na janela foi feita pelo protocolo de depuração do WebView2 (cl
 
 Fila de trabalho. P1 a P3 em andamento; P4 é conferência que o usuário faz em casa (aparelho, sistema, chave).
 
-### P1 — uso e custo do dia a dia
-- [ ] Números em pt-BR na conversa: total e tooltip (`session/index.tsx`), `Transcript.tsx`, `ContextMeter.tsx`.
-- [ ] `cd <pasta>; git status` negado no PowerShell: conferir que `cd`/`Set-Location` encadeado passa.
-- [ ] Aviso do modo Isolado não impede o agente de procurar o que não existe na cópia.
-- [ ] OpenCode: regras "ask" sem quem aprove no `run`; edição de arquivos no v2.
-- [ ] Worktree preso por processo do OpenCode ao Aplicar/Descartar.
-- [ ] Turno cancelado registra uso (conferir com cancelamento real).
+### P1 — uso e custo do dia a dia (feito em 2026-11-19)
+- [x] Números em pt-BR na conversa (total, tooltip, linha do tempo, medidor de contexto).
+- [x] `cd <pasta>; git status` negado: é proteção da própria CLI (nega `cd` + `git` no mesmo comando; `cd` sozinho passa). O aviso de sistema orienta `git -C pasta`.
+- [x] Aviso do modo Isolado: conferido com haiku e sonnet, nenhuma busca antes de responder.
+- [x] OpenCode: o `run` passava pelo serviço em segundo plano, que ignorava o `OPENCODE_CONFIG_CONTENT` e aprovava tudo. Agora `--standalone` e, no Restrito, política real (shell só nos padrões liberados, resto negado). Conferido: negado/liberado, edição, sessão retomada.
+- [x] Worktree do OpenCode sai limpo logo depois do turno (servidor próprio termina junto).
+- [x] Turno cancelado: uso gravado; a saída é estimada pelo texto recebido (917 tokens em vez de 4).
 
-### P2 — funções novas sem conferência real
-- [ ] Tarefas agendadas: recorrências, "Executar agora", toast, horário perdido (o boot do Windows fica no P4).
-- [ ] Planejar/Bypass num turno real: "Executar o plano", selos na aba e na barra de status.
-- [ ] Extensão VS Code: Alt+K com seleção, chip de erros, rejeitar trecho em CRLF, "Liberar e repetir".
-- [ ] Inspetor › Pendências: atualização ao vivo, destaque no turno, quatro abas em 340 px.
-- [ ] Auto-work: Pausar, Retomar, Parar, travas, verificação de build/testes.
-- [ ] Codex e gemini: `--add-dir`/`--include-directories` na pasta `_Argus` (CLIs não instaladas aqui).
+### P2 — funções novas (conferidas na janela em 2026-11-19)
+- [x] Tarefas agendadas: criar, "Executar agora" (conversa + "Abrir conversa"), disparo no horário, horário perdido com o app fechado roda ao abrir.
+- [x] Planejar/Bypass: o Planejar do claude não usa mais `--permission-mode plan` (a CLI trocava haiku por sonnet: US$ 0,81 → 0,07); negativas do Planejar não viram alerta. "Executar o plano" e selos de Bypass conferidos.
+- [x] Extensão VS Code: Alt+K mostra uma conversa e insere uma vez; chips "em foco" e "erro do editor"; rejeitar trecho em CRLF; "Liberar e repetir".
+- [x] Inspetor › Pendências: atualização ao vivo e quatro abas no painel.
+- [x] Auto-work: Pausar, Retomar, Parar. Agora usa o mesmo arquivo do inspetor (PROXIMOS_PASSOS.md, PENDENCIAS.md ou TODO.md) e a configuração não depende de `/` ou `\`.
 
-### P3 — melhorias
-- [ ] Checkpoints por turno ("Voltar a este ponto").
-- [ ] Alt+K sem conversa aberta.
-- [ ] Aviso de custo de cache na pílula de modelo (1ª tarefa haiku, troca de modelo).
-- [ ] Servidor aberto pelo agente morre no fim do turno.
-- [ ] Página de Aparência com espaço vazio; ícones por item na paleta Ctrl+K.
-- [ ] Laços de "rodando": deixar o anel como único foco.
+### P3 — melhorias (feito em 2026-11-19)
+- [x] "Voltar a este ponto" em cada pedido (`crates/core/src/checkpoints.rs`, refs `refs/argus/t<id>/<n>`).
+- [x] Alt+K sem conversa à vista.
+- [x] Aviso de custo do cache na pílula de modelo da conversa nova.
+- [x] Servidor do agente: no claude 2.1.220 ele sobreviveu ao turno; quando cai, aviso com "Iniciar pelo Argus".
+- [x] Aparência: tamanho da interface (zoom nativo) e fonte do editor/terminais; ícones na paleta.
+- [x] Um só laço de "rodando" (o anel); pontos, ícone e pendência em andamento ficaram fixos.
 
 ### P4 — o usuário confere em casa
 - [ ] Celular: pareamento pelo QR (cookie `Lax`), fonte Geist, divisória de troca de agente / comando negado / subtítulo na web app.
@@ -49,6 +48,8 @@ Fila de trabalho. P1 a P3 em andamento; P4 é conferência que o usuário faz em
 - [ ] Player tocando música.
 - [ ] "Iniciar com o Windows" no app instalado (reiniciar e ver abrir minimizado).
 - [ ] APK assinado (chave do usuário).
+- [ ] Codex e gemini: instalar e logar as CLIs; conferir `--add-dir`/`--include-directories` na pasta `_Argus` e o Planejar/Bypass deles.
+- [ ] Toast do Windows das tarefas agendadas (o evento sai; a notificação do sistema não foi vista).
 
 ## Como rodar
 
