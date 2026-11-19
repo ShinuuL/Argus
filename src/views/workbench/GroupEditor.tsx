@@ -84,20 +84,35 @@ export function GroupEditor({ path, focused }: Props) {
             markers,
           };
         };
-        const publish = () => useEditorContext.getState().setFocus(snapshot());
+        let published: string | null = null;
+        const publish = () => {
+          const f = snapshot();
+          published = f?.path ?? null;
+          useEditorContext.getState().setFocus(f);
+        };
+        // Editor fechado (aba fechada, grupo removido): o chip "em foco" não fica preso.
+        const forget = () => {
+          const cur = useEditorContext.getState().focus;
+          if (cur && cur.path === published) useEditorContext.getState().setFocus(null);
+          published = null;
+        };
         ed.onDidFocusEditorText(publish);
         ed.onDidChangeCursorSelection(() => {
           if (ed.hasTextFocus() || focusedRef.current) publish();
         });
         ed.onDidChangeModel(() => {
           if (focusedRef.current) publish();
+          else if (!ed.getModel()) forget();
         });
         const markersSub = monaco.editor.onDidChangeMarkers((uris) => {
           const m = ed.getModel();
           const cur = useEditorContext.getState().focus;
           if (m && cur?.path === m.uri.fsPath && uris.some((u) => u.toString() === m.uri.toString())) publish();
         });
-        ed.onDidDispose(() => markersSub.dispose());
+        ed.onDidDispose(() => {
+          markersSub.dispose();
+          forget();
+        });
         ed.addAction({
           id: "argus.addToChat",
           label: "Adicionar à conversa",

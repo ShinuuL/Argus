@@ -96,7 +96,8 @@ export default function MemoryPage() {
             </div>
           </div>
 
-          <div className="sa-head-text">
+          {/* Sem `.sa-head-text`: o flex: 1 dele esticava na coluna e empurrava a lista para o rodapé. */}
+          <div className="sa-mem-head">
             <p className="sa-h">Memória</p>
             <p className="ui-mut ui-sm sa-lead">Uma nota por fato, gravada pelos agentes ou por você. O índice fica em {info.index_path}.</p>
           </div>

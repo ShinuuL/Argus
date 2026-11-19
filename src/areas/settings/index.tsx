@@ -447,7 +447,8 @@ export default function SettingsArea() {
             </PageBody>
           )}
           {page === "autowork" && <AutoworkPage />}
-          <AreaStatus>salvo automaticamente</AreaStatus>
+          {/* Preferências e memória tem Salvar manual: ali o rodapé não promete salvamento automático. */}
+          {page !== "memoria" && <AreaStatus>salvo automaticamente</AreaStatus>}
         </div>
       )}
     </div>

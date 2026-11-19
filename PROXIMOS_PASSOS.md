@@ -266,7 +266,7 @@ Marcado com `[x]` o que foi visto funcionando na janela em 2026-11-14.
 - [ ] Login do claude num terminal (abre o navegador; não foi aberto).
 - [x] Tarefa pelo OpenCode.
 - [x] Web app aberta num celular de verdade (2026-11-19, SM-M556B, Android 16, APK debug 0.1.2): pareamento pelo Funnel (`https://<pc>.ts.net/pair?token=…`), lista de sessões, histórico de uma sessão, aba Servidores e indicador "ao vivo". Ao desligar, `tailscale funnel status` ficou sem configuração. Corrigidos no teste: biblioteca nativa sem alinhamento de 16 KB (aviso do Android 16; `src-mobile/build.rs`), "Último computador usado" vazio aparecendo sem nada salvo (`[hidden]` vencido pelo `section { display:flex }`), texto do rodapé que dizia que nada ia para a internet, números em formato inglês na web app.
-- [ ] App do celular: uma linha `FORTIFY: pthread_mutex_lock called on a destroyed mutex` no buffer de crash no instante de um `am force-stop`. Parece ser só no encerramento forçado; não apareceu no uso normal.
+- [x] App do celular: a linha `FORTIFY: pthread_mutex_lock called on a destroyed mutex` no buffer de crash só apareceu num `am force-stop`; `src-mobile/src/lib.rs` só monta o Tauri (sem thread nem mutex do Argus), então é do encerramento forçado do runtime, não do app. Fechado como externo.
 - [x] Servidor vinculado a uma sessão de agente.
 
 ## Defeitos conhecidos
@@ -461,3 +461,20 @@ Ficou de fora: escolher Planejar/Bypass antes do primeiro envio (hoje só depois
 ## Integração de outros projetos
 
 Os planos para unificar Screen-Mirror, Gerenciador de Portas e AllSeenEye no Argus estão em [PENDENCIAS.md](PENDENCIAS.md).
+
+## Critique 3 e revisão de motion (2026-11-19)
+
+Pendentes do critique 3 (27/40; snapshot em `.impeccable/critique/`):
+- [ ] Popover de opções do composer em texto corrido; "Modo de permissão" (só leitura) compete com "Acesso nesta conversa" (`src/views/session/pills.tsx`).
+- [ ] Pendências: recolher os itens feitos numa linha "N feitos" e mostrar os abertos primeiro (`src/views/session/ChecklistPanel.tsx`).
+- [ ] Início: "Próximas agendadas" e "Pendências abertas" no lugar do vazio; legenda das bolinhas.
+- [ ] Texto de 10,5px (nomes de projeto, cabeçalhos de tabela, Ctrl K) e `.meta` de item selecionado com 3,7:1.
+- [ ] Faixa de abas: botões cobrem o título da última aba com o inspetor aberto.
+- [ ] Diálogo do Bypass com ícone de aviso em vez de informação.
+
+Motion (revisão só pelo código; falta captura quadro a quadro):
+- [ ] Chaves por posição na linha do tempo ao vivo (`Transcript.tsx`, `r${i}`/`s${i}`): itens trocam de conteúdo no lugar e a entrada roda de novo; usar a posição global do item.
+- [ ] Rascunho (TextDelta) vira texto final com fade/salto: reaproveitar o nó.
+- [ ] Ao trocar de conversa todo o histórico anima: só animar o que chega depois do primeiro paint.
+- [ ] 6–7 laços de "rodando" ao mesmo tempo; deixar o halo como único laço focal. Pet em laço infinito.
+- [ ] Tokens de duração e curva em `tokens.css`; entrada curta na paleta, menus e painel de Nova tarefa.

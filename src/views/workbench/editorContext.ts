@@ -100,10 +100,17 @@ export function markersAttachment(f: EditorFocus, root: Path | null | undefined)
 }
 
 /** Pedido com os anexos ligados (arquivo em foco e erros do editor). */
+/** O arquivo em foco é desta conversa? (dentro da pasta dela; sem pasta, sim). */
+export function focusBelongsTo(path: Path, root: Path | null | undefined): boolean {
+  // `relativeTo` devolve o caminho absoluto quando ele está fora de `root`.
+  return !root || !/^([a-zA-Z]:)?\//.test(relativeTo(path, root));
+}
+
 export function withEditorContext(prompt: string, root: Path | null | undefined): string {
   const s = useEditorContext.getState();
   const f = s.focus;
-  if (!f) return prompt;
+  // Arquivo de outro projeto não vai junto (o chip também some).
+  if (!f || !focusBelongsTo(f.path, root)) return prompt;
   const parts = [prompt];
   // O Alt+K já pôs a referência no texto: não repete.
   if (s.attachFocus && !prompt.includes(focusRef(f, root))) parts.push(focusAttachment(f, root));

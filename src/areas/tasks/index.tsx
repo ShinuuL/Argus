@@ -427,9 +427,11 @@ export default function TasksArea() {
     <div className="ui-area">
       <div className="ui-area-main">
         <AreaHeader
-          title="Tarefas"
+          // Mesmo nome do rail: "Tarefa" sozinho já é a sessão com worktree.
+          title="Tarefas agendadas"
           sub={list ? `${list.length} agendada${list.length === 1 ? "" : "s"} · ${active} ligada${active === 1 ? "" : "s"}` : undefined}
-          actions={<Btn onClick={openNew}>Nova tarefa</Btn>}
+          // Com a lista vazia o próprio estado vazio oferece o botão; com o painel aberto, nada a repetir.
+          actions={list && list.length > 0 && !editing ? <Btn onClick={openNew}>Nova tarefa agendada</Btn> : undefined}
         />
         {err && (
           <p className="tka-err tka-pad" role="alert">
@@ -449,9 +451,11 @@ export default function TasksArea() {
               empty={
                 <div className="tka-empty">
                   <span>Nenhuma tarefa agendada. Peça a um agente para rodar algo todo dia, numa data ou de tantas em tantas horas.</span>
-                  <Btn small onClick={openNew}>
-                    Nova tarefa
-                  </Btn>
+                  {!editing && (
+                    <Btn small onClick={openNew}>
+                      Nova tarefa agendada
+                    </Btn>
+                  )}
                 </div>
               }
             />
