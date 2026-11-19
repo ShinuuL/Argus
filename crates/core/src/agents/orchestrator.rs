@@ -127,6 +127,21 @@ pub struct Task {
 /// pergunta, então o bloco `argus-ask` vira o cartão clicável no chat.
 pub const ASK_NOTE: &str = "Quando precisar que o usuário escolha entre opções antes de continuar, termine a resposta com um bloco de código de linguagem argus-ask contendo um objeto JSON com a chave questions: uma lista de perguntas, cada uma com header (rótulo curto), question (a pergunta completa), multiSelect (true ou false) e options (de 2 a 4, cada uma com label e description). Pare logo depois do bloco: a interface mostra as opções e a escolha volta como a próxima mensagem. Pergunta aberta vai em texto normal.";
 
+/// Aviso de sistema completo: isolamento (se for o caso), preferências e memória
+/// (`crate::memory::note`) e o aviso de perguntas com opções. Só depende do modo e
+/// de caminhos, então não muda entre turnos.
+pub fn compose_note(mode: WorkMode, project: &Path, memory: Option<&str>) -> String {
+    let mut parts = vec![];
+    if mode == WorkMode::Isolated {
+        parts.push(isolation_note(project));
+    }
+    if let Some(m) = memory.filter(|m| !m.is_empty()) {
+        parts.push(m.to_string());
+    }
+    parts.push(ASK_NOTE.to_string());
+    parts.join(" ")
+}
+
 pub fn isolation_note(project: &Path) -> String {
     let name = project.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     format!(
@@ -676,10 +691,7 @@ impl Orchestrator {
         TurnOptions {
             model: t.model.clone(),
             // Texto fixo (não muda entre turnos, para não regravar o cache).
-            system_note: Some(match t.mode {
-                WorkMode::Isolated => format!("{} {ASK_NOTE}", isolation_note(&t.project)),
-                _ => ASK_NOTE.to_string(),
-            }),
+            system_note: Some(compose_note(t.mode, &t.project, crate::memory::for_project(&t.project).map(|m| m.0).as_deref())),
         }
     }
 
@@ -851,7 +863,11 @@ impl Orchestrator {
         // de git do projeto neste modo e a lista "Comandos permitidos" do projeto.
         let spec = crate::permissions::apply(spec, &task.project, self.git_levels(&task.project, task.mode), self.permission_mode(&task.project));
         // Os anexos do chat ficam fora da pasta de trabalho: libera a leitura deles.
-        let dirs = crate::attachments::dirs_for(&crate::attachments::root(), id, &[&task.prompt, prompt]);
+        let mut dirs = crate::attachments::dirs_for(&crate::attachments::root(), id, &[&task.prompt, prompt]);
+        // Preferências e memória (`<raiz>/Argus`), que o aviso de sistema aponta.
+        if let Some((_, d)) = crate::memory::for_project(&task.project) {
+            dirs.push(d);
+        }
         let spec = crate::attachments::apply_add_dirs(spec, &dirs);
         // Celulares Android: MCP do Screen-Mirror, se configurado e ligado.
         let spec = crate::devices::apply_agent_mcp(spec, workdir);
@@ -1845,6 +1861,25 @@ mod tests {
         // Tarefa encerrada não troca de provedor.
         let o2 = Orchestrator::new(spies().0, 1);
         assert!(matches!(o2.set_provider(99, "um"), Err(OrchestratorError::UnknownTask(99))));
+    }
+
+    /// A memória entra entre o aviso de isolamento e o de perguntas, sem aspas nem
+    /// quebras, e o texto é o mesmo a cada turno.
+    #[test]
+    fn note_includes_memory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let proj = root.join("proj");
+        crate::memory::ensure(root).unwrap();
+        let mem = crate::memory::note(root, &proj).unwrap();
+        let iso = compose_note(WorkMode::Isolated, &proj, Some(&mem));
+        assert!(iso.starts_with(&isolation_note(&proj)) && iso.ends_with(ASK_NOTE) && iso.contains(&mem), "{iso}");
+        let direct = compose_note(WorkMode::Direct, &proj, Some(&mem));
+        assert_eq!(direct, format!("{mem} {ASK_NOTE}"));
+        assert!(direct.contains("Preferencias.md") && direct.contains("Memoria.md"));
+        assert!(!iso.contains('\n') && !iso.contains('"'));
+        assert_eq!(compose_note(WorkMode::Isolated, &proj, Some(&mem)), iso, "estável entre turnos");
+        assert_eq!(compose_note(WorkMode::Direct, &proj, None), ASK_NOTE);
     }
 
     /// O modo de trabalho é da tarefa: no mesmo orquestrador, uma roda no worktree

@@ -38,6 +38,8 @@ pub fn open_root(app: &AppHandle, dir: PathBuf) -> Result<RootInfo, String> {
     let projects = list_projects(app, &dir)?;
     let paths = existing(&projects);
     *ctx.root.lock().map_err(err)? = Some(dir.clone());
+    // Preferências e memória dos agentes ficam em `<raiz>/Argus`.
+    argus_core::memory::set_root(Some(dir.clone()));
     *ctx.projects.lock().map_err(err)? = projects.clone();
     // O acesso remoto (celular) lista estes projetos e só cria conversa neles.
     ctx.remote.set_projects(paths.clone());

@@ -10,6 +10,7 @@ pub mod extra_agents;
 pub mod extra_chat;
 pub mod fs;
 pub mod media;
+pub mod memory;
 pub mod metrics;
 pub mod monitor;
 pub mod pty;

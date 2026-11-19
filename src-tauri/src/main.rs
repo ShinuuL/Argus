@@ -189,6 +189,9 @@ fn main() {
             // sistema
             system::system_usage,
             system::system_open_url,
+            memory::memory_get,
+            memory::memory_set_prefs,
+            memory::memory_open_obsidian,
             system::system_confirm,
             system::app_info,
         ])
