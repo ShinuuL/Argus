@@ -66,7 +66,15 @@ pub struct RunInfo {
     pids: HashSet<u32>,
     #[serde(skip)]
     stop_requested: bool,
+    /// Desde quando (ms) a execução está sem nenhum processo vivo. Ela só
+    /// termina depois de [`EMPTY_GRACE_MS`]: um elo curto da corrente pode ter
+    /// nascido e morrido entre duas varreduras.
+    #[serde(skip)]
+    empty_since: Option<i64>,
 }
+
+/// Tempo sem processos antes de dar uma execução de fora como encerrada.
+const EMPTY_GRACE_MS: i64 = 3000;
 
 impl RunInfo {
     fn active(&self) -> bool {
@@ -156,6 +164,7 @@ fn start_run(app: &AppHandle, g: &mut Registry, project: &Path, cmd: &DetectedCo
         root,
         pids: HashSet::new(),
         stop_requested: false,
+        empty_since: None,
     };
     if run.kind == RunKind::Build {
         if let Some(db) = app.state::<AppCtx>().orch.db() {
@@ -327,24 +336,47 @@ fn tick(app: &AppHandle, scan: bool) {
     }
 
     // Descendentes vivos entram na execução do ancestral antes de decidir quem acabou.
-    let adotar: Vec<(u64, u32)> = owned
+    // Processo mais antigo que a execução não é dela (PID reaproveitado).
+    let started_ms = |id: u64| g.runs.iter().find(|r| r.id == id).map_or(0, |r| r.started_at);
+    let mut adotar: Vec<(u64, u32)> = owned
         .iter()
         .filter(|p| !g.runs.iter().any(|r| r.pids.contains(&p.pid)))
-        .filter_map(|p| run_of_ancestor(&parent_of, &g.runs, p.pid).map(|id| (id, p.pid)))
+        .filter_map(|p| run_of_ancestor(&parent_of, &g.runs, p.pid).map(|id| (id, p)))
+        .filter(|(id, p)| (p.started_at as i64) * 1000 + 1000 >= started_ms(*id))
+        .map(|(id, p)| (id, p.pid))
         .collect();
+    // Execução que ficou sem processos (um elo intermediário morreu entre duas
+    // varreduras e o filho perdeu o ancestral): adota processo novo que roda na
+    // pasta do projeto dela e nasceu depois dela.
+    for r in g.runs.iter().filter(|r| r.active() && r.pty.is_none() && !r.pids.iter().any(|p| alive.contains(p))) {
+        for p in &owned {
+            let free = !g.runs.iter().any(|x| x.pids.contains(&p.pid)) && !adotar.iter().any(|(_, q)| *q == p.pid);
+            let here = p.cwd.as_deref().is_some_and(|c| c.starts_with(&r.root) || c.starts_with(&r.project));
+            if free && here && (p.started_at as i64) * 1000 + 1000 >= r.started_at {
+                adotar.push((r.id, p.pid));
+            }
+        }
+    }
     for (id, pid) in adotar {
         if let Some(r) = g.runs.iter_mut().find(|r| r.id == id) {
             r.pids.insert(pid);
         }
     }
 
-    // Execuções de fora: terminam quando todos os processos reconhecidos somem.
-    let gone: Vec<u64> = g
-        .runs
-        .iter()
-        .filter(|r| r.active() && r.pty.is_none() && !r.pids.iter().any(|p| alive.contains(p)))
-        .map(|r| r.id)
-        .collect();
+    // Execuções de fora: terminam quando todos os processos reconhecidos somem
+    // e continuam sumidos por EMPTY_GRACE_MS.
+    let now = now_ms();
+    let mut gone: Vec<u64> = Vec::new();
+    for r in g.runs.iter_mut().filter(|r| r.active() && r.pty.is_none()) {
+        if r.pids.iter().any(|p| alive.contains(p)) {
+            r.empty_since = None;
+        } else {
+            let since = *r.empty_since.get_or_insert(now);
+            if now - since >= EMPTY_GRACE_MS {
+                gone.push(r.id);
+            }
+        }
+    }
     for id in gone {
         finish(app, &mut g, id, None);
     }
@@ -653,6 +685,7 @@ mod tests {
             root: "/p".into(),
             pids: HashSet::new(),
             stop_requested: false,
+            empty_since: None,
         };
         let v = serde_json::to_value(&r).unwrap();
         assert_eq!(v["kind"], "servidor");

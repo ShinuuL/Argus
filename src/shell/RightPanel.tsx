@@ -5,7 +5,6 @@ import ExplorerView from "@/views/explorer";
 import { AgentsPanel } from "@/views/agentmap/AgentsPanel";
 import { ChangesPanel, diffFiles } from "@/views/session/panels";
 import { Tab, Tabs } from "@/ui";
-import { Icon } from "./icons";
 import type { ActiveContext } from "./useActiveContext";
 
 
@@ -33,7 +32,8 @@ function useChangeCount(taskId: TaskId | null, project: Path | null): number {
 
 /**
  * Inspetor da área de conversas (Ctrl+.): Alterações (diff com Aplicar e
- * Descartar), Arquivos e Agentes. "Tela cheia" abre a área Agentes.
+ * Descartar), Arquivos e Agentes. O mapa grande abre pelo botão do próprio
+ * Mapa de agentes (um só ícone de expandir no canto).
  * Servidores virou área própria (barra de ícones).
  */
 export function RightPanel({ ctx }: { ctx: ActiveContext }) {
@@ -49,11 +49,6 @@ export function RightPanel({ ctx }: { ctx: ActiveContext }) {
             {t.label}
           </Tab>
         ))}
-        {tab === "agents" && (
-          <button className="tb-btn rp-full" title="Abrir agentes em tela cheia" aria-label="Abrir agentes em tela cheia" onClick={() => useLayout.getState().setArea("agents")}>
-            <Icon name="expand" size={13} />
-          </button>
-        )}
       </Tabs>
       <div className="rp-scroll" role="tabpanel">
         {tab === "files" && <ExplorerView />}

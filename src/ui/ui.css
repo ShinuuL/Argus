@@ -73,6 +73,7 @@ table.ui-t { width: 100%; border-collapse: collapse; font-size: 12px; }
 
 /* Utilitários do mockup e contêiner de área em tela cheia. */
 .ui-mut { color: var(--text-2); }
+.ui-it.on .ui-mut { color: var(--text-2-on-selection); }
 .ui-mono { font-family: var(--font-mono-family); }
 .ui-sm { font-size: 11px; }
 .ui-pad { padding: 18px 22px; }

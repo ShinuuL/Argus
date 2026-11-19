@@ -123,6 +123,10 @@ pub struct Task {
 
 /// Aviso de ambiente para o agente que roda numa cópia isolada. Uma linha só, sem
 /// aspas nem caracteres especiais de shell: vai como argumento de linha de comando.
+/// Como o agente faz uma pergunta com opções: no `-p` não há ferramenta de
+/// pergunta, então o bloco `argus-ask` vira o cartão clicável no chat.
+pub const ASK_NOTE: &str = "Quando precisar que o usuário escolha entre opções antes de continuar, termine a resposta com um bloco de código de linguagem argus-ask contendo um objeto JSON com a chave questions: uma lista de perguntas, cada uma com header (rótulo curto), question (a pergunta completa), multiSelect (true ou false) e options (de 2 a 4, cada uma com label e description). Pare logo depois do bloco: a interface mostra as opções e a escolha volta como a próxima mensagem. Pergunta aberta vai em texto normal.";
+
 pub fn isolation_note(project: &Path) -> String {
     let name = project.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     format!(
@@ -671,7 +675,11 @@ impl Orchestrator {
     fn turn_options(&self, t: &Task) -> TurnOptions {
         TurnOptions {
             model: t.model.clone(),
-            system_note: (t.mode == WorkMode::Isolated).then(|| isolation_note(&t.project)),
+            // Texto fixo (não muda entre turnos, para não regravar o cache).
+            system_note: Some(match t.mode {
+                WorkMode::Isolated => format!("{} {ASK_NOTE}", isolation_note(&t.project)),
+                _ => ASK_NOTE.to_string(),
+            }),
         }
     }
 
@@ -1868,12 +1876,17 @@ mod tests {
         assert_eq!((t.mode, t.workdir.as_deref()), (WorkMode::Direct, Some(proj.as_path())));
         assert!(!worktree_path(&proj, direct).exists(), "modo direto não cria worktree");
 
-        // O agente isolado é avisado de onde está; o direto, não.
+        // O agente isolado é avisado de onde está; o direto, não. Os dois recebem
+        // o aviso de perguntas com opções (bloco argus-ask).
         let seen = seen.lock().unwrap().clone();
         let note = seen[0].opts.system_note.clone().unwrap();
         assert!(note.contains("git worktree") && note.contains("proj") && note.contains(&proj.display().to_string()), "{note}");
+        assert!(note.contains("argus-ask"));
+        // Vai como argumento (no Windows, pelo cmd): sem quebra de linha nem aspas.
         assert!(!note.contains('\n') && !note.contains('"'));
-        assert_eq!(seen[1].opts.system_note, None);
+        let direct_note = seen[1].opts.system_note.clone().unwrap();
+        assert!(!direct_note.contains("git worktree") && direct_note.contains("argus-ask"));
+        assert!(!direct_note.contains('\n') && !direct_note.contains('"'));
         assert_eq!(seen[1].cwd, proj);
 
         // Direto: o diff é o da pasta em relação ao último commit, com os arquivos novos,

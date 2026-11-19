@@ -407,6 +407,10 @@ Falta:
     - Pendente: "Padrão da CLI" hoje resolve para o modelo de 1M; avaliar um padrão de janela menor para conversas comuns.
     - Pendente: medir de novo uma sessão longa com as duas opções e comparar `cache_write` por turno.
 16. **Refazer o ícone do app (não crítico).** O olho atual é provisório; redesenhar o ícone do Argus (janela, barra de tarefas, instalador e web app do celular).
+17. **Pendência visual do critique: aba Celular com outra linguagem visual.** O painel do Screen-Mirror (iframe) não aceita tema: `web/app.js` não lê query string nem escuta `postMessage`. A faixa do Argus em volta já usa os tokens; o miolo continua com o visual do Screen-Mirror. Para alinhar sem tocar no CSS dele por fora, o Screen-Mirror precisaria expor:
+    - parâmetros de tema na URL (ex.: `?accent=%23778da9&bg=%230d1b2a&surface=%231b263b&text=%23e0e1dd&radius=6`) aplicados como variáveis CSS na raiz;
+    - ou um `window.addEventListener("message")` que aceite `{ type: "theme", tokens: {...} }` só da origem do Argus, para trocar o tema sem recarregar quando o usuário muda de tema;
+    - o `web/style.css` dele já tem variáveis na raiz (`--bg`, `--surface`, `--border`, `--text`, `--muted`, `--accent`, `--accent-text`), mas claras e sem raio; bastaria sobrescrevê-las pelos dois caminhos acima, somar `--radius` e ter um modo escuro.
 
 ## Notas
 

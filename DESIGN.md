@@ -20,6 +20,12 @@ colors:
   state-warn: "#e8b04a"
   state-err: "#ff8f7a"
   state-run: "#6cb6ff"
+  ardosia-accent: "#2bb3b1"
+  ardosia-accent-text: "#5fd4d1"
+  grafite-accent: "#e0a23b"
+  grafite-accent-text: "#f0bd66"
+  noite-accent: "#8b7cf6"
+  noite-accent-text: "#b0a6ff"
 typography:
   display:
     fontFamily: "Geist Variable, Segoe UI, system-ui, sans-serif"
@@ -166,6 +172,12 @@ Paleta fria e dessaturada de tinta, ardósia e osso, com um único destaque por 
 ### Primary
 - **Azul Porto** (harbor-blue): o destaque do Oceano. Fundo do botão primário, botão Enviar, pílula ligada, preenchimento de barras de progresso e de contexto, marca de soltura de aba, o quadrado do logotipo. Em texto ele não é usado puro (contraste 4,4:1 sobre a superfície): para link, ícone ativo e item "novo" usa-se o **Azul Porto Claro** (harbor-blue-text), misturado com o osso.
 - **Tinta sobre Porto** (on-harbor): texto sobre o destaque; no Oceano é o próprio fundo escuro.
+
+### Destaques dos outros temas
+O Oceano continua o padrão. Os outros três temas trocam só o destaque (e o tom claro dele, usado em texto, ícone ativo e foco); os papéis são os mesmos do Azul Porto e do Azul Porto Claro.
+- **Destaque Ardósia** (ardosia-accent, #2bb3b1) e **Ardósia Claro** (ardosia-accent-text, #5fd4d1): tema Ardósia (`data-theme="ciano"`).
+- **Destaque Grafite** (grafite-accent, #e0a23b) e **Grafite Claro** (grafite-accent-text, #f0bd66): tema Grafite (`data-theme="ambar"`).
+- **Destaque Noite** (noite-accent, #8b7cf6) e **Noite Claro** (noite-accent-text, #b0a6ff): tema Noite (`data-theme="violeta"`).
 
 ### Neutral
 - **Tinta Funda** (ink-deep): fundo do app, da barra superior, da barra de ícones, da barra de status e da coluna de conversa.

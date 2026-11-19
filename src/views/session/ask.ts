@@ -72,6 +72,25 @@ function parseQuestion(raw: unknown): AskQuestion | null {
  * Lê a entrada da ferramenta e devolve as perguntas, ou null se não der para
  * mostrar como cartão (formato desconhecido, sem opções...).
  */
+/**
+ * No `claude -p` a ferramenta de pergunta não existe: o Argus pede ao agente
+ * (prompt de sistema) que escreva as perguntas com opções num bloco
+ * ```argus-ask com JSON `{ "questions": [...] }`, no mesmo formato da ferramenta.
+ * Devolve o texto sem o bloco e as perguntas lidas (null se não houver bloco válido).
+ */
+export function splitAskBlock(text: string): { text: string; ask: AskQuestion[] | null } {
+  const m = /```argus-ask\s*\n([\s\S]*?)\n?```/.exec(text);
+  if (!m) return { text, ask: null };
+  let ask: AskQuestion[] | null = null;
+  try {
+    ask = parseAsk(JSON.parse(m[1]));
+  } catch {
+    ask = null;
+  }
+  if (!ask) return { text, ask: null };
+  return { text: (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim(), ask };
+}
+
 export function parseAsk(input: unknown): AskQuestion[] | null {
   const o = obj(input);
   if (!o) return null;

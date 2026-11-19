@@ -478,6 +478,42 @@
           "#a0cefd",
           "#e2f0ff"
         ]
+      },
+      "ardosia-accent": {
+        "role": "primary",
+        "displayName": "Destaque Ardósia",
+        "approxHex": "#2bb3b1",
+        "purpose": "Destaque do tema Ardósia (ciano): botão primário, envio, pílula ligada, barras. Não é o tema padrão (Oceano)."
+      },
+      "ardosia-accent-text": {
+        "role": "primary",
+        "displayName": "Destaque Ardósia Claro",
+        "approxHex": "#5fd4d1",
+        "purpose": "Texto/ícone de destaque e foco no tema Ardósia. Não é o tema padrão (Oceano)."
+      },
+      "grafite-accent": {
+        "role": "primary",
+        "displayName": "Destaque Grafite",
+        "approxHex": "#e0a23b",
+        "purpose": "Destaque do tema Grafite (âmbar): botão primário, envio, pílula ligada, barras. Não é o tema padrão (Oceano)."
+      },
+      "grafite-accent-text": {
+        "role": "primary",
+        "displayName": "Destaque Grafite Claro",
+        "approxHex": "#f0bd66",
+        "purpose": "Texto/ícone de destaque e foco no tema Grafite. Não é o tema padrão (Oceano)."
+      },
+      "noite-accent": {
+        "role": "primary",
+        "displayName": "Destaque Noite",
+        "approxHex": "#8b7cf6",
+        "purpose": "Destaque do tema Noite (violeta): botão primário, envio, pílula ligada, barras. Não é o tema padrão (Oceano)."
+      },
+      "noite-accent-text": {
+        "role": "primary",
+        "displayName": "Destaque Noite Claro",
+        "approxHex": "#b0a6ff",
+        "purpose": "Texto/ícone de destaque e foco no tema Noite. Não é o tema padrão (Oceano)."
       }
     }
   },

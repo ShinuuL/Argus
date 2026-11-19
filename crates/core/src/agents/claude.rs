@@ -5,18 +5,54 @@ use super::provider::*;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// O parser guarda quais subagentes estão abertos (ids de tool_use, únicos
 /// entre sessões), por isso o provedor pode ser compartilhado entre tarefas.
 #[derive(Debug, Default, Clone)]
 pub struct ClaudeProvider {
     parser: Arc<Mutex<StreamParser>>,
+    /// Opções que a CLI instalada aceita (lidas do `--help` na primeira vez).
+    flags: Arc<OnceLock<CliFlags>>,
+}
+
+/// Opções recentes do `claude` que o Argus usa quando existem. Uma CLI antiga
+/// recusaria a opção desconhecida e todo turno falharia.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CliFlags {
+    pub exclude_dynamic: bool,
+    pub partial_messages: bool,
+}
+
+impl CliFlags {
+    pub const ALL: CliFlags = CliFlags { exclude_dynamic: true, partial_messages: true };
+
+    /// Lê do texto do `claude --help`.
+    pub fn from_help(help: &str) -> Self {
+        CliFlags {
+            exclude_dynamic: help.contains("--exclude-dynamic-system-prompt-sections"),
+            partial_messages: help.contains("--include-partial-messages"),
+        }
+    }
 }
 
 impl ClaudeProvider {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Provedor com as opções já decididas (testes).
+    pub fn with_flags(flags: CliFlags) -> Self {
+        let p = Self::default();
+        let _ = p.flags.set(flags);
+        p
+    }
+
+    fn flags(&self) -> CliFlags {
+        *self.flags.get_or_init(|| {
+            let help = which_bin("claude").and_then(|b| run_capture(&b, &["--help"])).map(|(_, out)| out).unwrap_or_default();
+            CliFlags::from_help(&help)
+        })
     }
 }
 
@@ -70,20 +106,25 @@ impl AgentProvider for ClaudeProvider {
         // é negada. `acceptEdits` libera só edições (Bash continua bloqueado).
         // No modo de permissão "Auto", `permissions::apply` troca para `auto`.
         // As pastas de anexos entram depois, com `--add-dir` (`attachments::apply_add_dirs`).
+        let flags = self.flags();
         // As seções do prompt de sistema que mudam a cada turno (git status, cwd,
         // memória) vão para a primeira mensagem. Sem isto, o git status muda quando
         // o agente edita um arquivo, o prompt de sistema muda junto e o cache da
         // conversa inteira é regravado no turno seguinte.
-        c.arg("--exclude-dynamic-system-prompt-sections")
+        if flags.exclude_dynamic {
+            c = c.arg("--exclude-dynamic-system-prompt-sections");
+        }
+        c = c
             .arg("--permission-mode")
             .arg("acceptEdits")
             .arg("--output-format")
             .arg("stream-json")
-            .arg("--verbose")
-            // O texto chega aos pedaços enquanto é gerado (vira `TextDelta`).
-            .arg("--include-partial-messages")
-            .cwd(cwd)
-            .stdin(prompt)
+            .arg("--verbose");
+        // O texto chega aos pedaços enquanto é gerado (vira `TextDelta`).
+        if flags.partial_messages {
+            c = c.arg("--include-partial-messages");
+        }
+        c.cwd(cwd).stdin(prompt)
     }
 
     fn parse_line(&self, line: &str) -> Vec<AgentEvent> {
@@ -898,7 +939,7 @@ mod tests {
 
     #[test]
     fn task_command_shape() {
-        let c = ClaudeProvider::new().task_command("oi \"x\" 100%\nlinha", Path::new("."), None, &TurnOptions::default());
+        let c = ClaudeProvider::with_flags(CliFlags::ALL).task_command("oi \"x\" 100%\nlinha", Path::new("."), None, &TurnOptions::default());
         let tail = [
             "--exclude-dynamic-system-prompt-sections",
             "--permission-mode",
@@ -910,16 +951,16 @@ mod tests {
         ];
         assert_eq!(c.args, [&["-p"][..], &tail].concat());
         assert_eq!(c.stdin.as_deref(), Some("oi \"x\" 100%\nlinha"));
-        let c = ClaudeProvider::new().task_command("e agora?", Path::new("."), Some("abc"), &TurnOptions::default());
+        let c = ClaudeProvider::with_flags(CliFlags::ALL).task_command("e agora?", Path::new("."), Some("abc"), &TurnOptions::default());
         assert_eq!(c.args, [&["-p", "--resume", "abc"][..], &tail].concat());
         // Modelo e aviso de ambiente acompanham também a retomada; nunca entra `--add-dir` do projeto.
         let opts = TurnOptions { model: Some("opus[1m]".into()), system_note: Some("cópia isolada do projeto x".into()) };
-        let c = ClaudeProvider::new().task_command("oi", Path::new("."), Some("abc"), &opts);
+        let c = ClaudeProvider::with_flags(CliFlags::ALL).task_command("oi", Path::new("."), Some("abc"), &opts);
         let extra = ["-p", "--resume", "abc", "--model", "opus[1m]", "--append-system-prompt", "cópia isolada do projeto x"];
         assert_eq!(c.args, [&extra[..], &tail].concat());
         assert!(!c.args.iter().any(|a| a == "--add-dir"));
         let bad = TurnOptions { model: Some("--dangerously-skip-permissions".into()), system_note: None };
-        assert_eq!(ClaudeProvider::new().task_command("oi", Path::new("."), None, &bad).args, [&["-p"][..], &tail].concat());
+        assert_eq!(ClaudeProvider::with_flags(CliFlags::ALL).task_command("oi", Path::new("."), None, &bad).args, [&["-p"][..], &tail].concat());
     }
 
     /// Linha real (claude 2.1.220) do fim de um `/compact` com `--resume`.
@@ -928,6 +969,15 @@ mod tests {
         let l = r#"{"type":"system","subtype":"compact_boundary","session_id":"s","compact_metadata":{"trigger":"manual","pre_tokens":39252,"post_tokens":2663}}"#;
         assert!(matches!(&ClaudeProvider::new().parse_line(l)[..],
             [AgentEvent::Compacted { pre_tokens: 39252, post_tokens: 2663, trigger }] if trigger == "manual"));
+    }
+
+    #[test]
+    fn old_cli_gets_no_new_flags() {
+        let old = CliFlags::from_help("--model <model>
+--verbose");
+        assert_eq!(old, CliFlags { exclude_dynamic: false, partial_messages: false });
+        let c = ClaudeProvider::with_flags(old).task_command("oi", Path::new("."), None, &TurnOptions::default());
+        assert!(!c.args.iter().any(|a| a == "--include-partial-messages" || a == "--exclude-dynamic-system-prompt-sections"));
     }
 
     #[test]

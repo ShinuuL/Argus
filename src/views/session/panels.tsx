@@ -85,17 +85,66 @@ function ProjectChanges({ project }: { project: Path | null }) {
       </div>
       <p className="rp-hint">Abra uma sessão para ver o diff dela. Abaixo, os arquivos alterados no projeto (git).</p>
       {files.length === 0 && <p className="rp-empty">Nenhum arquivo alterado.</p>}
-      {files.map(([rel, st]) => (
-        <button
-          key={rel}
-          className="df-file"
-          title={`Abrir ${rel}`}
-          onClick={() => useWorkbench.getState().openFile(`${project}/${rel}`.replace(/\\/g, "/"), true)}
-        >
-          <span className="df-letter">{STATUS_LETTER[st]}</span>
-          <span className="ellipsis">{rel}</span>
-        </button>
+      {groupByTopFolder(files).map((g) => (
+        <ChangeGroup key={g.dir} project={project} group={g} />
       ))}
+    </div>
+  );
+}
+
+/** Quantos arquivos uma pasta mostra antes do "Ver todos". */
+const GROUP_PAGE = 50;
+
+interface FolderGroup {
+  dir: string;
+  files: [string, FileStatus][];
+}
+
+/** Agrupa pela pasta de primeiro nível; arquivos da raiz ficam em "(raiz)". Maiores primeiro. */
+function groupByTopFolder(files: [string, FileStatus][]): FolderGroup[] {
+  const map = new Map<string, [string, FileStatus][]>();
+  for (const f of files) {
+    const rel = f[0].replace(/\\/g, "/");
+    const cut = rel.indexOf("/");
+    const dir = cut > 0 ? rel.slice(0, cut) : "(raiz)";
+    const list = map.get(dir);
+    if (list) list.push(f);
+    else map.set(dir, [f]);
+  }
+  return [...map]
+    .map(([dir, list]) => ({ dir, files: list }))
+    .sort((a, b) => b.files.length - a.files.length || a.dir.localeCompare(b.dir));
+}
+
+/** Uma pasta: cabeçalho com contagem que abre e fecha; pasta com mais de 20 começa fechada. */
+function ChangeGroup({ project, group }: { project: Path; group: FolderGroup }) {
+  const [open, setOpen] = useState(group.files.length <= 20);
+  const [all, setAll] = useState(false);
+  const shown = all ? group.files : group.files.slice(0, GROUP_PAGE);
+  return (
+    <div className="df-group">
+      <button className="df-group-head" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Icon name={open ? "chevronDown" : "chevronRight"} size={12} />
+        <span className="ellipsis">{group.dir}</span>
+        <span className="rp-count">{group.files.length}</span>
+      </button>
+      {open &&
+        shown.map(([rel, st]) => (
+          <button
+            key={rel}
+            className="df-file"
+            title={`Abrir ${rel}`}
+            onClick={() => useWorkbench.getState().openFile(`${project}/${rel}`.replace(/\\/g, "/"), true)}
+          >
+            <span className="df-letter">{STATUS_LETTER[st]}</span>
+            <span className="ellipsis">{rel}</span>
+          </button>
+        ))}
+      {open && !all && group.files.length > GROUP_PAGE && (
+        <button className="df-more" onClick={() => setAll(true)}>
+          Ver todos os {group.files.length}
+        </button>
+      )}
     </div>
   );
 }

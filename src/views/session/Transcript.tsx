@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { api, errorMessage, formatTokens, formatUsd, type Path, type Pricing, type TokenUsage } from "@/api";
 import { Icon } from "@/shell/icons";
 import { MessageView } from "@/views/chat";
-import { isAskTool, parseAsk } from "./ask";
+import { isAskTool, parseAsk, splitAskBlock } from "./ask";
 import { AskCard } from "./AskCard";
 import { Dot, ThinkingRow, TimelineItem, ToolRow, toolSummary } from "./ToolRow";
 import {
@@ -230,23 +230,29 @@ export function Transcript(props: TranscriptProps) {
   };
 
   /** `live` = o turno do item ainda roda; `last` = é o último item do turno. */
-  const item = (entry: ChatEntry, key: string, live: boolean, last: boolean): ReactNode => {
+  /** `awaiting` = é o último turno e o agente parou: uma pergunta ali espera resposta. */
+  const item = (entry: ChatEntry, key: string, live: boolean, last: boolean, awaiting = false): ReactNode => {
     switch (entry.type) {
       case "user":
         return <MessageView key={key} event={{ User: entry.text }} />;
-      case "text":
+      case "text": {
+        // Perguntas com opções escritas no bloco ```argus-ask viram o cartão clicável.
+        const { text, ask } = splitAskBlock(entry.text);
         return (
           <TimelineItem key={key} dot={<Dot status="text" />} className="tl-text">
-            <MessageView event={{ Text: entry.text }} />
+            {text && <MessageView event={{ Text: text }} />}
+            {ask && <AskCard questions={ask} pending={awaiting && last} onAnswer={props.onAnswer} />}
           </TimelineItem>
         );
+      }
       case "thinking":
         return <ThinkingRow key={key} text={entry.text} live={live && last} />;
       case "tool": {
         // Pergunta de múltipla escolha: cartão com as opções, não linha de ferramenta.
         const ask = isAskTool(entry.name) ? parseAsk(entry.input) : null;
         if (ask) {
-          return <AskCard key={key} questions={ask} pending={entry.result == null} onAnswer={props.onAnswer} />;
+          // Turno cancelado ou terminado sem saída da ferramenta: não espera mais nada.
+          return <AskCard key={key} questions={ask} pending={entry.result == null && live} onAnswer={props.onAnswer} />;
         }
         return <ToolRow key={key} name={entry.name} input={entry.input} result={entry.result} live={live} base={props.project ?? null} />;
       }
@@ -342,7 +348,7 @@ export function Transcript(props: TranscriptProps) {
                       </details>
                     </TimelineItem>
                   )}
-                  {rest.map((e, i) => item(e, `r${i}`, live, i === rest.length - 1))}
+                  {rest.map((e, i) => item(e, `r${i}`, live, i === rest.length - 1, t === turns.length - 1 && !taskActive))}
                 </div>
               )}
             </div>

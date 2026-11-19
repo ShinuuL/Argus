@@ -100,6 +100,8 @@
   --bg-control: var(--surface-2);
   --bg-control-hover: color-mix(in srgb, var(--surface-2) 55%, var(--border-strong));
   --bg-selected: var(--selection);
+  /* Texto secundário sobre a seleção: --text-2 puro fica em 3,7:1 sobre a Maré; misturado ao texto passa de 5:1. */
+  --text-2-on-selection: color-mix(in srgb, var(--text-2) 40%, var(--text));
   --bg-status: var(--status-bg);
   --border-control: var(--border-strong);
   --text-strong: var(--text);

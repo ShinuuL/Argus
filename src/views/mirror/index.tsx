@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage, type DeviceList, type MirrorStatus } from "@/api";
 import { Icon } from "@/shell/icons";
 import { useLayout } from "@/store";
+import { Btn } from "@/ui";
 import { missing, STATE_LABEL } from "@/views/devices/status";
 // Reaproveita as fichas de aparelho, o quadro de erro e o iframe da área Dispositivos.
 import "@/views/devices/devices.css";
@@ -94,16 +95,18 @@ export default function MirrorTab() {
         )}
         <span className="mr-spacer" />
         {url && (
-          <button title="Recarregar o painel" onClick={() => setFrameKey((k) => k + 1)}>
+          <Btn variant="ghost" small title="Recarregar o painel" aria-label="Recarregar o painel" onClick={() => setFrameKey((k) => k + 1)}>
             <Icon name="refresh" size={14} />
-          </button>
+          </Btn>
         )}
-        <button
+        <Btn
+          variant="ghost"
+          small
           title="Abrir a área Dispositivos (APKs, pasta do Screen-Mirror, logcat e arquivos)"
           onClick={() => useLayout.getState().setArea("devices")}
         >
           <Icon name="devices" size={14} /> Dispositivos
-        </button>
+        </Btn>
       </div>
 
       {error && <div className="dv-error">{error}</div>}
@@ -122,14 +125,14 @@ export default function MirrorTab() {
           {problem ? (
             <>
               <p className="dv-problem">{problem}</p>
-              <button onClick={() => useLayout.getState().setArea("devices")}>Resolver em Dispositivos</button>
+              <Btn variant="ghost" onClick={() => useLayout.getState().setArea("devices")}>Resolver em Dispositivos</Btn>
             </>
           ) : (
             <>
               <p className="small muted">O Screen-Mirror está parado.</p>
-              <button className="primary" onClick={() => void start()} disabled={busy || !status}>
+              <Btn onClick={() => void start()} disabled={busy || !status}>
                 <Icon name="play" size={14} /> Iniciar
-              </button>
+              </Btn>
             </>
           )}
         </div>
