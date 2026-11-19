@@ -33,7 +33,8 @@ export function useActiveContext(): ActiveContext {
   if (kind?.type === "chat") {
     taskId = kind.task;
     const raw = kind.task != null ? (tasks.find((t) => t.id === kind.task)?.project ?? null) : kind.project;
-    tabProject = raw ? (projects.find((p) => samePath(p.path, raw))?.path ?? null) : null;
+    // Sessão de uma pasta fora da raiz aberta (ou sem raiz): vale a pasta dela.
+    tabProject = raw ? (projects.find((p) => samePath(p.path, raw))?.path ?? raw) : null;
   } else if (kind?.type === "file") {
     tabProject = projectOf(kind.path, projects);
   }

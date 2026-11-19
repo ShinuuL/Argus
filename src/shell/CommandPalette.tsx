@@ -100,12 +100,12 @@ function commands(): Cmd[] {
   }
 
   list.push(
-    { id: "new-chat", group: "Ações", label: "Nova conversa", meta: <span className="kbd">Ctrl N</span>, run: () => wb.openNewChat(app.selected) },
-    { id: "open-folder", group: "Ações", label: "Abrir pasta", run: () => void app.pickRoot() },
-    { id: "refresh", group: "Ações", label: "Atualizar projetos", run: () => void app.refreshRoot() },
-    { id: "inspector", group: "Ações", label: "Alternar o inspetor", meta: <span className="kbd">Ctrl .</span>, run: () => (layout.setArea("chat"), layout.toggleInspector()) },
-    { id: "changes", group: "Ações", label: "Ver alterações da sessão", run: () => layout.showChanges() },
-    { id: "agents", group: "Ações", label: "Ver agentes em tela cheia", run: go("agents") },
+    { id: "new-chat", group: "Ações", lead: <Icon name="chat" size={14} className="pal-ic" />, label: "Nova conversa", meta: <span className="kbd">Ctrl N</span>, run: () => wb.openNewChat(app.selected) },
+    { id: "open-folder", group: "Ações", lead: <Icon name="folderOpen" size={14} className="pal-ic" />, label: "Abrir pasta", run: () => void app.pickRoot() },
+    { id: "refresh", group: "Ações", lead: <Icon name="refresh" size={14} className="pal-ic" />, label: "Atualizar projetos", run: () => void app.refreshRoot() },
+    { id: "inspector", group: "Ações", lead: <Icon name="sidebarRight" size={14} className="pal-ic" />, label: "Alternar o inspetor", meta: <span className="kbd">Ctrl .</span>, run: () => (layout.setArea("chat"), layout.toggleInspector()) },
+    { id: "changes", group: "Ações", lead: <Icon name="diff" size={14} className="pal-ic" />, label: "Ver alterações da sessão", run: () => layout.showChanges() },
+    { id: "agents", group: "Ações", lead: <Icon name="bot" size={14} className="pal-ic" />, label: "Ver agentes em tela cheia", run: go("agents") },
     {
       id: "new-schedule",
       group: "Ações",
@@ -113,7 +113,7 @@ function commands(): Cmd[] {
       keys: "agendar agendamento lembrete cron recorrente tarefas",
       run: () => (layout.setArea("tasks"), requestNewTask()),
     },
-    { id: "mirror", group: "Ações", label: "Espelhar celular como aba", keys: "celular espelhamento screen mirror android", run: () => wb.openMirror() },
+    { id: "mirror", group: "Ações", lead: <Icon name="phone" size={14} className="pal-ic" />, label: "Espelhar celular como aba", keys: "celular espelhamento screen mirror android", run: () => wb.openMirror() },
   );
 
   for (const a of AREAS) {

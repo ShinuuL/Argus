@@ -2,7 +2,7 @@
 .pal-scrim { position: fixed; inset: 0; z-index: 100; background: var(--scrim); display: flex; justify-content: center; align-items: flex-start; padding-top: 70px; }
 .pal { width: 560px; max-width: calc(100vw - 32px); max-height: 70vh; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-xl); box-shadow: 0 30px 80px -20px var(--shadow); overflow: hidden; color: var(--text); }
 .pal-top { display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--border); }
-.pal-input { flex: 1; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; padding: 12px 0; outline: none; }
+.pal-input { flex: 1; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 14px; padding: 12px 0 12px 4px; outline: none; }
 .pal-list { overflow-y: auto; padding: 6px 0; }
 .pal-h { margin: 0; padding: 6px 14px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); font-weight: 500; }
 .pal-it { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 14px; background: none; border: 0; border-radius: 0; color: var(--text-2); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; }

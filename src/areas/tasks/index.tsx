@@ -3,6 +3,7 @@
  * horário. Rodam só com o Argus aberto; o que venceu com ele fechado roda uma vez
  * ao abrir (marcado "atrasada"). Cada execução vira uma conversa normal.
  */
+import { Icon } from "@/shell/icons";
 import { useCallback, useEffect, useState } from "react";
 import {
   api,
@@ -413,9 +414,10 @@ export default function TasksArea() {
           <Btn small variant="ghost" onClick={() => void act(api.schedulesRunNow(s.id))}>
             Executar agora
           </Btn>
-          <Btn small variant="bad" onClick={() => void remove(s)} aria-label={`Apagar ${s.name}`}>
-            Apagar
-          </Btn>
+          {/* Ação destrutiva discreta: ícone, sem botão vermelho repetido em cada linha. */}
+          <button type="button" className="ui-icon-btn tk-del" onClick={() => void remove(s)} aria-label={`Apagar ${s.name}`} title="Apagar tarefa agendada">
+            <Icon name="trash" size={14} />
+          </button>
         </div>
       ),
     },

@@ -29,3 +29,7 @@
 .tka-days button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .tka-note { margin: 0; line-height: 1.45; }
 .tka-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Apagar: ícone discreto; fica vermelho só ao passar o mouse ou com foco. */
+.tk-del { display: inline-grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: none; color: var(--text-2); }
+.tk-del:hover, .tk-del:focus-visible { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, transparent); }

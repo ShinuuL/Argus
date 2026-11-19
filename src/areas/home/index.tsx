@@ -199,7 +199,14 @@ export default function HomeArea() {
           )}
           <section className="hm-card hm-list">
             <h2 className="hm-ttl">Projetos recentes</h2>
-            {recent.length === 0 && <div className="ui-empty">Nenhum projeto na raiz atual.</div>}
+            {recent.length === 0 && (
+              <div className="ui-empty">
+                Nenhum projeto aberto.{" "}
+                <button type="button" className="pop-link" onClick={() => void useApp.getState().pickRoot()}>
+                  Abrir pasta raiz
+                </button>
+              </div>
+            )}
             {recent.map(({ p, sessions, running }) => {
               const st = statuses[p.path];
               const dirty = !!st && st.changed_files.length > 0;

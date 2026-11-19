@@ -37,6 +37,8 @@ export function Popover({ anchor, open, onClose, ariaLabel, width = 320, classNa
   useLayoutEffect(() => {
     if (!open || !anchor.current) return setPos(undefined);
     const r = anchor.current.getBoundingClientRect();
+    // Botão escondido (aba oculta): não abre solto no canto da janela.
+    if (r.width === 0 && r.height === 0) return onClose(false), setPos(undefined);
     const below = window.innerHeight - r.bottom - 8;
     const above = r.top - 8;
     const up = below < 240 && above > below;
@@ -56,6 +58,8 @@ export function Popover({ anchor, open, onClose, ariaLabel, width = 320, classNa
     if (!placed || !pop.current) return;
     const first =
       pop.current.querySelector<HTMLElement>("[data-autofocus]") ??
+      // Num grupo de opções, o foco vai para a marcada (não para a primeira).
+      pop.current.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]') ??
       pop.current.querySelector<HTMLElement>("button:not(:disabled), input:not(:disabled)");
     (first ?? pop.current).focus();
   }, [placed]);

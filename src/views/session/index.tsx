@@ -784,7 +784,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
               className="cv-agent"
               title={`Agente: ${providerName(task.provider)}\nModelo: ${task.model ?? "padrão da CLI"}\nModo de trabalho: ${WORK_MODE_LABEL[task.mode]}${task.handoff ? "\nO próximo turno leva o resumo da conversa para o agente novo." : ""}`}
             >
-              {providerName(task.provider)} · {task.model ?? "modelo padrão"}
+              {task.model ?? "modelo padrão"}
             </span>
           )}
           {task?.access === "bypass" && <BypassBadge />}
