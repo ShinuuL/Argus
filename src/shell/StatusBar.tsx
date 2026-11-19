@@ -1,3 +1,4 @@
+import { BypassBadge } from "@/views/session/pills";
 import { useRef } from "react";
 import { isTaskActive } from "@/api";
 import { useApp, useLayout, useWorkbench } from "@/store";
@@ -45,6 +46,11 @@ function FocusInfo() {
   return (
     <>
       {task && <span className="sb-item">● {task.provider}</span>}
+      {task?.access === "bypass" && (
+        <span className="sb-item">
+          <BypassBadge compact />
+        </span>
+      )}
       {status?.branch && <span className="sb-item">{status.branch}</span>}
       {changed > 0 && (
         <button className="wb-sbtn sb-item" title="Ver as alterações no inspetor" onClick={() => useLayout.getState().showChanges()}>

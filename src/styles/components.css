@@ -191,3 +191,20 @@ pre.diff { margin: 0 10px 10px; padding: 8px; background: var(--bg-code); border
 .music-player .mp-list li{padding:3px 10px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .music-player .mp-list li:hover{background:var(--bg-hover)}
 .music-player .mp-list li.active{color:var(--accent-text)}
+
+/* Modo de acesso da conversa: selo do Bypass e aviso do Planejar. */
+.bypass-badge { flex: none; display: inline-flex; align-items: center; padding: 1px 7px; border: 1px solid var(--err); border-radius: var(--radius-pill); background: var(--err-bg); color: var(--err); font-size: 11px; font-weight: 600; line-height: 16px; cursor: default; }
+.bypass-badge.compact { padding: 0 5px; font-size: 10px; line-height: 14px; margin-left: 4px; }
+.pop-tag.bypass-tag { color: var(--err); border-color: var(--err); }
+.cv-agent.access-plan { min-width: 0; flex: none; color: var(--text); }
+.cv-plan { display: flex; align-items: center; gap: 10px; padding: 0 4px; }
+
+/* Chips do editor acima da caixa de mensagem (arquivo em foco, erros do editor). */
+.ed-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 4px; }
+.ed-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 2px 9px; border: 1px dashed var(--border-control); border-radius: var(--radius-pill); background: transparent; color: var(--text-faint); font-size: 12px; cursor: pointer; }
+.ed-chip.on { border-style: solid; background: var(--bg-control); color: var(--text); }
+.ed-chip.err.on { border-color: var(--err); }
+.ed-chip:hover { border-color: var(--accent); }
+.ed-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ed-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.ed-chip-meta { flex: none; color: var(--text-faint); }

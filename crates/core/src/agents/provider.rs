@@ -130,6 +130,8 @@ pub struct TurnOptions {
     /// Aviso curto sobre o ambiente (cópia isolada do projeto). O claude o recebe
     /// por `--append-system-prompt`; quem não tem isso prefixa o primeiro pedido.
     pub system_note: Option<String>,
+    /// Modo de acesso da conversa (Planejar / normal / Bypass).
+    pub access: crate::permissions::AccessMode,
 }
 
 /// Um modelo que a CLI aceita.

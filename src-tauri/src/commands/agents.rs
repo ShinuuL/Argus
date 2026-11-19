@@ -277,6 +277,14 @@ pub async fn task_set_model(ctx: State<'_, AppCtx>, id: TaskId, model: Option<St
     ctx.orch.set_model(id, model.as_deref()).map_err(err)
 }
 
+/// Troca o modo de acesso da conversa ("plan", "normal" ou "bypass"); vale a
+/// partir do próximo turno. O Bypass só chega aqui depois da confirmação na tela.
+#[tauri::command]
+pub async fn task_set_access(ctx: State<'_, AppCtx>, id: TaskId, access: String) -> Result<(), String> {
+    let a = argus_core::permissions::AccessMode::parse(&access).ok_or_else(|| format!("modo de acesso desconhecido: {access}"))?;
+    ctx.orch.set_access(id, a).map_err(err)
+}
+
 /// Troca o agente (provedor) da tarefa, com o turno parado. O próximo turno abre
 /// (ou retoma) a sessão do provedor novo e leva o resumo da conversa.
 #[tauri::command]
@@ -327,6 +335,18 @@ pub async fn task_subagent_history(ctx: State<'_, AppCtx>, id: TaskId, subagent:
 #[tauri::command]
 pub async fn task_diff(ctx: State<'_, AppCtx>, id: TaskId) -> Result<String, String> {
     ctx.orch.diff(id).await.map_err(err)
+}
+
+/// Rejeita as alterações da tarefa num arquivo (volta ao último commit).
+#[tauri::command]
+pub async fn task_revert_file(ctx: State<'_, AppCtx>, id: TaskId, path: String) -> Result<(), String> {
+    ctx.orch.revert_file(id, &path).await.map_err(err)
+}
+
+/// Rejeita um trecho do diff (`hunk` = a linha `@@ -a,b +c,d @@`).
+#[tauri::command]
+pub async fn task_revert_hunk(ctx: State<'_, AppCtx>, id: TaskId, path: String, hunk: String) -> Result<(), String> {
+    ctx.orch.revert_hunk(id, &path, &hunk).await.map_err(err)
 }
 
 /// Aplica as alterações da tarefa no projeto.

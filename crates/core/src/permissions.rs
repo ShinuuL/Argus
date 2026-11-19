@@ -290,6 +290,41 @@ impl PermissionMode {
     }
 }
 
+/// Modo de acesso de uma conversa (por tarefa, escolhido no composer).
+/// - Planejar: o agente só lê e propõe; nada é alterado.
+/// - Normal: vale o modo de permissão (Auto/Restrito) e a política de shell.
+/// - Bypass: o agente roda sem pedir aprovação e sem a política do Argus. Nunca é
+///   o padrão; vale só para a conversa onde foi ligado.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AccessMode {
+    Plan,
+    #[default]
+    Normal,
+    Bypass,
+}
+
+impl AccessMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Plan => "plan",
+            Self::Normal => "normal",
+            Self::Bypass => "bypass",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "plan" => Some(Self::Plan),
+            "normal" => Some(Self::Normal),
+            "bypass" => Some(Self::Bypass),
+            _ => None,
+        }
+    }
+}
+
+/// Configuração do opencode que libera tudo (modo Bypass da conversa).
+pub const OPENCODE_BYPASS_CONFIG: &str = r#"{"permission":"allow"}"#;
+
 fn program_is(spec: &CommandSpec, name: &str) -> bool {
     Path::new(&spec.program).file_stem().is_some_and(|s| s.to_string_lossy().eq_ignore_ascii_case(name))
 }
@@ -362,6 +397,16 @@ pub fn apply(mut spec: CommandSpec, project: &Path, levels: GitLevels, mode: Per
     spec
 }
 
+/// Como `apply`, considerando o modo de acesso da conversa: em Planejar e em
+/// Bypass os argumentos já vêm do provedor (`TurnOptions::access`) e a política
+/// de shell do Argus não entra (Planejar não altera nada; Bypass a desliga).
+pub fn apply_for(spec: CommandSpec, project: &Path, levels: GitLevels, mode: PermissionMode, access: AccessMode) -> CommandSpec {
+    match access {
+        AccessMode::Normal => apply(spec, project, levels, mode),
+        AccessMode::Plan | AccessMode::Bypass => spec,
+    }
+}
+
 /// Padrão que libera exatamente o comando negado (para o atalho "Liberar este
 /// comando neste projeto"). None quando a ferramenta não é de shell.
 pub fn pattern_for_denied(tool: &str, command: &str) -> Option<String> {
@@ -379,6 +424,21 @@ pub fn pattern_for_denied(tool: &str, command: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn access_mode_parse_and_skip_policy() {
+        for m in [AccessMode::Plan, AccessMode::Normal, AccessMode::Bypass] {
+            assert_eq!(AccessMode::parse(m.as_str()), Some(m));
+        }
+        assert_eq!(AccessMode::default(), AccessMode::Normal);
+        assert_eq!(AccessMode::parse("yolo"), None);
+        let spec = CommandSpec::new("claude").arg("-p").arg("--permission-mode").arg("bypassPermissions");
+        let lv = GitLevels::defaults(WorkMode::Isolated);
+        let out = apply_for(spec.clone(), Path::new("."), lv, PermissionMode::Auto, AccessMode::Bypass);
+        assert_eq!(out.args, spec.args, "Bypass não recebe a política do Argus");
+        let out = apply_for(spec.clone(), Path::new("."), lv, PermissionMode::Auto, AccessMode::Normal);
+        assert!(out.args.iter().any(|a| a == "--allowedTools"));
+    }
 
     fn has(v: &[String], s: &str) -> bool {
         v.iter().any(|x| x == s)

@@ -330,3 +330,7 @@ button.tl-diff-no:hover, button.tl-diff-no:focus-visible { opacity: 1; color: va
 .ses-ask-opt-desc { color: var(--text-2); font-size: 11.5px; line-height: 1.4; }
 .ses-ask-foot { display: flex; gap: 8px; align-items: center; }
 .ses-ask-extra { flex: 1; min-width: 0; }
+
+.dt-reject { flex: none; font-family: var(--font-sans); height: 22px; padding: 0 8px; font-size: 11.5px; color: var(--text-2); }
+.dt-reject:hover:not(:disabled) { color: var(--err); }
+.dt-hunk-act { display: flex; justify-content: flex-end; padding: 2px 12px 6px; border-bottom: 1px dashed var(--border); }

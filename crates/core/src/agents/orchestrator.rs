@@ -116,6 +116,9 @@ pub struct Task {
     /// Ocupação da janela de contexto no último pedido do agente principal.
     #[serde(default)]
     pub context: Option<crate::agents::context::ContextUsage>,
+    /// Modo de acesso da conversa (Planejar / normal / Bypass), persistido.
+    #[serde(default)]
+    pub access: crate::permissions::AccessMode,
     /// Sessão e modelo dos provedores que já atenderam a tarefa (por id).
     #[serde(skip)]
     pub others: HashMap<String, ProviderState>,
@@ -271,6 +274,7 @@ impl Orchestrator {
                                 mode: r.mode.as_deref().and_then(WorkMode::parse).unwrap_or_default(),
                                 handoff: r.handoff,
                                 context: r.context.as_deref().and_then(|s| serde_json::from_str(s).ok()),
+                                access: r.access.as_deref().and_then(crate::permissions::AccessMode::parse).unwrap_or_default(),
                                 others: r
                                     .provider_state
                                     .as_deref()
@@ -482,6 +486,7 @@ impl Orchestrator {
             mode,
             handoff: false,
             context: None,
+            access: Default::default(),
             others: HashMap::new(),
         };
         if let Some(db) = &self.inner.db {
@@ -607,6 +612,19 @@ impl Orchestrator {
         Ok(())
     }
 
+    /// Troca o modo de acesso da conversa; vale a partir do próximo turno.
+    pub fn set_access(&self, id: TaskId, access: crate::permissions::AccessMode) -> Result<(), OrchestratorError> {
+        {
+            let mut tasks = self.inner.tasks.lock().unwrap();
+            let t = tasks.get_mut(&id).ok_or(OrchestratorError::UnknownTask(id))?;
+            t.access = access;
+        }
+        if let Some(db) = &self.inner.db {
+            db.set_task_access(id as i64, access.as_str())?;
+        }
+        Ok(())
+    }
+
     /// Troca o agente (provedor) que atende a tarefa, com o turno parado. A tarefa,
     /// a pasta de trabalho e o histórico continuam os mesmos. A sessão e o modelo do
     /// provedor que sai ficam guardados; se o que entra já atendeu a tarefa, a sessão
@@ -692,6 +710,7 @@ impl Orchestrator {
             model: t.model.clone(),
             // Texto fixo (não muda entre turnos, para não regravar o cache).
             system_note: Some(compose_note(t.mode, &t.project, crate::memory::for_project(&t.project).map(|m| m.0).as_deref())),
+            access: t.access,
         }
     }
 
@@ -861,7 +880,7 @@ impl Orchestrator {
         let spec = prov.task_command(prompt, workdir, session, opts);
         // Comandos de shell liberados: o padrão (git de leitura, inspeção), os níveis
         // de git do projeto neste modo e a lista "Comandos permitidos" do projeto.
-        let spec = crate::permissions::apply(spec, &task.project, self.git_levels(&task.project, task.mode), self.permission_mode(&task.project));
+        let spec = crate::permissions::apply_for(spec, &task.project, self.git_levels(&task.project, task.mode), self.permission_mode(&task.project), opts.access);
         // Os anexos do chat ficam fora da pasta de trabalho: libera a leitura deles.
         let mut dirs = crate::attachments::dirs_for(&crate::attachments::root(), id, &[&task.prompt, prompt]);
         // Preferências, memória e notas de projeto: o aviso de sistema aponta
@@ -980,6 +999,32 @@ impl Orchestrator {
         let wt = self.worktree_of(id)?;
         git(&wt, &["add", "-A", "-N"]).await?;
         git(&wt, &["diff", "HEAD"]).await
+    }
+
+    /// Pasta onde a tarefa altera arquivos: o worktree (isolado) ou o projeto (direto).
+    fn change_dir(&self, id: TaskId) -> Result<(Task, PathBuf), OrchestratorError> {
+        let t = self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
+        let dir = if t.mode == WorkMode::Direct { t.project.clone() } else { self.worktree_of(id)? };
+        Ok((t, dir))
+    }
+
+    /// Rejeita as alterações da tarefa num arquivo: volta ao último commit (ou
+    /// apaga o arquivo novo). `path` é relativo à pasta de trabalho, como no diff.
+    pub async fn revert_file(&self, id: TaskId, path: &str) -> Result<(), OrchestratorError> {
+        let (t, dir) = self.change_dir(id)?;
+        if t.state.is_active() {
+            return Err(OrchestratorError::Busy);
+        }
+        revert_file_in(&dir, path, t.mode == WorkMode::Isolated).await
+    }
+
+    /// Rejeita um trecho do diff de um arquivo (`hunk` = a linha `@@ -a,b +c,d @@`).
+    pub async fn revert_hunk(&self, id: TaskId, path: &str, hunk: &str) -> Result<(), OrchestratorError> {
+        let (t, dir) = self.change_dir(id)?;
+        if t.state.is_active() {
+            return Err(OrchestratorError::Busy);
+        }
+        revert_hunk_in(&dir, path, hunk, t.mode == WorkMode::Isolated).await
     }
 
     /// Commita no worktree, faz merge da branch no projeto e remove o worktree.
@@ -1193,6 +1238,89 @@ async fn direct_diff(project: &Path) -> Result<String, OrchestratorError> {
         out.push_str(&String::from_utf8_lossy(&raw.stdout));
     }
     Ok(out)
+}
+
+/// Caminho relativo seguro vindo da tela (sem `..`, absoluto ou opção do git).
+fn safe_rel(path: &str) -> Result<String, OrchestratorError> {
+    let p = path.replace('\\', "/");
+    let bad = p.is_empty()
+        || p.starts_with('/')
+        || p.starts_with('-')
+        || p.contains(':')
+        || p.split('/').any(|c| c == ".." || c.is_empty());
+    if bad {
+        return Err(OrchestratorError::Git(format!("caminho inválido: {path}")));
+    }
+    Ok(p)
+}
+
+/// Volta um arquivo ao último commit; arquivo novo é apagado (e, no isolado, sai
+/// do índice, onde o `add -N` o pôs). No direto o índice do usuário não é tocado.
+async fn revert_file_in(dir: &Path, path: &str, isolated: bool) -> Result<(), OrchestratorError> {
+    let rel = safe_rel(path)?;
+    let tracked = git(dir, &["cat-file", "-e", &format!("HEAD:{rel}")]).await.is_ok();
+    if tracked {
+        git(dir, &["restore", "--source=HEAD", "--worktree", "--", &rel]).await?;
+    } else {
+        if isolated {
+            git(dir, &["rm", "--cached", "-q", "--ignore-unmatch", "--", &rel]).await?;
+        }
+        let f = dir.join(&rel);
+        if f.is_file() {
+            std::fs::remove_file(f)?;
+        }
+    }
+    Ok(())
+}
+
+/// Patch com só um trecho de um arquivo: o cabeçalho do arquivo e o hunk cujo
+/// cabeçalho começa com `hunk` (`@@ -a,b +c,d @@`). Mantém as quebras de linha
+/// originais. None se o trecho não está no diff (o diff mudou).
+pub fn hunk_patch(diff: &str, hunk: &str) -> Option<String> {
+    let want = hunk.trim_end_matches(['\r', '\n']);
+    let want = match want.find(" @@") {
+        Some(i) => &want[..i + 3],
+        None => want,
+    };
+    let lines: Vec<&str> = diff.split_inclusive('\n').collect();
+    let first = lines.iter().position(|l| l.starts_with("@@"))?;
+    let mut out: String = lines[..first].concat();
+    let start = lines.iter().position(|l| l.starts_with(want))?;
+    let end = lines[start + 1..].iter().position(|l| l.starts_with("@@") || l.starts_with("diff --git")).map(|i| start + 1 + i).unwrap_or(lines.len());
+    out.extend(lines[start..end].iter().copied());
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    Some(out)
+}
+
+/// Desfaz um trecho com `git apply -R` (só nos arquivos, sem índice). Arquivo novo
+/// ou apagado tem um trecho só: volta o arquivo inteiro.
+async fn revert_hunk_in(dir: &Path, path: &str, hunk: &str, isolated: bool) -> Result<(), OrchestratorError> {
+    let rel = safe_rel(path)?;
+    if isolated {
+        git(dir, &["add", "-A", "-N"]).await?;
+    }
+    let diff = git(dir, &["diff", "HEAD", "--", &rel]).await?;
+    if diff.trim().is_empty() || diff.lines().any(|l| l.starts_with("new file mode") || l.starts_with("deleted file mode")) {
+        return revert_file_in(dir, &rel, isolated).await;
+    }
+    let patch = hunk_patch(&diff, hunk).ok_or_else(|| OrchestratorError::Git("o trecho não está mais no diff: recarregue as alterações".into()))?;
+    let mut child = build_command(&CommandSpec::new("git"), Some(dir))
+        .args(["apply", "-R", "--whitespace=nowarn", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    if let Some(mut sin) = child.stdin.take() {
+        sin.write_all(patch.as_bytes()).await?;
+        sin.shutdown().await?;
+    }
+    let out = child.wait_with_output().await?;
+    if !out.status.success() {
+        return Err(OrchestratorError::Git(format!("git apply -R: {}", String::from_utf8_lossy(&out.stderr).trim())));
+    }
+    Ok(())
 }
 
 async fn git(dir: &Path, args: &[&str]) -> Result<String, OrchestratorError> {
@@ -1752,6 +1880,57 @@ mod tests {
         }
     }
 
+    /// Rejeitar por arquivo e por trecho, nos dois modos (isolado usa `add -N`).
+    #[tokio::test]
+    async fn revert_file_and_hunk() {
+        for isolated in [false, true] {
+            let d = tempfile::tempdir().unwrap();
+            let dir = d.path();
+            git_repo(dir).await;
+            let base: String = (1..=30).map(|i| format!("l{i}\n")).collect();
+            std::fs::write(dir.join("b.txt"), &base).unwrap();
+            git(dir, &["-c", "user.email=t@t", "-c", "user.name=t", "add", "."]).await.unwrap();
+            git(dir, &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "b"]).await.unwrap();
+            // Dois trechos longe um do outro em b.txt, a.txt alterado e um arquivo novo.
+            let changed = base.replace("l2\n", "l2 mudou\n").replace("l28\n", "l28 mudou\n");
+            std::fs::write(dir.join("b.txt"), &changed).unwrap();
+            std::fs::write(dir.join("a.txt"), "outro\n").unwrap();
+            std::fs::write(dir.join("novo.txt"), "n\n").unwrap();
+            if isolated {
+                git(dir, &["add", "-A", "-N"]).await.unwrap();
+            }
+            let diff = git(dir, &["diff", "HEAD", "--", "b.txt"]).await.unwrap();
+            let hunks: Vec<&str> = diff.lines().filter(|l| l.starts_with("@@")).collect();
+            assert_eq!(hunks.len(), 2, "{diff}");
+            // Só o segundo trecho volta; o primeiro continua.
+            revert_hunk_in(dir, "b.txt", hunks[1], isolated).await.unwrap();
+            let now = std::fs::read_to_string(dir.join("b.txt")).unwrap();
+            assert!(now.contains("l2 mudou") && !now.contains("l28 mudou"), "{now}");
+            assert!(matches!(revert_hunk_in(dir, "b.txt", "@@ -90,1 +90,1 @@", isolated).await, Err(OrchestratorError::Git(_))));
+            revert_file_in(dir, "a.txt", isolated).await.unwrap();
+            assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap().replace('\r', ""), "a\n");
+            revert_file_in(dir, "novo.txt", isolated).await.unwrap();
+            assert!(!dir.join("novo.txt").exists());
+            // `diff` compara o conteúdo (o `status` pode acusar só a data do arquivo).
+            let st = git(dir, &["diff", "HEAD", "--name-only"]).await.unwrap();
+            assert_eq!(st.trim(), "b.txt", "isolado={isolated}");
+            assert!(git(dir, &["ls-files", "--others", "--exclude-standard"]).await.unwrap().trim().is_empty());
+            for bad in ["../x", "/etc/passwd", "C:/x", "-x", "a//b", ""] {
+                assert!(revert_file_in(dir, bad, isolated).await.is_err(), "{bad}");
+            }
+        }
+    }
+
+    #[test]
+    fn hunk_patch_keeps_header_and_one_hunk() {
+        let d = "diff --git a/f b/f\r\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -1,2 +1,2 @@ fn x\n-a\n+b\n c\n@@ -9,1 +9,1 @@\n-y\n+z\n";
+        let p = hunk_patch(d, "@@ -9,1 +9,1 @@").unwrap();
+        assert_eq!(p, "diff --git a/f b/f\r\nindex 1..2 100644\n--- a/f\n+++ b/f\n@@ -9,1 +9,1 @@\n-y\n+z\n");
+        let p = hunk_patch(d, "@@ -1,2 +1,2 @@ fn x").unwrap();
+        assert!(p.ends_with("@@ -1,2 +1,2 @@ fn x\n-a\n+b\n c\n"));
+        assert_eq!(hunk_patch(d, "@@ -5,1 +5,1 @@"), None);
+    }
+
     fn plain_other(root: &tempfile::TempDir) -> PathBuf {
         root.path().join("outro-projeto")
     }
@@ -1793,6 +1972,31 @@ mod tests {
         let o = Orchestrator::with_db(provs, 1, Some(Db::open(&dbp).unwrap()));
         assert_eq!(o.task(id).unwrap().model.as_deref(), Some("gravado"));
         assert_eq!(o.task(id2).unwrap().model.as_deref(), Some("x/padrao"));
+    }
+
+    /// Modo de acesso por conversa: começa normal, vai no turno seguinte, fica no
+    /// banco e não vaza para outras tarefas.
+    #[tokio::test]
+    async fn access_mode_is_per_task_and_persisted() {
+        use crate::permissions::AccessMode;
+        let dir = tempfile::tempdir().unwrap();
+        let dbp = dir.path().join("h.db");
+        let (provs, seen) = spies();
+        let o = Orchestrator::with_db(provs, 1, Some(Db::open(&dbp).unwrap()));
+        let id = o.submit(dir.path(), "um", "primeiro").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        o.set_access(id, AccessMode::Bypass).unwrap();
+        o.reply(id, "segundo").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        let id2 = o.submit(dir.path(), "um", "outra").unwrap();
+        assert_eq!(wait_final(&o, id2).await, TaskState::Completed);
+        let acc: Vec<AccessMode> = seen.lock().unwrap().iter().map(|s| s.opts.access).collect();
+        assert_eq!(acc, [AccessMode::Normal, AccessMode::Bypass, AccessMode::Normal]);
+        drop(o);
+        let (provs, _) = spies();
+        let o = Orchestrator::with_db(provs, 1, Some(Db::open(&dbp).unwrap()));
+        assert_eq!(o.task(id).unwrap().access, AccessMode::Bypass);
+        assert_eq!(o.task(id2).unwrap().access, AccessMode::Normal);
     }
 
     /// Troca de provedor: mesma tarefa e mesma pasta, sessão antiga guardada, sessão

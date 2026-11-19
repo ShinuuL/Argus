@@ -7,6 +7,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ensurePtyListeners, forgetPty } from "./events";
 import type {
+  AccessMode,
   AgentEvent,
   AppInfo,
   AutostartInfo,
@@ -196,6 +197,10 @@ export const taskCreate = (project: Path, provider: string, prompt: string, opts
 export const taskSetModel = (id: TaskId, model: string | null): Promise<void> =>
   invoke("task_set_model", { id, model: model || null });
 
+/** Troca o modo de acesso da conversa (Planejar / normal / Bypass); vale a partir do próximo turno. */
+export const taskSetAccess = (id: TaskId, access: AccessMode): Promise<void> =>
+  invoke("task_set_access", { id, access });
+
 /** Troca o agente (provedor) da tarefa, com o turno parado; o próximo turno leva o resumo da conversa. */
 export const taskSetProvider = (id: TaskId, provider: string): Promise<void> =>
   invoke("task_set_provider", { id, provider });
@@ -253,6 +258,13 @@ export const taskSubagentHistory = (id: TaskId, subagent: string): Promise<Agent
 
 /** Diff da tarefa: o do worktree (isolada) ou o da pasta em relação ao último commit (direta). "" = sem alterações. */
 export const taskDiff = (id: TaskId): Promise<string> => invoke("task_diff", { id });
+
+/** Rejeita as alterações da tarefa num arquivo (caminho do diff): volta ao último commit ou apaga o arquivo novo. */
+export const taskRevertFile = (id: TaskId, path: string): Promise<void> => invoke("task_revert_file", { id, path });
+
+/** Rejeita um trecho do diff de um arquivo (`hunk` = a linha "@@ -a,b +c,d @@"). */
+export const taskRevertHunk = (id: TaskId, path: string, hunk: string): Promise<void> =>
+  invoke("task_revert_hunk", { id, path, hunk });
 
 /** Aplica as alterações da tarefa no projeto. */
 export const taskApply = (id: TaskId): Promise<void> => invoke("task_apply", { id });

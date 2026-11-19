@@ -1,3 +1,4 @@
+import { BypassBadge } from "@/views/session/pills";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent, type PointerEvent } from "react";
 import { languageFor, onProjectChanged, samePath, type Path, type Task } from "@/api";
 import { Icon, type IconName } from "@/shell/icons";
@@ -423,6 +424,7 @@ function EditorGroup({
             >
               <TabIcon kind={kind} task={task} />
               <span className="wb-title">{title}</span>
+              {task?.access === "bypass" && <BypassBadge compact />}
               <span
                 className="wb-x"
                 role="button"

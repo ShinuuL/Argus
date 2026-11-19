@@ -78,13 +78,15 @@ impl AgentProvider for CodexProvider {
     }
 
     fn task_command(&self, prompt: &str, cwd: &Path, session: Option<&str>, opts: &TurnOptions) -> CommandSpec {
-        let mut c = CommandSpec::new("codex")
-            .arg("exec")
-            .arg("--json")
-            .arg("--sandbox")
-            .arg("workspace-write")
-            .arg("-c")
-            .arg("approval_policy=never")
+        use crate::permissions::AccessMode;
+        let c = CommandSpec::new("codex").arg("exec").arg("--json");
+        let c = match opts.access {
+            // Sem aprovação e sem sandbox: só no Bypass da conversa.
+            AccessMode::Bypass => c.arg("--dangerously-bypass-approvals-and-sandbox"),
+            AccessMode::Plan => c.arg("--sandbox").arg("read-only").arg("-c").arg("approval_policy=never"),
+            AccessMode::Normal => c.arg("--sandbox").arg("workspace-write").arg("-c").arg("approval_policy=never"),
+        };
+        let mut c = c
             .arg("--skip-git-repo-check")
             .arg("-C")
             .arg(cwd.to_string_lossy().to_string());
@@ -377,7 +379,7 @@ mod tests {
     #[test]
     fn command_line() {
         let p = CodexProvider::new();
-        let opts = TurnOptions { model: Some("gpt-6.1-sol".into()), system_note: Some("cópia".into()) };
+        let opts = TurnOptions { model: Some("gpt-6.1-sol".into()), system_note: Some("cópia".into()), ..Default::default() };
         let c = p.task_command("oi", Path::new("w"), None, &opts);
         assert_eq!(
             c.args,
@@ -388,6 +390,12 @@ mod tests {
         assert_eq!(c.args[c.args.len() - 3..], ["resume", "0199a213", "-"]);
         assert_eq!(c.stdin.as_deref(), Some("oi"));
         assert!(!c.args.iter().any(|a| a.contains("danger") || a == "--add-dir"));
+        use crate::permissions::AccessMode;
+        let c = p.task_command("oi", Path::new("w"), None, &TurnOptions { access: AccessMode::Plan, ..Default::default() });
+        assert_eq!(c.args[..6], ["exec", "--json", "--sandbox", "read-only", "-c", "approval_policy=never"]);
+        let c = p.task_command("oi", Path::new("w"), None, &TurnOptions { access: AccessMode::Bypass, ..Default::default() });
+        assert_eq!(c.args[..3], ["exec", "--json", "--dangerously-bypass-approvals-and-sandbox"]);
+        assert!(!c.args.iter().any(|a| a == "--sandbox"));
     }
 
     #[test]

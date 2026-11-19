@@ -22,16 +22,23 @@ pub struct ClaudeProvider {
 pub struct CliFlags {
     pub exclude_dynamic: bool,
     pub partial_messages: bool,
+    /// `--permission-mode plan` (modo Planejar da conversa).
+    pub plan: bool,
+    /// `--permission-mode bypassPermissions`; sem ele o Bypass usa
+    /// `--dangerously-skip-permissions`.
+    pub bypass: bool,
 }
 
 impl CliFlags {
-    pub const ALL: CliFlags = CliFlags { exclude_dynamic: true, partial_messages: true };
+    pub const ALL: CliFlags = CliFlags { exclude_dynamic: true, partial_messages: true, plan: true, bypass: true };
 
     /// Lê do texto do `claude --help`.
     pub fn from_help(help: &str) -> Self {
         CliFlags {
             exclude_dynamic: help.contains("--exclude-dynamic-system-prompt-sections"),
             partial_messages: help.contains("--include-partial-messages"),
+            plan: help.contains("\"plan\""),
+            bypass: help.contains("bypassPermissions"),
         }
     }
 }
@@ -114,9 +121,15 @@ impl AgentProvider for ClaudeProvider {
         if flags.exclude_dynamic {
             c = c.arg("--exclude-dynamic-system-prompt-sections");
         }
+        use crate::permissions::AccessMode;
+        c = match opts.access {
+            AccessMode::Plan if flags.plan => c.arg("--permission-mode").arg("plan"),
+            AccessMode::Bypass if flags.bypass => c.arg("--permission-mode").arg("bypassPermissions"),
+            AccessMode::Bypass => c.arg("--dangerously-skip-permissions"),
+            // Sem `plan` na CLI, Planejar cai no padrão (`acceptEdits`).
+            _ => c.arg("--permission-mode").arg("acceptEdits"),
+        };
         c = c
-            .arg("--permission-mode")
-            .arg("acceptEdits")
             .arg("--output-format")
             .arg("stream-json")
             .arg("--verbose");
@@ -954,13 +967,31 @@ mod tests {
         let c = ClaudeProvider::with_flags(CliFlags::ALL).task_command("e agora?", Path::new("."), Some("abc"), &TurnOptions::default());
         assert_eq!(c.args, [&["-p", "--resume", "abc"][..], &tail].concat());
         // Modelo e aviso de ambiente acompanham também a retomada; nunca entra `--add-dir` do projeto.
-        let opts = TurnOptions { model: Some("opus[1m]".into()), system_note: Some("cópia isolada do projeto x".into()) };
+        let opts = TurnOptions { model: Some("opus[1m]".into()), system_note: Some("cópia isolada do projeto x".into()), ..Default::default() };
         let c = ClaudeProvider::with_flags(CliFlags::ALL).task_command("oi", Path::new("."), Some("abc"), &opts);
         let extra = ["-p", "--resume", "abc", "--model", "opus[1m]", "--append-system-prompt", "cópia isolada do projeto x"];
         assert_eq!(c.args, [&extra[..], &tail].concat());
         assert!(!c.args.iter().any(|a| a == "--add-dir"));
-        let bad = TurnOptions { model: Some("--dangerously-skip-permissions".into()), system_note: None };
+        let bad = TurnOptions { model: Some("--dangerously-skip-permissions".into()), ..Default::default() };
         assert_eq!(ClaudeProvider::with_flags(CliFlags::ALL).task_command("oi", Path::new("."), None, &bad).args, [&["-p"][..], &tail].concat());
+    }
+
+    #[test]
+    fn access_modes_args() {
+        use crate::permissions::AccessMode;
+        let mode = |flags: CliFlags, access| {
+            let c = ClaudeProvider::with_flags(flags).task_command("oi", Path::new("."), None, &TurnOptions { access, ..Default::default() });
+            let i = c.args.iter().position(|a| a == "--permission-mode");
+            (i.map(|i| c.args[i + 1].clone()), c.args.iter().any(|a| a == "--dangerously-skip-permissions"))
+        };
+        assert_eq!(mode(CliFlags::ALL, AccessMode::Plan), (Some("plan".into()), false));
+        assert_eq!(mode(CliFlags::ALL, AccessMode::Bypass), (Some("bypassPermissions".into()), false));
+        assert_eq!(mode(CliFlags::ALL, AccessMode::Normal), (Some("acceptEdits".into()), false));
+        let old = CliFlags { plan: false, bypass: false, ..CliFlags::ALL };
+        assert_eq!(mode(old, AccessMode::Bypass), (None, true));
+        assert_eq!(mode(old, AccessMode::Plan), (Some("acceptEdits".into()), false));
+        let f = CliFlags::from_help(r#"--permission-mode <mode> (choices: "acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan")"#);
+        assert!(f.plan && f.bypass);
     }
 
     /// Linha real (claude 2.1.220) do fim de um `/compact` com `--resume`.
@@ -975,7 +1006,7 @@ mod tests {
     fn old_cli_gets_no_new_flags() {
         let old = CliFlags::from_help("--model <model>
 --verbose");
-        assert_eq!(old, CliFlags { exclude_dynamic: false, partial_messages: false });
+        assert_eq!(old, CliFlags { exclude_dynamic: false, partial_messages: false, plan: false, bypass: false });
         let c = ClaudeProvider::with_flags(old).task_command("oi", Path::new("."), None, &TurnOptions::default());
         assert!(!c.args.iter().any(|a| a == "--include-partial-messages" || a == "--exclude-dynamic-system-prompt-sections"));
     }
