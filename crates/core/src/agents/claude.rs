@@ -173,6 +173,9 @@ pub struct PartialUsage {
     /// Ordem de chegada das mensagens.
     order: Vec<String>,
     by_msg: HashMap<String, TokenUsage>,
+    /// Mensagem em stream (`--include-partial-messages`) e caracteres já recebidos:
+    /// a contagem de saída só chega no fim; cancelado no meio, estima ~4 caracteres por token.
+    streaming: Option<(String, u64)>,
 }
 
 impl PartialUsage {
@@ -204,6 +207,32 @@ impl TurnTracker for PartialUsage {
             Some("result") => {
                 self.order.clear();
                 self.by_msg.clear();
+                self.streaming = None;
+            }
+            Some("stream_event") => {
+                let Some(ev) = v.get("event") else { return };
+                match ev.get("type").and_then(Value::as_str) {
+                    Some("message_start") => {
+                        let Some(id) = ev.pointer("/message/id").and_then(Value::as_str) else { return };
+                        self.streaming = Some((id.to_string(), 0));
+                        // Mesmo formato da linha `assistant`: reaproveita a contagem.
+                        if let Some(msg) = ev.get("message") {
+                            let line = serde_json::json!({ "type": "assistant", "message": msg }).to_string();
+                            self.observe(&line, _events);
+                        }
+                    }
+                    Some("content_block_delta") => {
+                        let text = ev.pointer("/delta/text").or_else(|| ev.pointer("/delta/partial_json")).and_then(Value::as_str);
+                        if let (Some(t), Some((id, chars))) = (text, self.streaming.as_mut()) {
+                            *chars += t.chars().count() as u64;
+                            let est = chars.div_ceil(4);
+                            if let Some(u) = self.by_msg.get_mut(id.as_str()) {
+                                u.output_tokens = u.output_tokens.max(est);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
             }
             Some("assistant") => {
                 let Some(us) = v.pointer("/message/usage") else { return };
@@ -1303,6 +1332,18 @@ mod tests {
         assert_eq!(evs, vec![AgentEvent::Usage(sonnet), AgentEvent::Usage(haiku)]);
         // Nada é devolvido duas vezes.
         assert!(t.finish(TurnEnd::Cancelled).is_empty());
+    }
+
+    #[test]
+    fn cancelled_mid_stream_estimates_output() {
+        let prov = ClaudeProvider::new();
+        let mut t = prov.turn_tracker();
+        let mut p = StreamParser::new();
+        let start = r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"m1","model":"claude-haiku-4-5","usage":{"input_tokens":10,"output_tokens":4,"cache_read_input_tokens":0,"cache_creation_input_tokens":100}}}}"#;
+        let delta = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"}}}"#;
+        feed(t.as_mut(), &mut p, &[start, delta, delta]);
+        let evs = t.finish(TurnEnd::Cancelled);
+        assert!(matches!(&evs[..], [AgentEvent::Usage(u)] if u.output_tokens == 57 && u.cache_write == 100), "{evs:?}");
     }
 
     #[test]
