@@ -350,6 +350,12 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   /** Quantidade de itens do chat quando o aviso de "chamada como texto" foi fechado. */
   const [dismissedAt, setDismissedAt] = useState(-1);
   const composer = useRef<ComposerHandle>(null);
+  // Pedido de texto vindo do inspetor (clique numa pendência): só a aba visível atende.
+  const insertReq = useLayout((s) => s.composerInsert);
+  useEffect(() => {
+    if (insertReq && active) composer.current?.insertText(insertReq.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [insertReq]);
   /** Rascunho próprio desta aba enquanto a conversa não tem tarefa (caixa, fila e pasta de anexos). */
   const draftId = draftIdFor(tabId);
   const handoff = useChat((s) => (taskId == null && active ? (s.drafts.new ?? "") : ""));

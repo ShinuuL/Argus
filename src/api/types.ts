@@ -779,3 +779,25 @@ export interface SkillDef {
   shadowed: boolean;
   extra: Record<string, string>;
 }
+
+/** Item `- [ ]`/`- [x]` do markdown de pendências (resposta de `project_checklist`). */
+export interface ChecklistItem {
+  text: string;
+  done: boolean;
+  /** Linha no arquivo (começa em 1). */
+  line: number;
+  depth: number;
+}
+
+export interface ChecklistSection {
+  /** Vazio = itens antes do primeiro título. */
+  title: string;
+  level: number;
+  items: ChecklistItem[];
+}
+
+export interface Checklist {
+  path: Path;
+  name: string;
+  sections: ChecklistSection[];
+}

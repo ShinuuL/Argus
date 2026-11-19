@@ -1,0 +1,40 @@
+/* Inspetor › Pendências: check-list do markdown e tarefas do agente. */
+.ck { gap: 10px; }
+.ck-now { display: grid; gap: 3px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-raised); min-width: 0; }
+.ck-now.live { border-color: color-mix(in srgb, var(--run) 45%, var(--border)); }
+.ck-now-label { font-size: 10.5px; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.ck-now.live .ck-now-label { color: var(--run); }
+.ck-now b { font-size: 12.5px; color: var(--text); }
+.ck-now-item { font-size: 12px; color: var(--text); line-height: 1.4; }
+.ck-now-idle { font-size: 11.5px; color: var(--text-2); }
+
+.ck-sum { flex: none; font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.ck-sum.ok { color: var(--ok); }
+
+.ck-sec { display: grid; gap: 4px; min-width: 0; }
+.ck-sec-head { display: flex; align-items: center; gap: 6px; width: 100%; padding: 2px 0; background: none; border: 0; color: var(--text); font-size: 12px; font-weight: 600; text-align: left; min-width: 0; }
+button.ck-sec-head::before { content: ""; flex: none; width: 0; height: 0; border-left: 4px solid currentColor; border-top: 3.5px solid transparent; border-bottom: 3.5px solid transparent; color: var(--text-2); transition: transform 0.15s ease-out; }
+button.ck-sec-head[aria-expanded="true"]::before { transform: rotate(90deg); }
+.ck-sec-head .ellipsis { flex: 1; }
+.ck-sec-head:focus-visible, .ck-ask:focus-visible { outline: 1px solid var(--focus); outline-offset: 1px; }
+
+.ck-bar { height: 2px; border-radius: var(--radius-pill); background: var(--bg-control); overflow: hidden; }
+.ck-bar > span { display: block; height: 100%; background: var(--ok); transition: width 0.3s ease-out; }
+
+.ck-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.ck-item { min-width: 0; }
+.ck-ask { display: flex; align-items: flex-start; gap: 7px; width: 100%; padding: 4px 6px; background: none; border: 0; border-radius: var(--radius-sm); color: var(--text); font-size: 12px; line-height: 1.4; text-align: left; }
+button.ck-ask:hover { background: var(--bg-hover); }
+.ck-todos .ck-item { display: flex; align-items: flex-start; gap: 7px; padding: 4px 6px; font-size: 12px; line-height: 1.4; }
+.ck-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ck-item.completed .ck-text { color: var(--text-2); text-decoration: line-through; text-decoration-color: var(--text-faint); }
+.ck-item.in_progress, .ck-item.hot > .ck-ask { background: color-mix(in srgb, var(--run) 12%, transparent); border-radius: var(--radius-sm); }
+.ck-item.in_progress .ck-text, .ck-item.hot .ck-text { color: var(--text-strong); }
+
+.ck-mark { flex: none; display: inline-grid; place-items: center; width: 12px; height: 12px; margin-top: 2px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); color: var(--on-accent); }
+.ck-mark.done { background: var(--ok); border-color: var(--ok); }
+.ck-mark.doing { border-color: var(--run); background: radial-gradient(circle, var(--run) 0 3px, transparent 3.5px); }
+@media (prefers-reduced-motion: no-preference) {
+  .ck-mark.doing { animation: ck-pulse 1.6s ease-in-out infinite; }
+}
+@keyframes ck-pulse { 50% { opacity: 0.45; } }

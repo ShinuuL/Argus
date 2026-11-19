@@ -22,12 +22,13 @@ export const AREAS: { id: Area; label: string }[] = [
 ];
 
 /** Abas do inspetor (painel direito da área chat). */
-export type RightTab = "changes" | "files" | "agents";
+export type RightTab = "changes" | "files" | "agents" | "checklist";
 
 export const RIGHT_TABS: { id: RightTab; label: string }[] = [
   { id: "changes", label: "Alterações" },
   { id: "files", label: "Arquivos" },
   { id: "agents", label: "Agentes" },
+  { id: "checklist", label: "Pendências" },
 ];
 
 export interface LayoutState {
@@ -48,6 +49,8 @@ export interface LayoutState {
   diffRev: number;
   /** Paleta de comandos (Ctrl+K) aberta. */
   paletteOpen: boolean;
+  /** Texto pedido para a caixa da conversa ativa; `n` muda a cada pedido. */
+  composerInsert: { text: string; n: number } | null;
 
   setArea(area: Area): void;
   toggleInspector(): void;
@@ -62,6 +65,8 @@ export interface LayoutState {
   /** Abre o inspetor numa aba (vai para a área chat). */
   openRight(tab: RightTab): void;
   setRightTab(tab: RightTab): void;
+  /** Insere texto na caixa da conversa visível (ex.: clique numa pendência). */
+  insertInComposer(text: string): void;
   setBottomOpen(open: boolean): void;
   toggleBottom(): void;
   /** Vai para a área Servidores (filtrada por um dono, se informado). */
@@ -84,6 +89,7 @@ export const useLayout = create<LayoutState>()((set) => ({
   serversFilter: null,
   diffRev: 0,
   paletteOpen: false,
+  composerInsert: null,
 
   setArea: (area) => set({ area, paletteOpen: false }),
   toggleInspector: () => set((s) => ({ inspectorOpen: !s.inspectorOpen, rightOpen: !s.inspectorOpen })),
@@ -96,6 +102,7 @@ export const useLayout = create<LayoutState>()((set) => ({
   toggleRight: () => set((s) => ({ inspectorOpen: !s.inspectorOpen, rightOpen: !s.inspectorOpen })),
   openRight: (rightTab) => set({ area: "chat", inspectorOpen: true, rightOpen: true, rightTab }),
   setRightTab: (rightTab) => set({ rightTab }),
+  insertInComposer: (text) => set((s) => ({ composerInsert: { text, n: (s.composerInsert?.n ?? 0) + 1 } })),
   setBottomOpen: (bottomOpen) => set({ bottomOpen }),
   toggleBottom: () => set((s) => ({ bottomOpen: !s.bottomOpen })),
   openServersPanel: (filter = null) => set({ area: "servers", serversFilter: filter }),

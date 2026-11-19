@@ -4,6 +4,7 @@ import { RIGHT_TABS, useApp, useLayout } from "@/store";
 import ExplorerView from "@/views/explorer";
 import { AgentsPanel } from "@/views/agentmap/AgentsPanel";
 import { ChangesPanel, diffFiles } from "@/views/session/panels";
+import { ChecklistPanel } from "@/views/session/ChecklistPanel";
 import { Tab, Tabs } from "@/ui";
 import type { ActiveContext } from "./useActiveContext";
 
@@ -32,7 +33,7 @@ function useChangeCount(taskId: TaskId | null, project: Path | null): number {
 
 /**
  * Inspetor da área de conversas (Ctrl+.): Alterações (diff com Aplicar e
- * Descartar), Arquivos e Agentes. O mapa grande abre pelo botão do próprio
+ * Descartar), Arquivos, Agentes e Pendências (check-list do markdown do projeto). O mapa grande abre pelo botão do próprio
  * Mapa de agentes (um só ícone de expandir no canto).
  * Servidores virou área própria (barra de ícones).
  */
@@ -54,6 +55,7 @@ export function RightPanel({ ctx }: { ctx: ActiveContext }) {
         {tab === "files" && <ExplorerView />}
         {tab === "changes" && <ChangesPanel taskId={ctx.taskId} project={ctx.project} />}
         {tab === "agents" && <AgentsPanel taskId={ctx.taskId} />}
+        {tab === "checklist" && <ChecklistPanel taskId={ctx.taskId} project={ctx.project} />}
       </div>
     </aside>
   );

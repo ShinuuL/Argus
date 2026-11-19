@@ -63,6 +63,7 @@ import type {
   UsageRow,
   WorkMode,
   WorkModeInfo,
+  Checklist,
 } from "./types";
 
 // ------------------------------------------------------------------ workspace
@@ -100,6 +101,9 @@ export const monitorUnwatch = (): Promise<void> => invoke("monitor_unwatch");
 
 /** Lê um arquivo como texto UTF-8 (limite de 20 MB). */
 export const fsReadFile = (path: Path): Promise<string> => invoke("fs_read_file", { path });
+
+/** Check-list de pendências do projeto (PROXIMOS_PASSOS.md, PENDENCIAS.md ou TODO.md); null se não houver. */
+export const projectChecklist = (project: Path): Promise<Checklist | null> => invoke("project_checklist", { project });
 
 /** Grava o texto no arquivo, substituindo o conteúdo. */
 export const fsWriteFile = (path: Path, content: string): Promise<void> => invoke("fs_write_file", { path, content });

@@ -108,3 +108,9 @@ mod tests {
         assert!(list_dir(&d.path().join("nao-existe"), false).is_err());
     }
 }
+
+/// Check-list de pendências do projeto (PROXIMOS_PASSOS.md, PENDENCIAS.md ou TODO.md na raiz).
+#[tauri::command]
+pub async fn project_checklist(project: PathBuf) -> Result<Option<argus_core::checklist::Checklist>, String> {
+    blocking(move || argus_core::checklist::load(&project)).await
+}
