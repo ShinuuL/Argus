@@ -752,6 +752,11 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
             onOpenSubagent={selectSub}
             providerName={providerName}
             project={project}
+            onAnswer={
+              current || closed || noSession
+                ? undefined
+                : (text) => send(text).catch((e) => setError(errorMessage(e)))
+            }
             group={!current}
             resetKey={current ? current.id : "main"}
             before={

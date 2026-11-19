@@ -1,3 +1,4 @@
+pub mod agentdefs;
 pub mod agents;
 pub mod attachments;
 pub mod autowork;

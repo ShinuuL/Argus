@@ -308,3 +308,25 @@ button.tl-diff-no:hover, button.tl-diff-no:focus-visible { opacity: 1; color: va
 .cv .cv-col { max-width: 688px; padding: 0 24px; }
 .cv .tl-tool { font-size: 11.5px; color: var(--text-2); }
 .cv .tl { gap: 14px; }
+
+/* Pergunta do agente: opções clicáveis em vez da linha de ferramenta com JSON. */
+.ses-ask { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+.ses-ask.live { border-color: color-mix(in srgb, var(--warn) 50%, var(--border)); background: color-mix(in srgb, var(--warn) 5%, var(--surface)); }
+.ses-ask-head { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 12.5px; }
+.ses-ask-head .ic { color: var(--text-2); }
+.ses-ask-q { display: flex; flex-direction: column; gap: 6px; }
+.ses-ask-header { color: var(--text-2); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+.ses-ask-text { color: var(--text); font-size: 13px; line-height: 1.45; }
+.ses-ask-opts { display: flex; flex-direction: column; gap: 6px; }
+.ses-ask-opt {
+  display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 8px 10px; text-align: left;
+  border: 1px solid var(--border-control); border-radius: var(--radius); background: var(--bg); color: var(--text); font: inherit; cursor: pointer;
+}
+.ses-ask-opt:hover:not(:disabled) { border-color: var(--focus); background: var(--bg-hover); }
+.ses-ask-opt:disabled { cursor: default; opacity: .75; }
+.ses-ask-opt.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
+.ses-ask-opt.on:disabled { opacity: 1; }
+.ses-ask-opt-label { font-size: 12.5px; }
+.ses-ask-opt-desc { color: var(--text-2); font-size: 11.5px; line-height: 1.4; }
+.ses-ask-foot { display: flex; gap: 8px; align-items: center; }
+.ses-ask-extra { flex: 1; min-width: 0; }

@@ -141,6 +141,15 @@ fn main() {
             devices::devices_list,
             devices::devices_apks,
             devices::devices_install,
+            // agentes e skills em arquivo
+            agentdefs::agentdefs_list,
+            agentdefs::agentdefs_save,
+            agentdefs::agentdefs_delete,
+            agentdefs::agentdefs_skills,
+            agentdefs::agentdefs_skill_save,
+            agentdefs::agentdefs_skill_delete,
+            agentdefs::agentdefs_sync_md,
+            agentdefs::agentdefs_slug,
             // dependências
             connections::connections_status,
             connections::connections_repo,

@@ -1,23 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage, type DeviceList, type MirrorStatus } from "@/api";
 import { Icon } from "@/shell/icons";
+import { useWorkbench } from "@/store";
 import { ApkBar } from "./ApkBar";
+import { missing, STATE_LABEL } from "./status";
 import "./devices.css";
-
-const STATE_LABEL: Record<string, string> = {
-  device: "conectado",
-  unauthorized: "autorize a depuração no celular",
-  offline: "offline",
-};
-
-/** O que falta para o Screen-Mirror poder iniciar (null = pronto). */
-function missing(s: MirrorStatus): string | null {
-  if (!s.dir) return "Screen-Mirror não encontrado. Informe a pasta do projeto abaixo.";
-  if (!s.node) return "Node.js não encontrado no PATH. O Screen-Mirror precisa do Node 22.18 ou mais novo.";
-  if (s.nodeTooOld) return `Node.js ${s.node} é antigo demais. Instale o 22.18 ou mais novo.`;
-  if (s.needsInstall) return `Dependências não instaladas. Rode \`npm install\` em ${s.dir}.`;
-  return null;
-}
 
 /**
  * Dispositivos: celulares Android pelo Screen-Mirror, que roda como processo
@@ -144,6 +131,12 @@ export default function DevicesView() {
         )}
         {url ? (
           <>
+            <button
+              title="Abre o espelhamento como aba, ao lado da conversa"
+              onClick={() => useWorkbench.getState().openMirror()}
+            >
+              <Icon name="phone" size={14} /> Abrir como aba
+            </button>
             <button title="Recarregar o painel" onClick={() => setFrameKey((k) => k + 1)}>
               <Icon name="refresh" size={14} />
             </button>

@@ -718,3 +718,39 @@ export interface Apk {
   /** Segundos desde a época Unix. */
   modified: number;
 }
+
+/**
+ * Agentes e skills em arquivo (`argus_core::agentdefs`). O formato é o que as
+ * CLIs já leem — `.claude/agents/<nome>.md` com frontmatter —, então o mesmo
+ * arquivo serve para Claude, Codex e companhia.
+ */
+export type AgentScope = "global" | "project";
+
+export interface AgentDef {
+  /** Slug; é também o nome do arquivo. */
+  name: string;
+  /** Frase que diz à CLI quando acionar este agente. */
+  description: string;
+  model: string | null;
+  /** Ferramentas permitidas; vazio = todas. */
+  tools: string[];
+  color: string | null;
+  /** Prompt do agente (corpo do arquivo). */
+  body: string;
+  scope: AgentScope;
+  path: string;
+  /** Existe um de mesmo nome no projeto, que tem prioridade sobre este. */
+  shadowed: boolean;
+  /** Campos de frontmatter que o Argus não conhece, preservados na gravação. */
+  extra: Record<string, string>;
+}
+
+export interface SkillDef {
+  name: string;
+  description: string;
+  body: string;
+  scope: AgentScope;
+  path: string;
+  shadowed: boolean;
+  extra: Record<string, string>;
+}

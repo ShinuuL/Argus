@@ -89,6 +89,7 @@ function commands(): Cmd[] {
     { id: "inspector", group: "Ações", label: "Alternar o inspetor", meta: <span className="kbd">Ctrl .</span>, run: () => (layout.setArea("chat"), layout.toggleInspector()) },
     { id: "changes", group: "Ações", label: "Ver alterações da sessão", run: () => layout.showChanges() },
     { id: "agents", group: "Ações", label: "Ver agentes em tela cheia", run: go("agents") },
+    { id: "mirror", group: "Ações", label: "Espelhar celular como aba", keys: "celular espelhamento screen mirror android", run: () => wb.openMirror() },
   );
 
   for (const a of AREAS) list.push({ id: `area-${a.id}`, group: "Ir para", label: a.label, keys: "tela area", run: go(a.id) });

@@ -22,6 +22,8 @@ export type TabKind =
   | { type: "agentmap"; task: TaskId }
   /** Diff de uma sessão num painel do workbench (com comentário por linha). */
   | { type: "diff"; task: TaskId }
+  /** Espelhamento do celular (Screen-Mirror) ao lado da conversa. */
+  | { type: "mirror" }
   /** Telas que abrem como aba pelo rodapé da barra esquerda. */
   | { type: "page"; page: PageId };
 
@@ -109,6 +111,8 @@ export function tabTitle(kind: TabKind): string {
       return `Mapa de agentes #${kind.task}`;
     case "diff":
       return `Alterações #${kind.task}`;
+    case "mirror":
+      return "Celular";
     case "page":
       return PAGES.find((p) => p.id === (normalizeKind(kind) as typeof kind).page)?.label ?? kind.page;
   }
@@ -117,6 +121,7 @@ export function tabTitle(kind: TabKind): string {
 export function tabTooltip(kind: TabKind): string {
   if (kind.type === "file") return kind.path;
   if (kind.type === "terminal") return `Terminal em ${kind.cwd ?? "pasta atual"}`;
+  if (kind.type === "mirror") return "Espelhamento do celular (Screen-Mirror)";
   return tabTitle(kind);
 }
 
@@ -225,6 +230,8 @@ export interface WorkbenchState {
   openAgentMap(task: TaskId): void;
   /** Abre (ou foca) o diff da sessão como aba. */
   openDiff(task: TaskId): void;
+  /** Abre (ou foca) a aba de espelhamento do celular. */
+  openMirror(preview?: boolean): void;
   /** Abre uma conversa nova (reaproveita a aba de conversa vazia do grupo, se houver). */
   openNewChat(project?: Path | null): void;
   /** A conversa nova da aba `tab` virou a tarefa `task` (a aba continua a mesma). */
@@ -304,6 +311,18 @@ export const useWorkbench = create<WorkbenchState>()((set, get) => {
     },
     openAgentMap: (task) => get().open({ type: "agentmap", task }),
     openDiff: (task) => get().open({ type: "diff", task }),
+    openMirror: (preview = false) => {
+      // Já aberta em algum grupo: foca lá em vez de abrir outra.
+      const s = get();
+      for (const g of s.groups) {
+        const tab = g.tabs.find((t) => t.kind.type === "mirror");
+        if (tab) {
+          toChat();
+          return s.activate(g.id, tab.id);
+        }
+      }
+      s.open({ type: "mirror" }, preview);
+    },
     openNewChat: (project = null) => {
       toChat();
       const s = get();

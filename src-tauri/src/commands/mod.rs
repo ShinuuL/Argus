@@ -1,5 +1,6 @@
 //! Comandos Tauri, um módulo por área. Todos devolvem `Result<T, String>`:
 //! o erro chega à interface como a mensagem (em português) da exceção rejeitada.
+pub mod agentdefs;
 pub mod agents;
 pub mod autowork;
 pub mod connections;

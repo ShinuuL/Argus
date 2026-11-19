@@ -14,6 +14,7 @@ import RemoteView from "@/views/remote";
 import PetView from "@/views/pet";
 import PlayerView from "@/views/player";
 import { Select } from "@/shell/Select";
+import AgentDefsPage from "./AgentDefs";
 import PermissionsPage from "./Permissions";
 import { PageBody } from "./PageBody";
 import "@/views/settings/settings.css";
@@ -23,6 +24,7 @@ type Page =
   | "aparencia"
   | "atalhos"
   | "provedores"
+  | "subagentes"
   | "permissoes"
   | "mcp"
   | "deps"
@@ -51,6 +53,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
     label: "Agentes",
     items: [
       { id: "provedores", label: "Provedores", keywords: "claude codex gemini opencode login modelo" },
+      { id: "subagentes", label: "Subagentes", keywords: "agentes skills frontmatter AGENTS.md claude agents arquivo" },
       { id: "permissoes", label: "Permissões", keywords: "política comandos git push permitir bloquear modo trabalho" },
       { id: "mcp", label: "Ferramentas MCP", keywords: "celular screen-mirror" },
     ],
@@ -330,6 +333,7 @@ export default function SettingsArea() {
               <ProvidersView />
             </PageBody>
           )}
+          {page === "subagentes" && <AgentDefsPage />}
           {page === "mcp" && <McpPage />}
           {page === "deps" && (
             <PageBody title="Dependências" lead="Ferramentas que faltam no projeto, cada uma com o comando de correção.">

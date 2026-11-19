@@ -7,6 +7,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { api, errorMessage, formatTokens, formatUsd, type Path, type Pricing, type TokenUsage } from "@/api";
 import { Icon } from "@/shell/icons";
 import { MessageView } from "@/views/chat";
+import { isAskTool, parseAsk } from "./ask";
+import { AskCard } from "./AskCard";
 import { Dot, ThinkingRow, TimelineItem, ToolRow, toolSummary } from "./ToolRow";
 import {
   noticeSummary,
@@ -177,6 +179,11 @@ export interface TranscriptProps {
   providerName?(id: string): string;
   /** Projeto da conversa (para liberar um comando negado). */
   project?: Path | null;
+  /**
+   * Responde a uma pergunta de múltipla escolha do agente. Sem isto (chat de
+   * subagente, histórico) os cartões de pergunta ficam só de leitura.
+   */
+  onAnswer?(text: string): Promise<void> | void;
 }
 
 /** Passos que ficam à vista enquanto o turno roda. */
@@ -224,8 +231,14 @@ export function Transcript(props: TranscriptProps) {
         );
       case "thinking":
         return <ThinkingRow key={key} text={entry.text} live={live && last} />;
-      case "tool":
+      case "tool": {
+        // Pergunta de múltipla escolha: cartão com as opções, não linha de ferramenta.
+        const ask = isAskTool(entry.name) ? parseAsk(entry.input) : null;
+        if (ask) {
+          return <AskCard key={key} questions={ask} pending={entry.result == null} onAnswer={props.onAnswer} />;
+        }
         return <ToolRow key={key} name={entry.name} input={entry.input} result={entry.result} live={live} base={props.project ?? null} />;
+      }
       case "result":
         // Sucesso não precisa de linha própria: a resposta já está acima.
         return entry.ok ? null : (

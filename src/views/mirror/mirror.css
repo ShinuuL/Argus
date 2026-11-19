@@ -1,0 +1,15 @@
+/* Aba Celular: faixa enxuta em cima e o painel do Screen-Mirror ocupando o resto. */
+.mr { height: 100%; display: flex; flex-direction: column; background: var(--bg); min-height: 0; }
+.mr-bar {
+  display: flex; align-items: center; gap: var(--space-2, 8px); flex-wrap: wrap;
+  padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--surface);
+}
+.mr-bar > .ic { color: var(--text-2); }
+.mr-bar button { display: inline-flex; align-items: center; gap: 6px; }
+.mr-spacer { flex: 1; }
+.mr-empty {
+  flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 24px; text-align: center; color: var(--text-2);
+}
+.mr-empty > .ic { color: var(--text-3, var(--text-2)); opacity: 0.7; }
+.mr-empty .dv-problem { max-width: 460px; }

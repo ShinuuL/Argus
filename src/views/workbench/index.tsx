@@ -19,6 +19,7 @@ import ConnectionsView from "@/views/connections";
 import DepsView from "@/views/deps";
 import DevicesView from "@/views/devices";
 import MetricsView from "@/views/metrics";
+import MirrorTab from "@/views/mirror";
 import RemoteView from "@/views/remote";
 import ChatTab from "@/views/session";
 import AgentMap from "@/views/agentmap";
@@ -85,6 +86,8 @@ function TabIcon({ kind, task }: { kind: TabKind; task: Task | undefined }) {
       return <Icon name="tree" size={14} className="wb-ic-svg" />;
     case "diff":
       return <Icon name="diff" size={14} className="wb-ic-svg" />;
+    case "mirror":
+      return <Icon name="phone" size={14} className="wb-ic-svg" />;
     case "page":
       return <Icon name={PAGE_ICONS[kind.page] ?? "gear"} size={14} className="wb-ic-svg" />;
   }
@@ -270,6 +273,8 @@ function TabBody({ tab, active }: { tab: WbTab; active: boolean }) {
       return <AgentMap taskId={kind.task} active={active} />;
     case "diff":
       return <DiffTab taskId={kind.task} />;
+    case "mirror":
+      return <MirrorTab />;
     case "file":
       return null;
   }

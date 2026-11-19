@@ -477,3 +477,32 @@ export const runsOpenFolder = (path: Path): Promise<void> => invoke("runs_open_f
 /** Uso de CPU/memória/GPU por dono rastreado. `gpu` consulta os contadores do Windows (mais lento). */
 export const ownersUsage = (gpu: boolean): Promise<import("./types").OwnerUsage[]> =>
   invoke("owners_usage", { gpu });
+
+// ------------------------------------------- agentes e skills em arquivo
+
+/** Agentes dos dois escopos; o global ofuscado por um do projeto vem com `shadowed`. */
+export const agentDefsList = (project: Path | null): Promise<import("./types").AgentDef[]> =>
+  invoke("agentdefs_list", { project });
+
+/** Grava o `.md` do agente e devolve o caminho. */
+export const agentDefSave = (def: import("./types").AgentDef, project: Path | null): Promise<Path> =>
+  invoke("agentdefs_save", { def, project });
+
+export const agentDefDelete = (name: string, scope: import("./types").AgentScope, project: Path | null): Promise<void> =>
+  invoke("agentdefs_delete", { name, scope, project });
+
+export const agentSkillsList = (project: Path | null): Promise<import("./types").SkillDef[]> =>
+  invoke("agentdefs_skills", { project });
+
+export const agentSkillSave = (def: import("./types").SkillDef, project: Path | null): Promise<Path> =>
+  invoke("agentdefs_skill_save", { def, project });
+
+export const agentSkillDelete = (name: string, scope: import("./types").AgentScope, project: Path | null): Promise<void> =>
+  invoke("agentdefs_skill_delete", { name, scope, project });
+
+/** Grava o trecho do Argus no `AGENTS.md` do projeto (o resto fica intacto). */
+export const agentDefsSyncMd = (project: Path, body: string): Promise<Path> =>
+  invoke("agentdefs_sync_md", { project, body });
+
+/** Slug sugerido a partir de um título digitado. */
+export const agentDefSlug = (text: string): Promise<string> => invoke("agentdefs_slug", { text });
