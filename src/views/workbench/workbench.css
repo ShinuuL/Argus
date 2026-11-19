@@ -1,12 +1,11 @@
 /* Complementos do workbench (o grosso do visual está em styles/components.css). */
-.wb-tab { position: relative; }
+.wb-tab { position: relative; flex: none; }
+.wb-tabs-list { display: flex; flex: 0 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; }
+.wb-tabs-list::-webkit-scrollbar { height: 3px; }
 .wb-tab.drop-before::before { content: ""; position: absolute; left: -1px; top: 4px; bottom: 4px; width: 2px; background: var(--accent); }
 .wb-tab.dragging { opacity: .5; }
 .wb-tabs.drop-end { box-shadow: inset 0 -2px 0 var(--accent); }
-.wb-title { overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
-.wb-tab-actions { position: sticky; right: 0; background: var(--bg-tabs); }
-/* Os botões da direita ficam por cima da faixa: a aba ativa rola até antes deles, não até debaixo. */
-.wb-tabs { scroll-padding-inline-end: 96px; }
+.wb-title { overflow: hidden; text-overflow: ellipsis; max-width: 220px; min-width: 0; }
 
 /* Zona de soltura sobre o corpo do grupo enquanto uma aba é arrastada. */
 .wb-drop { position: absolute; inset: 0; z-index: 20; }

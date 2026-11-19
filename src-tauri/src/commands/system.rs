@@ -4,7 +4,7 @@ use crate::state::AppCtx;
 use serde::Serialize;
 use std::path::PathBuf;
 use tauri::{AppHandle, State};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
 pub struct SystemUsage {
@@ -85,12 +85,14 @@ pub async fn open_with_system(url: String) -> Result<(), String> {
 
 /// Caixa nativa de confirmação Sim/Não. true = Sim.
 #[tauri::command]
-pub async fn system_confirm(app: AppHandle, title: String, message: String) -> Result<bool, String> {
+pub async fn system_confirm(app: AppHandle, title: String, message: String, warn: Option<bool>) -> Result<bool, String> {
     blocking(move || {
+        let kind = if warn.unwrap_or(false) { MessageDialogKind::Warning } else { MessageDialogKind::Info };
         Ok(app
             .dialog()
             .message(message)
             .title(title)
+            .kind(kind)
             .buttons(MessageDialogButtons::OkCancelCustom("Sim".into(), "Não".into()))
             .blocking_show())
     })

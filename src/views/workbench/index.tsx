@@ -376,12 +376,7 @@ function EditorGroup({
   return (
     <div className={focused ? "wb-group focused" : "wb-group"} style={style} onMouseDownCapture={() => wb().focusGroup(gid)}>
       <div
-        ref={strip}
         className={over === "end" ? "wb-tabs drop-end" : "wb-tabs"}
-        role="tablist"
-        onWheel={(e) => {
-          if (e.deltaY !== 0 && strip.current) strip.current.scrollLeft += e.deltaY;
-        }}
         onDragOver={(e) => {
           if (allow(e) && over !== "end") setOver("end");
         }}
@@ -393,6 +388,15 @@ function EditorGroup({
           dropTab(gid, null);
         }}
       >
+        {/* Só as abas rolam: os botões da direita ficam fora e nunca cobrem um título. */}
+        <div
+          ref={strip}
+          className="wb-tabs-list"
+          role="tablist"
+          onWheel={(e) => {
+            if (e.deltaY !== 0 && strip.current) strip.current.scrollLeft += e.deltaY;
+          }}
+        >
         {group.tabs.map((t) => {
           const isActive = t.id === group.active;
           const kind = t.kind;
@@ -442,6 +446,7 @@ function EditorGroup({
             </div>
           );
         })}
+        </div>
         <div className="wb-tabs-fill" data-tauri-drag-region={titleRow || undefined} />
         <div className="wb-tab-actions">
             <button

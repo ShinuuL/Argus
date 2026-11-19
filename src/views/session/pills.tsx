@@ -578,7 +578,7 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
         </div>
         <div className="pop-sec">
           <div className="pop-title">Acesso nesta conversa</div>
-          {taskId != null && onAccess ? (
+          {onAccess ? (
             <div className="pop-list" role="radiogroup" aria-label="Acesso nesta conversa">
               {(["plan", "normal", "bypass"] as AccessMode[]).map((a) => (
                 <button
@@ -605,7 +605,7 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
               ))}
             </div>
           ) : (
-            <p className="pop-help">Planejar e Bypass: depois do primeiro envio.</p>
+            <p className="pop-help">Conversa encerrada.</p>
           )}
           {/* O antigo "Modo de permissão" (só leitura) é o que vale no Normal: vira este atalho. */}
           <button

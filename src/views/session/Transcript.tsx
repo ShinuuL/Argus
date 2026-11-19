@@ -220,6 +220,8 @@ export interface TranscriptProps {
   /** Conteúdo fixo antes e depois das mensagens (prompt do subagente, "trabalhando…"). */
   before?: ReactNode;
   after?: ReactNode;
+  /** Item ao vivo no fim da linha do tempo do último turno (texto ainda sendo gerado). */
+  liveItem?: ReactNode;
   /** Muda enquanto o conteúdo de `after` cresce (texto sendo gerado): acompanha o fim. */
   follow?: number;
   /** Muda quando o chat exibido troca: volta a rolagem para o fim. */
@@ -249,7 +251,7 @@ function liveCut(items: ChatEntry[]): number {
 }
 
 export function Transcript(props: TranscriptProps) {
-  const { entries, subagents, taskActive, now, pricing, onOpenSubagent, group = true, before, after, resetKey } = props;
+  const { entries, subagents, taskActive, now, pricing, onOpenSubagent, group = true, before, after, liveItem, resetKey } = props;
   const nameOf = props.providerName ?? ((id: string) => id);
   const ref = useRef<HTMLDivElement>(null);
   /** Só acompanha o fim se o usuário não rolou para cima para ler. */
@@ -380,10 +382,13 @@ export function Transcript(props: TranscriptProps) {
           const cut = group ? (finished ? stepsCut(turn.items) : liveCut(turn.items)) : -1;
           const steps = cut > 0 ? turn.items.slice(0, cut) : [];
           const rest = cut > 0 ? turn.items.slice(cut) : turn.items;
+          // O rascunho entra na mesma linha do tempo em que a resposta final vai cair:
+          // mesmo espaçamento, sem salto quando ele vira o texto definitivo.
+          const tail = live && t === turns.length - 1 ? liveItem : null;
           return (
             <div key={t} className="cv-turn">
               {turn.user != null && <MessageView event={{ User: turn.user }} />}
-              {(steps.length > 0 || rest.length > 0) && (
+              {(steps.length > 0 || rest.length > 0 || tail) && (
                 <div className="tl">
                   {steps.length > 0 && (
                     <TimelineItem dot={<Dot status="text" />} className="tl-steps">
@@ -399,6 +404,7 @@ export function Transcript(props: TranscriptProps) {
                   {/* Chave = posição do item no turno inteiro (não no recorte): um item novo
                       monta uma vez e os que já estavam não trocam de conteúdo no lugar. */}
                   {rest.map((e, i) => item(e, `i${Math.max(cut, 0) + i}`, live, i === rest.length - 1, t === turns.length - 1 && !taskActive))}
+                  {tail}
                 </div>
               )}
             </div>

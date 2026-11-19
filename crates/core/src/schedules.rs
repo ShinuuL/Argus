@@ -514,7 +514,7 @@ impl Scheduler {
             }
             ScheduleKind::Agent => {
                 let project = s.project.clone().unwrap_or_default();
-                let opts = SubmitOptions { model: s.model.clone(), mode: s.mode };
+                let opts = SubmitOptions { model: s.model.clone(), mode: s.mode, ..Default::default() };
                 match self.inner.orch.submit_with(project, &s.provider, &s.prompt, opts) {
                     Ok(task) => {
                         s.last_task = Some(task);

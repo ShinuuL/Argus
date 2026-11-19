@@ -167,14 +167,30 @@ pub fn dirs_for(root: &Path, task: u64, prompts: &[&str]) -> Vec<PathBuf> {
     out
 }
 
-/// Acrescenta `--add-dir <pastas...>` a um comando do `claude`. Outras CLIs não mudam.
+/// Libera pastas fora da pasta de trabalho: `claude --add-dir a b`,
+/// `codex exec --add-dir a --add-dir b` (antes do `-` do stdin) e
+/// `gemini --include-directories a,b`. Outras CLIs não mudam.
 pub fn apply_add_dirs(mut spec: CommandSpec, dirs: &[PathBuf]) -> CommandSpec {
-    let is_claude = Path::new(&spec.program)
-        .file_stem()
-        .is_some_and(|s| s.to_string_lossy().eq_ignore_ascii_case("claude"));
-    if is_claude && !dirs.is_empty() {
-        spec.args.push("--add-dir".into());
-        spec.args.extend(dirs.iter().map(|d| d.to_string_lossy().into_owned()));
+    if dirs.is_empty() {
+        return spec;
+    }
+    let stem = Path::new(&spec.program).file_stem().map(|s| s.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    let list = dirs.iter().map(|d| d.to_string_lossy().into_owned());
+    match stem.as_str() {
+        "claude" => {
+            spec.args.push("--add-dir".into());
+            spec.args.extend(list);
+        }
+        "codex" => {
+            let at = if spec.args.last().is_some_and(|a| a == "-") { spec.args.len() - 1 } else { spec.args.len() };
+            let extra: Vec<String> = list.flat_map(|d| ["--add-dir".to_string(), d]).collect();
+            spec.args.splice(at..at, extra);
+        }
+        "gemini" => {
+            spec.args.push("--include-directories".into());
+            spec.args.push(list.collect::<Vec<_>>().join(","));
+        }
+        _ => {}
     }
     spec
 }
@@ -246,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    fn add_dir_only_for_claude() {
+    fn add_dirs_per_cli() {
         let dirs = vec![PathBuf::from("/x/anexos/7"), PathBuf::from("/x/anexos/novo")];
         let c = apply_add_dirs(CommandSpec::new("claude").arg("-p"), &dirs);
         assert_eq!(c.args.len(), 4);
@@ -254,5 +270,13 @@ mod tests {
         assert!(c.args[2].ends_with('7') && c.args[3].ends_with("novo"));
         assert_eq!(apply_add_dirs(CommandSpec::new("claude").arg("-p"), &[]).args, ["-p"]);
         assert_eq!(apply_add_dirs(CommandSpec::new("opencode").arg("run"), &dirs).args, ["run"]);
+        let c = apply_add_dirs(CommandSpec::new("codex").arg("exec").arg("-"), &dirs);
+        assert_eq!(c.args[0], "exec");
+        assert_eq!(c.args[1], "--add-dir");
+        assert_eq!(c.args[3], "--add-dir");
+        assert_eq!(c.args.last().unwrap(), "-");
+        let g = apply_add_dirs(CommandSpec::new("gemini").arg("-p"), &dirs);
+        assert_eq!(g.args[1], "--include-directories");
+        assert!(g.args[2].contains(','));
     }
 }

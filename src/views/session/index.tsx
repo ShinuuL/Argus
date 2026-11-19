@@ -341,6 +341,8 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   const [modelChoice, setModelChoice] = useState<string | undefined>(undefined);
   /** Modo de trabalho escolhido para a conversa nova (null = o padrão do projeto). */
   const [modeChoice, setModeChoice] = useState<WorkMode | null>(null);
+  /** Acesso escolhido para a conversa nova (vale já no primeiro turno). */
+  const [accessChoice, setAccessChoice] = useState<AccessMode>("normal");
   /** Pedido segurado por um aviso, antes de ser enviado. */
   const [hold, setHold] = useState<
     | { kind: "isolation"; prompt: string; report: IsolationReport }
@@ -485,7 +487,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
       const others = directBusy(newProject);
       if (others.length) return setHold({ kind: "direct", prompt, mode, others });
     }
-    const id = await api.taskCreate(newProject, providerId, prompt, { model: newModel, mode });
+    const id = await api.taskCreate(newProject, providerId, prompt, { model: newModel, mode, access: accessChoice });
     await useApp.getState().refreshTasks();
     useWorkbench.getState().bindChat(tabId, id);
   };
@@ -529,15 +531,16 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
 
   /** Troca o acesso da conversa. Ligar o Bypass pede confirmação no diálogo do sistema. */
   const changeAccess = async (access: AccessMode) => {
-    if (taskId == null) return;
     try {
       if (access === "bypass") {
         const ok = await api.systemConfirm(
           "Ligar o Bypass",
           "Nesta conversa o agente vai rodar qualquer comando sem pedir aprovação e sem a política de shell do Argus. Ligar o Bypass?",
+          true,
         );
         if (!ok) return;
       }
+      if (taskId == null) return setAccessChoice(access);
       await api.taskSetAccess(taskId, access);
       await useApp.getState().refreshTasks();
       setError(null);
@@ -716,7 +719,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
         modeEditable={taskId == null && !!newProject && isGit}
         noGit={taskId == null && !isGit}
         onMode={setModeChoice}
-        access={task?.access ?? "normal"}
+        access={task?.access ?? accessChoice}
         onAccess={closed ? undefined : (a) => void changeAccess(a)}
       />
     </>
@@ -821,6 +824,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
               ) : null
             }
             follow={draft.length}
+            liveItem={!current && busy && draft ? <DraftText text={draft} /> : null}
             after={
               current ? (
                 current.done ? (
@@ -837,10 +841,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                   <div className="cv-note">O turno parou antes de o subagente terminar.</div>
                 )
               ) : busy ? (
-                <>
-                  {draft && <DraftText text={draft} />}
-                  <WorkingLine activity={liveActivity(entries, project)} />
-                </>
+                <WorkingLine activity={liveActivity(entries, project)} />
               ) : null
             }
           />

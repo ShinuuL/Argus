@@ -20,7 +20,7 @@
 //!
 //! Permissões em `auto_edit` sem interface: edições de arquivo aprovadas sozinhas
 //! (ferramentas de arquivo da CLI só alcançam a pasta de trabalho e as
-//! `--include-directories`, que o Argus não passa); shell e qualquer outra
+//! `--include-directories`, que o Argus só passa para a pasta `_Argus` da memória); shell e qualquer outra
 //! ferramenta que pediria aprovação é NEGADA (modo "Restrito").
 //! No modo "Auto" (`permissions::apply`) vira `--approval-mode yolo` com
 //! `--admin-policy <arquivo>`: regras `deny` de `run_shell_command` para os

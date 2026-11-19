@@ -187,11 +187,13 @@ export interface TaskCreateOptions {
   model?: string | null;
   /** Modo de trabalho (ausente = o padrão do projeto). */
   mode?: WorkMode | null;
+  /** Acesso desde o primeiro turno (ausente = normal). */
+  access?: AccessMode | null;
 }
 
 /** Cria uma tarefa (isolada num worktree, ou direto na pasta) e devolve o id; o andamento chega em `onOrch`. */
 export const taskCreate = (project: Path, provider: string, prompt: string, opts: TaskCreateOptions = {}): Promise<TaskId> =>
-  invoke("task_create", { project, provider, prompt, model: opts.model || null, mode: opts.mode ?? null });
+  invoke("task_create", { project, provider, prompt, model: opts.model || null, mode: opts.mode ?? null, access: opts.access ?? null });
 
 /** Troca o modelo da tarefa (null = padrão da CLI); vale a partir do próximo turno. */
 export const taskSetModel = (id: TaskId, model: string | null): Promise<void> =>
@@ -470,8 +472,9 @@ export const systemUsage = (): Promise<SystemUsage> => invoke("system_usage");
 export const systemOpenUrl = (url: string): Promise<void> => invoke("system_open_url", { url });
 
 /** Caixa nativa de confirmação Sim/Não; true = Sim. */
-export const systemConfirm = (title: string, message: string): Promise<boolean> =>
-  invoke("system_confirm", { title, message });
+/** `warn` = ícone de aviso (ações perigosas). */
+export const systemConfirm = (title: string, message: string, warn = false): Promise<boolean> =>
+  invoke("system_confirm", { title, message, warn });
 
 /** Versão do app, caminho do banco e pasta de dados. */
 export const appInfo = (): Promise<AppInfo> => invoke("app_info");

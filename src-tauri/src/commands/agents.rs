@@ -263,12 +263,14 @@ pub async fn task_create(
     prompt: String,
     model: Option<String>,
     mode: Option<WorkMode>,
+    access: Option<String>,
 ) -> Result<TaskId, String> {
     let prompt = prompt.trim();
+    let access = access.as_deref().and_then(argus_core::permissions::AccessMode::parse).unwrap_or_default();
     if prompt.is_empty() {
         return Err("Escreva o pedido.".into());
     }
-    ctx.orch.submit_with(project, &provider, prompt, SubmitOptions { model, mode }).map_err(err)
+    ctx.orch.submit_with(project, &provider, prompt, SubmitOptions { model, mode, access }).map_err(err)
 }
 
 /// Troca o modelo da tarefa (ausente ou vazio = padrão da CLI); vale a partir do próximo turno.

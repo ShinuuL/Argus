@@ -110,7 +110,7 @@ pub fn run(orch: &Orchestrator, root: &Path) -> Option<u64> {
         return None;
     }
     let date = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let opts = SubmitOptions { model: Some(MODEL.into()), mode: Some(WorkMode::Direct) };
+    let opts = SubmitOptions { model: Some(MODEL.into()), mode: Some(WorkMode::Direct), ..Default::default() };
     match orch.submit_with(root.to_path_buf(), "claude", &prompt(root, &changes, &date), opts) {
         Ok(id) => {
             mark(root, t);

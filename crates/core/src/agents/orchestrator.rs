@@ -89,6 +89,8 @@ pub struct SubmitOptions {
     pub model: Option<String>,
     /// Modo de trabalho (None = o padrão configurado para o projeto).
     pub mode: Option<WorkMode>,
+    /// Acesso desde o primeiro turno (Planejar / normal / Bypass).
+    pub access: crate::permissions::AccessMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -449,7 +451,7 @@ impl Orchestrator {
     /// padrão do projeto. Precisa estar dentro de um runtime tokio.
     pub fn submit(&self, project: impl Into<PathBuf>, provider: &str, prompt: &str) -> Result<TaskId, OrchestratorError> {
         let model = self.provider(provider)?.default_model();
-        self.submit_with(project, provider, prompt, SubmitOptions { model, mode: None })
+        self.submit_with(project, provider, prompt, SubmitOptions { model, mode: None, ..Default::default() })
     }
 
     /// Como `submit`, com o modelo e o modo de trabalho escolhidos.
@@ -486,7 +488,7 @@ impl Orchestrator {
             mode,
             handoff: false,
             context: None,
-            access: Default::default(),
+            access: opts.access,
             others: HashMap::new(),
         };
         if let Some(db) = &self.inner.db {
@@ -498,6 +500,9 @@ impl Orchestrator {
                 &TaskState::Queued.to_db(),
             )?;
             db.set_task_mode(id as i64, mode.as_str())?;
+            if task.access != Default::default() {
+                db.set_task_access(id as i64, task.access.as_str())?;
+            }
             if task.model.is_some() {
                 db.set_task_model(id as i64, task.model.as_deref())?;
             }
@@ -886,9 +891,11 @@ impl Orchestrator {
         // Preferências, memória e notas de projeto: o aviso de sistema aponta
         // `<raiz>/_Argus` e `<raiz>/<Projeto>.md`. A raiz inteira fica legível
         // (decisão do usuário), para a nota do projeto e as outras do vault.
+        // Codex e gemini liberam com escrita: para eles, só a pasta `_Argus`.
         if crate::memory::for_project(&task.project).is_some() {
             if let Some(root) = crate::memory::root() {
-                dirs.push(root);
+                let claude = Path::new(&spec.program).file_stem().is_some_and(|s| s.to_string_lossy().eq_ignore_ascii_case("claude"));
+                dirs.push(if claude { root } else { crate::memory::dir(&root) });
             }
         }
         let spec = crate::attachments::apply_add_dirs(spec, &dirs);
@@ -1660,7 +1667,7 @@ mod tests {
         std::fs::write(wt.join("nao-aplicado.txt"), "x").unwrap();
         // Direto: a pasta do projeto fica como está.
         let direct = o
-            .submit_with(&proj, "fake", "direto", SubmitOptions { model: None, mode: Some(WorkMode::Direct) })
+            .submit_with(&proj, "fake", "direto", SubmitOptions { model: None, mode: Some(WorkMode::Direct), ..Default::default() })
             .unwrap();
         assert_eq!(wait_final(&o, direct).await, TaskState::Completed);
         std::fs::write(proj.join("local.txt"), "meu").unwrap();
@@ -1691,7 +1698,7 @@ mod tests {
         assert!(o.tasks().is_empty());
         // Turno rodando: é cancelado antes da exclusão.
         let busy = o
-            .submit_with(&proj, "fake", "longo", SubmitOptions { model: None, mode: Some(WorkMode::Direct) })
+            .submit_with(&proj, "fake", "longo", SubmitOptions { model: None, mode: Some(WorkMode::Direct), ..Default::default() })
             .unwrap();
         assert!(busy > direct);
         tokio::time::sleep(Duration::from_millis(300)).await;
@@ -1944,10 +1951,10 @@ mod tests {
         let (provs, seen) = spies();
         let o = Orchestrator::with_db(provs, 1, Some(Db::open(&dbp).unwrap()));
         assert!(matches!(
-            o.submit_with(dir.path(), "um", "x", SubmitOptions { model: Some("--perigo".into()), mode: None }),
+            o.submit_with(dir.path(), "um", "x", SubmitOptions { model: Some("--perigo".into()), mode: None, ..Default::default() }),
             Err(OrchestratorError::InvalidModel(_))
         ));
-        let id = o.submit_with(dir.path(), "um", "primeiro", SubmitOptions { model: Some("rapido".into()), mode: None }).unwrap();
+        let id = o.submit_with(dir.path(), "um", "primeiro", SubmitOptions { model: Some("rapido".into()), mode: None, ..Default::default() }).unwrap();
         assert_eq!(wait_final(&o, id).await, TaskState::Completed);
         assert!(matches!(o.set_model(id, Some("a b")), Err(OrchestratorError::InvalidModel(_))));
         o.set_model(id, Some("forte[1m]")).unwrap();
@@ -2007,7 +2014,7 @@ mod tests {
         let dbp = dir.path().join("h.db");
         let (provs, seen) = spies();
         let o = Orchestrator::with_db(provs, 1, Some(Db::open(&dbp).unwrap()));
-        let id = o.submit_with(dir.path(), "um", "crie o módulo", SubmitOptions { model: Some("m-um".into()), mode: None }).unwrap();
+        let id = o.submit_with(dir.path(), "um", "crie o módulo", SubmitOptions { model: Some("m-um".into()), mode: None, ..Default::default() }).unwrap();
         assert_eq!(wait_final(&o, id).await, TaskState::Completed);
         let workdir = o.task(id).unwrap().workdir.unwrap();
         assert!(matches!(o.set_provider(id, "nenhum"), Err(OrchestratorError::UnknownProvider(_))));
@@ -2107,9 +2114,9 @@ mod tests {
         let (provs, seen) = spies();
         let o = Orchestrator::with_db(provs, 2, Some(Db::open(&dbp).unwrap()));
 
-        let iso = o.submit_with(&proj, "um", "isolada", SubmitOptions { model: None, mode: Some(WorkMode::Isolated) }).unwrap();
+        let iso = o.submit_with(&proj, "um", "isolada", SubmitOptions { model: None, mode: Some(WorkMode::Isolated), ..Default::default() }).unwrap();
         assert_eq!(wait_final(&o, iso).await, TaskState::Completed);
-        let direct = o.submit_with(&proj, "um", "direta", SubmitOptions { model: None, mode: Some(WorkMode::Direct) }).unwrap();
+        let direct = o.submit_with(&proj, "um", "direta", SubmitOptions { model: None, mode: Some(WorkMode::Direct), ..Default::default() }).unwrap();
         assert_eq!(wait_final(&o, direct).await, TaskState::Completed);
 
         let t = o.task(iso).unwrap();
@@ -2186,7 +2193,7 @@ mod tests {
         wait_final(&o, id3).await;
         let plain = root.path().join("sem-git");
         std::fs::create_dir(&plain).unwrap();
-        let id4 = o.submit_with(&plain, "um", "x", SubmitOptions { model: None, mode: Some(WorkMode::Isolated) }).unwrap();
+        let id4 = o.submit_with(&plain, "um", "x", SubmitOptions { model: None, mode: Some(WorkMode::Isolated), ..Default::default() }).unwrap();
         assert_eq!(o.task(id4).unwrap().mode, WorkMode::Direct);
         wait_final(&o, id4).await;
         assert!(o.diff(id4).await.is_err(), "sem git não há commit para comparar");

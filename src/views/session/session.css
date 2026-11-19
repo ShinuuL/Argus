@@ -142,15 +142,14 @@
 
 /* Pontos de status (sessões, subagentes) */
 .ses-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-2); }
-.ses-dot.running { background: var(--run); animation: ses-pulse 1.4s ease-in-out infinite; }
+/* Rodando: anel fixo, sem pulsar (várias sessões ao mesmo tempo viravam ruído). */
+.ses-dot.running { background: var(--run); box-shadow: 0 0 0 2px color-mix(in srgb, var(--run) 30%, transparent); }
 .ses-dot.ok { background: var(--ok); }
 .ses-dot.error { background: var(--err); border-radius: 2px; }
 .ses-dot.interrupted { background: none; border: 1.5px solid var(--text-2); }
 .ses-st.running { color: var(--run); }
 .ses-st.ok { color: var(--ok); }
 .ses-st.error { color: var(--err); }
-@keyframes ses-pulse { 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { .ses-dot.running { animation: none; } }
 
 /* Árvore de subagentes (painel direito) */
 .ses-tree { display: flex; flex-direction: column; }
