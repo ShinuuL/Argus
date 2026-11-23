@@ -1,5 +1,6 @@
 /* Área Tarefas (agendadas). Cores e raios só por tokens. */
-.tka-scroll { flex: 1; min-height: 0; overflow: auto; }
+/* Coluna: o estado vazio cresce e ocupa a altura em vez de deixar 630 px de nada embaixo. */
+.tka-scroll { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
 .tka-pad { padding: 12px 22px; }
 .tka-err { margin: 0; color: var(--err); font-size: 12px; }
 .tka-name { display: grid; gap: 2px; min-width: 0; }
@@ -10,7 +11,6 @@
 .tka-row-actions { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
 .tka-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
 .tka-check input { accent-color: var(--accent); margin: 0; }
-.tka-empty { display: grid; justify-items: center; gap: 10px; padding: 18px 0; max-width: 52ch; margin: 0 auto; line-height: 1.5; }
 
 .tka-panel { width: 360px; flex: none; border-left: 1px solid var(--border); background: var(--surface); overflow-y: auto; }
 .tka-form { display: grid; gap: 14px; padding: 16px; align-content: start; }

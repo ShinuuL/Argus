@@ -1,6 +1,6 @@
 /** Cancelar e descartar uma tarefa, perguntando antes o que fazer com os servidores dela. */
 import { api, baseName, isTaskActive, samePath, variantOf, type Path, type Task, type TaskId } from "@/api";
-import { forgetSession, useApp } from "@/store";
+import { forgetSession, useApp, useWorkbench } from "@/store";
 import { chatKey, useChat } from "@/views/chat/store";
 import { sessionTitle } from "./events";
 import { askStopSession, stopSessionServers } from "@/views/servers";
@@ -85,4 +85,16 @@ export function retryDeniedText(command: string): string {
 export async function allowAndRetry(project: Path, tool: string, command: string, send: (text: string) => Promise<void>): Promise<void> {
   await api.permissionsAllowDenied(project, tool, command);
   await send(retryDeniedText(command));
+}
+
+/** Ramificar só vale para o Claude, em "Direto na pasta", com sessão e parado. */
+export function canFork(t: Task): boolean {
+  return t.provider === "claude" && t.mode === "Direct" && t.session_id != null && !isTaskActive(t.state) && t.state !== "Applied" && t.state !== "Discarded";
+}
+
+/** Ramifica a conversa e abre o ramo numa aba. */
+export async function forkTask(t: Task): Promise<void> {
+  const id = await api.taskFork(t.id);
+  await useApp.getState().refreshTasks();
+  useWorkbench.getState().openSession(id);
 }

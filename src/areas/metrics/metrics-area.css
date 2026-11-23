@@ -1,10 +1,19 @@
 /* Tela 11 · Uso e métricas. Só tokens. */
 .mxa { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; }
-.mxa-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* `auto-fit`, não três fixas: o cartão da janela do plano some quando a CLI não
+   informa nenhuma, e uma grade de três deixaria o buraco dele na fileira. */
+.mxa-cards { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 .mxa-big { font-size: 21px; font-weight: 600; color: var(--text); margin: 2px 0; }
 .mxa-big.ui-mut { color: var(--text-2); }
 .mxa-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mxa-chart { flex: 1; }
+/*
+ * O cartão já crescia; quem não crescia era o gráfico dentro dele, preso numa
+ * altura fixa de 170 px — por isso a área terminava com quase meia tela de
+ * nada abaixo das colunas. Aqui o cartão vira coluna e o gráfico fica com o
+ * que sobra; o `DayChart` lê essa altura e se desenha nela.
+ */
+.mxa-chart { flex: 1; min-height: 240px; display: flex; flex-direction: column; }
+.mxa-chart > .mx-chart { flex: 1; min-height: 0; padding: 0; }
 .mxa-ct { font-weight: 400; }
 .mxa-err { color: var(--err); margin: 0; }
 .mxa-warn { color: var(--warn); margin: 0; }

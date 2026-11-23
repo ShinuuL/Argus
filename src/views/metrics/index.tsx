@@ -7,6 +7,7 @@ import {
   formatUsdPt,
   totalTokens,
   type CostLine,
+  type Insights,
   type MetricsReport,
 } from "@/api";
 import { useApp, useWorkbench } from "@/store";
@@ -74,6 +75,94 @@ function BarList({ lines, project = false }: { lines: CostLine[]; project?: bool
         );
       })}
     </div>
+  );
+}
+
+const pct = (x: number) => `${(x * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
+
+/** Acerto do cache, custo por tipo de token, conversas mais caras e regravações de cache. */
+function CostInsights({ ins }: { ins: Insights }) {
+  const s = ins.split;
+  const sum = s.input + s.cache_write + s.cache_read + s.output;
+  const parts: [string, number][] = [
+    ["Entrada", s.input],
+    ["Escrita de cache", s.cache_write],
+    ["Leitura de cache", s.cache_read],
+    ["Saída", s.output],
+  ];
+  return (
+    <section>
+      <h4>Onde o custo vai</h4>
+      <div className="m-kpis">
+        <Kpi label="Acerto do cache (leitura / toda a entrada)" value={pct(ins.cache_hit_rate)} />
+        {parts.map(([label, v]) => (
+          <Kpi key={label} label={`${label}${sum > 0 ? ` (${pct(v / sum)})` : ""}`} value={formatUsdPt(v)} />
+        ))}
+        <Kpi
+          label="Turnos que regravaram o cache"
+          value={`${ins.rewrite_turns} · ${formatUsdPt(ins.rewrite_write_cost)}`}
+        />
+      </div>
+      <p className="muted small">
+        Por tipo de token, estimado pela tabela de preços (escrita de cache de 1 hora a 2x a entrada). Regravação:
+        turno que gravou mais de 50 mil tokens de cache, ou mais de 30% da sua entrada; costuma vir de pausa maior
+        que a vida do cache (60 min). Compactar ou abrir conversa nova evita.
+      </p>
+      {ins.tasks.length > 0 && (
+        <table className="grid small mx-rank">
+          <thead>
+            <tr>
+              <th>Conversa</th>
+              <th>Custo</th>
+              <th>Turnos</th>
+              <th>Custo/turno</th>
+              <th>Maior contexto</th>
+              <th>Acerto do cache</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ins.tasks.map((t) => (
+              <tr key={t.task_id} title={`${t.title || "(conversa excluída)"}
+${t.project}`}>
+                <td className="ellipsis">
+                  #{t.task_id} {t.title || <span className="muted">(excluída)</span>}
+                </td>
+                <td>{formatUsdPt(t.cost)}</td>
+                <td>{t.turns}</td>
+                <td>{formatUsdPt(t.cost_per_turn)}</td>
+                <td>{formatTokensPt(t.max_context)}</td>
+                <td>{pct(t.cache_hit_rate)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {ins.rewrites.length > 0 && (
+        <details className="mx-table small">
+          <summary className="muted">Regravações mais caras</summary>
+          <table className="grid small">
+            <thead>
+              <tr>
+                <th>Quando</th>
+                <th>Conversa</th>
+                <th>Escrita de cache</th>
+                <th>Custo da escrita</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ins.rewrites.map((r) => (
+                <tr key={`${r.task_id}-${r.created_at}`}>
+                  <td>{new Date(r.created_at * 1000).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</td>
+                  <td>#{r.task_id}</td>
+                  <td>{formatTokensPt(r.cache_write)}</td>
+                  <td>{formatUsdPt(r.write_cost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
+    </section>
   );
 }
 
@@ -197,6 +286,8 @@ export default function MetricsView() {
               </table>
             </details>
           </section>
+
+          {!empty && report.insights && <CostInsights ins={report.insights} />}
 
           <div className="m-cols">
             <section>

@@ -26,6 +26,9 @@ import {
   type TaskGroup,
 } from "./graph";
 import "@/views/session/session.css";
+import { TodoList } from "./TodoList";
+import { Mural } from "./Mural";
+import { RemindersSection } from "@/views/reminders";
 import "./agentmap.css";
 
 const PAGE = 5;
@@ -87,7 +90,7 @@ export function AgentsPanel({ taskId }: { taskId: TaskId | null }) {
 function AgentsPanelFor({ taskId }: { taskId: TaskId }) {
   const task = useApp((s) => s.tasks.find((t) => t.id === taskId));
   const busy = task ? isTaskActive(task.state) : false;
-  const { events, times, loaded } = useTaskEvents(taskId, busy);
+  const { events, times, loaded, progress } = useTaskEvents(taskId, busy);
   const tree = useMemo(() => subagentTree(events, times), [events, times]);
   const numbers = useMemo(() => subagentNumbers(events), [events]);
   const commands = useMemo(() => backgroundCommands(events), [events]);
@@ -155,13 +158,17 @@ function AgentsPanelFor({ taskId }: { taskId: TaskId }) {
           <ul className="ap-tree" role="list">
             {nodes.map((n) => (
               <li key={n.id} className="ap-branch" style={{ marginLeft: (n.column - 1) * 16 }}>
-                <SubagentCard node={n} onOpen={() => openChat(taskId, n.id)} />
+                <SubagentCard node={n} activity={n.status === "running" ? progress[n.id]?.activity : undefined} onOpen={() => openChat(taskId, n.id)} />
               </li>
             ))}
           </ul>
         )}
         {nodes.length === 0 && <p className="ap-hint">Esta sessão ainda não criou subagentes.</p>}
       </section>
+
+      <TodoList taskId={taskId} busy={busy} />
+      <Mural taskId={taskId} />
+      <RemindersSection />
 
       <section className="ap-bg" aria-label="Tarefas em segundo plano">
         <header className="ap-head">
@@ -267,7 +274,7 @@ function RootCard({ task, onOpen }: { task: Task; onOpen(): void }) {
   );
 }
 
-function SubagentCard({ node, onOpen }: { node: MapNode; onOpen(): void }) {
+function SubagentCard({ node, activity, onOpen }: { node: MapNode; activity?: string; onOpen(): void }) {
   const dur = node.durationMs == null ? null : shortDuration(node.durationMs);
   const label = subagentStatusLabel(node.status);
   return (
@@ -284,6 +291,7 @@ function SubagentCard({ node, onOpen }: { node: MapNode; onOpen(): void }) {
         {dur ?? label}
         {node.tokens != null ? ` · ${formatTokensPt(node.tokens)} tokens` : ""}
       </span>
+      {activity && <span className="ap-l2 ap-activity ellipsis">{activity}</span>}
     </button>
   );
 }
@@ -316,6 +324,9 @@ function TaskItem({ item, open, onToggle, nodes, badge }: { item: Item; open: bo
               )}
             </>
           )}
+          {item.group === "running" && (item.kind === "proc" || (item.kind === "command" && item.proc)) && (
+            <StopButton pid={item.kind === "proc" ? item.proc.pid : item.proc!.pid} />
+          )}
           {item.kind === "command" && (
             <>
               <p className="ap-dk">
@@ -346,5 +357,28 @@ function TaskItem({ item, open, onToggle, nodes, badge }: { item: Item; open: bo
         </div>
       )}
     </li>
+  );
+}
+
+/** Encerra o processo (e os filhos) que o agente deixou rodando. */
+function StopButton({ pid }: { pid: number }) {
+  const [state, setState] = useState<"idle" | "busy" | "err">("idle");
+  return (
+    <button
+      type="button"
+      className="ap-stop"
+      disabled={state === "busy"}
+      title="Encerra o processo e os que ele abriu. O agente não é avisado; se ele depender do processo, o próximo passo dele falha."
+      onClick={() => {
+        if (!window.confirm(`Parar o processo ${pid}?`)) return;
+        setState("busy");
+        api.serverKill(pid).then(
+          () => setState("idle"),
+          () => setState("err"),
+        );
+      }}
+    >
+      {state === "busy" ? "Parando…" : state === "err" ? "Não parou: tentar de novo" : "Parar"}
+    </button>
   );
 }

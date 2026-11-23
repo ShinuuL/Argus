@@ -16,6 +16,7 @@ import {
   type Unlisten,
 } from "@/api";
 import { useApp } from "./app";
+import { useMural } from "./mural";
 import { activeTab, useWorkbench } from "./workbench";
 import { chatKey, useChat } from "@/views/chat/store";
 
@@ -54,6 +55,8 @@ function handleOrch(ev: OrchEvent, refreshTasks: () => void, refreshToday: () =>
     if (!isTaskActive(state)) {
       refreshToday();
       noteActivity(task);
+      // Espelha o core: agente parado não segura arquivo no mural.
+      useMural.getState().forget(task);
     }
   } else if ("Removed" in ev) {
     // Sessão excluída (aqui, por outra aba ou pelo auto-work): some das listas e das abas.
@@ -66,6 +69,9 @@ function handleOrch(ev: OrchEvent, refreshTasks: () => void, refreshToday: () =>
       lastOkAt: status.kind === "Completed" ? Date.now() : s.lastOkAt,
       lastErrAt: status.kind === "Stopped" && status.data !== STOP_BY_USER ? Date.now() : s.lastErrAt,
     }));
+  } else if ("Mural" in ev) {
+    // Mural de arquivos: um agente tocou num arquivo (ver crates/core/src/mural.rs).
+    useMural.getState().note(ev.Mural.claim, ev.Mural.conflicts);
   } else if ("Agent" in ev) {
     const kind = variantOf(ev.Agent.event).kind;
     if (kind === "Usage") refreshToday();

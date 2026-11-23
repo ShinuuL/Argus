@@ -1,7 +1,7 @@
-/** Área "Dispositivos" (tela 08 do mockup): aparelhos à esquerda, espelho na moldura e abas de ferramentas. */
+/** Área "Dispositivos" (tela 08 do mockup): aparelhos à esquerda, o painel do Screen-Mirror no quadro e os dados do aparelho à direita. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage, type Device, type DeviceList, type MirrorStatus } from "@/api";
-import { AreaHeader, Btn, Chip, SideHeading, SideItem, SideList, StatusDot, Tab, Tabs, AreaStatus } from "@/ui";
+import { AreaHeader, Btn, Chip, SideHeading, SideItem, SideList, StatusDot, AreaStatus } from "@/ui";
 import { ApkBar } from "@/views/devices/ApkBar";
 import "./devices-area.css";
 
@@ -11,18 +11,27 @@ const STATE_LABEL: Record<string, string> = {
   offline: "offline",
 };
 
-type ToolTab = "logcat" | "apps" | "files" | "net" | "info";
-const TABS: { id: ToolTab; label: string }[] = [
-  { id: "logcat", label: "Logcat" },
-  { id: "apps", label: "Apps" },
-  { id: "files", label: "Arquivos" },
-  { id: "net", label: "Rede (AllSeenEye)" },
-  { id: "info", label: "Info" },
-];
+/** O mesmo estado, curto, para a lista de 200 px: lá o recado inteiro não cabe. */
+const STATE_META: Record<string, string> = { unauthorized: "não autorizado" };
+
+/**
+ * Quatro das cinco abas desta área existiam só para dizer que não existem.
+ *
+ * Logcat, Apps, Arquivos e Rede não têm tela nativa no Argus — cada uma abria
+ * um painel inteiro cuja única frase mandava olhar a moldura ao lado, onde o
+ * Logcat e os Arquivos de verdade estão. O resultado eram duas fileiras de aba
+ * na mesma tela, com "Logcat" e "Arquivos" escritos duas vezes cada, apontando
+ * para coisas diferentes.
+ *
+ * Sobrou o que é real: os dados do aparelho e a configuração do sidecar. O
+ * roteiro do que falta virou uma linha no fim do painel, em vez de quatro abas
+ * vazias. Quando alguma dessas telas existir de verdade, a fileira volta.
+ */
+const SEM_TELA_NATIVA = "Logcat, Apps, Arquivos e Rede (AllSeenEye) ainda não têm tela nativa no Argus: eles estão no painel do Screen-Mirror, ao lado.";
 
 /** O que falta para o Screen-Mirror poder iniciar (null = pronto). */
 function missing(s: MirrorStatus): string | null {
-  if (!s.dir) return "Screen-Mirror não encontrado. Informe a pasta do projeto na aba Info.";
+  if (!s.dir) return "Screen-Mirror não encontrado. Informe a pasta do projeto no painel à direita.";
   if (!s.node) return "Node.js não encontrado no PATH. O Screen-Mirror precisa do Node 22.18 ou mais novo.";
   if (s.nodeTooOld) return `Node.js ${s.node} é antigo demais. Instale o 22.18 ou mais novo.`;
   if (s.needsInstall) return `Dependências não instaladas. Rode \`npm install\` em ${s.dir}.`;
@@ -40,7 +49,6 @@ export default function DevicesArea() {
   const [dirInput, setDirInput] = useState("");
   const [frameKey, setFrameKey] = useState(0);
   const [sel, setSel] = useState<string | null>(null);
-  const [tab, setTab] = useState<ToolTab>("logcat");
   const autoStarted = useRef(false);
 
   const run = useCallback(async (action: () => Promise<MirrorStatus>) => {
@@ -120,18 +128,15 @@ export default function DevicesArea() {
             on={current?.serial === d.serial}
             onClick={() => setSel(d.serial)}
             icon={<StatusDot tone={d.state === "device" ? "ok" : "warn"} />}
-            meta={d.state !== "device" ? STATE_LABEL[d.state] ?? d.state : d.connection === "wifi" ? "Wi-Fi" : undefined}
-            title={d.serial}
+            meta={d.state !== "device" ? STATE_META[d.state] ?? STATE_LABEL[d.state] ?? d.state : d.connection === "wifi" ? "Wi-Fi" : undefined}
+            title={d.state !== "device" ? `${d.serial} — ${STATE_LABEL[d.state] ?? d.state}` : d.serial}
           >
             {devName(d)}
           </SideItem>
         ))}
         {url && list && devices.length === 0 && <div className="dva-none ui-mut ui-sm">Nenhum celular conectado por ADB.</div>}
         {!url && <div className="dva-none ui-mut ui-sm">Sidecar parado.</div>}
-        <SideItem
-          title="O pareamento por Wi-Fi ainda é feito pelo painel do Screen-Mirror."
-          onClick={() => setTab("logcat")}
-        >
+        <SideItem title="O pareamento por Wi-Fi é feito no painel do Screen-Mirror, ao lado.">
           <span className="ui-mut">+ Parear por Wi-Fi</span>
         </SideItem>
       </SideList>
@@ -170,7 +175,22 @@ export default function DevicesArea() {
         {error && <div className="dva-err">{error}</div>}
 
         <div className="dva-center">
+          {/*
+            * O quadro ganhou legenda. O que está aqui dentro é o painel do
+            * Screen-Mirror, outro aplicativo servido em 127.0.0.1 — com cor,
+            * fonte e botões próprios. Sem dizer isso, ele parecia um pedaço
+            * mal-acabado do Argus; dito, vira o que é, uma janela para outro
+            * programa. É mais honesto que tentar disfarçar o que não é nosso.
+            */}
           <div className="dva-phone">
+            <div className="dva-phone-cap">
+              <span>Painel do Screen-Mirror</span>
+              {url && (
+                <button type="button" className="dva-phone-link" title="Abrir o painel numa janela do navegador" onClick={() => void api.systemOpenUrl(url)}>
+                  abrir fora
+                </button>
+              )}
+            </div>
             {url ? (
               <iframe
                 key={frameKey}
@@ -184,16 +204,7 @@ export default function DevicesArea() {
           </div>
 
           <div className="dva-tools">
-            <Tabs label="Ferramentas do aparelho">
-              {TABS.map((t) => (
-                <Tab key={t.id} on={tab === t.id} onClick={() => setTab(t.id)}>
-                  {t.label}
-                </Tab>
-              ))}
-            </Tabs>
-
             <div className="dva-pane">
-              {tab === "info" ? (
                 <div className="dva-info">
                   {current ? (
                     <dl>
@@ -239,16 +250,8 @@ export default function DevicesArea() {
                     O Screen-Mirror roda só em 127.0.0.1, numa porta livre escolhida pelo Argus, e é encerrado junto
                     com a janela.
                   </p>
+                  <p className="ui-sm ui-mut">{SEM_TELA_NATIVA}</p>
                 </div>
-              ) : tab === "net" ? (
-                <div className="ui-empty">A aba de rede do AllSeenEye ainda não foi integrada.</div>
-              ) : (
-                <div className="ui-empty">
-                  {url
-                    ? `${TABS.find((t) => t.id === tab)?.label} ainda não tem tela nativa. Por enquanto, use o painel do Screen-Mirror na moldura ao lado.`
-                    : "Inicie o sidecar do Screen-Mirror para ver os dados do aparelho."}
-                </div>
-              )}
             </div>
 
             <div className="dva-chips">
@@ -266,12 +269,15 @@ export default function DevicesArea() {
           </div>
         </div>
 
+        {/*
+          * O PID saiu da barra e virou dica do estado do sidecar: número de
+          * processo é dado de depuração, e barra permanente não é lugar de
+          * depuração — quem precisa dele está investigando, e aí passa o mouse.
+          */}
         <AreaStatus>
-          <span>
+          <span title={status?.pid != null ? `processo do sidecar: PID ${status.pid}` : undefined}>
             {url ? `sidecar Screen-Mirror ok · :${portOf(url)}` : `sidecar Screen-Mirror ${busy ? "iniciando" : "parado"}`}
           </span>
-          <span className="dva-sp" />
-          {status?.pid != null && <span>PID {status.pid}</span>}
         </AreaStatus>
       </div>
     </div>

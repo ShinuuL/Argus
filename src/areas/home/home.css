@@ -20,6 +20,8 @@
 .hm-resume { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 12px; min-width: 0; }
 .hm-resume .grow { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hm-resume-t { color: var(--text); }
+/* Sem agente rodando a última sessão é o conteúdo do cartão, não um rodapé: sem régua acima. */
+.hm-resume.first { margin-top: 0; padding-top: 0; border-top: 0; }
 .hm-start { display: flex; align-items: center; gap: 12px; }
 @media (max-width: 900px) {
   .hm-cols { grid-template-columns: 1fr; }

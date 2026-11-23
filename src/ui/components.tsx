@@ -110,6 +110,11 @@ export interface Column<R> {
 /**
  * Tabela (.t). Props: columns [{key,header,render,right?,width?}], rows, rowKey,
  * selected? (chave da linha marcada), onRowClick?, empty? (estado vazio).
+ *
+ * **Sem linha, sem cabeçalho**: a tabela vazia devolve só o `empty`, no lugar
+ * dela inteira. Sete rótulos em versalete anunciando zero linhas é a tabela
+ * fingindo que tem conteúdo — e empurrava o estado vazio para dentro de uma
+ * célula, onde ele não cabe. Passe um <Empty> aqui e ele ocupa o espaço todo.
  */
 export function DataTable<R>({
   columns,
@@ -126,6 +131,7 @@ export function DataTable<R>({
   onRowClick?: (r: R) => void;
   empty?: ReactNode;
 }) {
+  if (rows.length === 0) return <>{empty}</>;
   return (
     <table className="ui-t">
       <thead>
@@ -138,13 +144,7 @@ export function DataTable<R>({
         </tr>
       </thead>
       <tbody>
-        {rows.length === 0 ? (
-          <tr>
-            <td className="ui-t-empty" colSpan={columns.length}>
-              {empty}
-            </td>
-          </tr>
-        ) : (
+        {
           rows.map((r) => {
             const k = rowKey(r);
             return (
@@ -157,9 +157,47 @@ export function DataTable<R>({
               </tr>
             );
           })
-        )}
+        }
       </tbody>
     </table>
+  );
+}
+
+/**
+ * Estado vazio (.ui-vazio): ícone, o que é, o que fazer.
+ *
+ * Havia cinco desenhos diferentes disto no app e dois não ofereciam saída
+ * nenhuma — a tela diagnosticava ("nenhum projeto com git na pasta raiz") e
+ * parava, com a ação a uma tela de distância. O modelo é o de Tarefas
+ * agendadas, a melhor das nove: a frase **explica o que a função faz** em vez
+ * de constatar a ausência, e o botão vem logo abaixo.
+ *
+ * `acao` é opcional só porque há vazios sem saída de verdade (lista filtrada,
+ * busca sem resultado). Quando houver o que fazer, ponha aqui: é o ponto do
+ * estado vazio.
+ */
+export function Empty({
+  icon,
+  title,
+  children,
+  action,
+  compact,
+}: {
+  icon?: ReactNode;
+  title: ReactNode;
+  /** O que a função faz, em uma ou duas linhas. */
+  children?: ReactNode;
+  action?: ReactNode;
+  /** Dentro de um cartão ou de uma coluna estreita: sem altura mínima. */
+  compact?: boolean;
+}) {
+  return (
+    <div className={cx("ui-vazio", compact && "compact")} data-ponte="vazio">
+      {icon && <div className="ui-vazio-ic">{icon}</div>}
+      <h3>{title}</h3>
+      {children && <p>{children}</p>}
+      {action && <div className="ui-vazio-acao">{action}</div>}
+    </div>
   );
 }
 
@@ -203,7 +241,17 @@ export function SideItem({ on, onClick, icon, meta, children, title }: { on?: bo
   );
 }
 
-/** Cabeçalho de área (.h). Props: title, sub? (texto secundário), actions? (à direita), children? (chips ao lado do título). */
+/**
+ * Cabeçalho de área (.ui-ah). Props: title, sub? (contagem ou texto
+ * secundário), actions? (à direita), children? (chips ao lado do título).
+ *
+ * O título deixou de ser grande de propósito. A trilha do topo da janela já
+ * diz o nome da área a 60 px daqui ("Argus / Terminal"), então um título de
+ * 16 px logo abaixo é a mesma palavra duas vezes; o que carrega informação é
+ * o `sub` — a contagem. Usar este componente em **todas** as áreas é o que
+ * acaba com os quatro dialetos de cabeçalho e com os paddings de topo
+ * diferentes (eram 51, 62 e 63 px conforme a tela).
+ */
 export function AreaHeader({ title, sub, actions, children }: { title: ReactNode; sub?: ReactNode; actions?: ReactNode; children?: ReactNode }) {
   return (
     <header className="ui-ah">

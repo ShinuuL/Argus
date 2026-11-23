@@ -20,8 +20,14 @@
   --border: color-mix(in srgb, #e0e1dd 10%, #1b263b);
   --border-strong: #415a77;
   --text: #e0e1dd;
-  /* #778da9 puro dá 4,4:1 sobre a superfície; clareado com o texto da paleta. */
-  --text-2: color-mix(in srgb, #778da9 72%, #e0e1dd);
+  /*
+   * Texto secundário **neutro**, de propósito. Era #778da9 clareado — a mesma
+   * matiz do acento, isto é, a cor de link. Resultado: toda mensagem de estado
+   * vazio das nove telas ("Nenhum servidor em execução") tinha cor de coisa
+   * clicável sem ser clicável. Agora o secundário é o texto misturado ao fundo
+   * (5,0:1 sobre a superfície) e o azul fica reservado ao que se clica.
+   */
+  --text-2: color-mix(in srgb, #e0e1dd 62%, #0d1b2a);
   --accent: #778da9;
   --accent-hover: color-mix(in srgb, #778da9 65%, #e0e1dd);
   --on-accent: #0d1b2a;
@@ -30,7 +36,7 @@
   --focus: color-mix(in srgb, #778da9 50%, #e0e1dd);
   /* Status bar neutra: o fundo do app com texto secundário (8,6:1). */
   --status-bg: #0d1b2a;
-  --on-status: color-mix(in srgb, #778da9 72%, #e0e1dd);
+  --on-status: var(--text-2);
   /* Fundo mais escuro que o app (vale para os temas que não definem o próprio). */
   --page: color-mix(in srgb, var(--bg) 80%, #000000);
 }
@@ -40,31 +46,31 @@
 [data-theme="ciano"] {
   --bg: #0b1418; --page: #081014; --surface: #121e24; --surface-2: #1a2a32;
   --border: #20323b; --border-strong: #2c4651;
-  --text: #e3eef0; --text-2: #93abb2;
+  --text: #e3eef0; --text-2: #a4a8a9;
   --accent: #2bb3b1; --accent-hover: color-mix(in srgb, #2bb3b1 70%, #5fd4d1);
   --accent-text: #5fd4d1; --on-accent: #04201f;
   --selection: #163a3d; --focus: #5fd4d1;
-  --status-bg: #0b1418; --on-status: #93abb2;
+  --status-bg: #0b1418; --on-status: #a4a8a9;
 }
 /* Âmbar: grafite + âmbar */
 [data-theme="ambar"] {
   --bg: #131211; --page: #0e0d0c; --surface: #1c1a18; --surface-2: #262320;
   --border: #2e2a26; --border-strong: #463f37;
-  --text: #efe9e1; --text-2: #a99f92;
+  --text: #efe9e1; --text-2: #a5a3a0;
   --accent: #e0a23b; --accent-hover: color-mix(in srgb, #e0a23b 70%, #f0bd66);
   --accent-text: #f0bd66; --on-accent: #241703;
   --selection: #3a2e1c; --focus: #f0bd66;
-  --status-bg: #131211; --on-status: #a99f92;
+  --status-bg: #131211; --on-status: #a5a3a0;
 }
 /* Violeta: noite + violeta */
 [data-theme="violeta"] {
   --bg: #100f19; --page: #0b0a12; --surface: #181725; --surface-2: #221f33;
   --border: #2a2740; --border-strong: #3e3a5e;
-  --text: #e9e7f5; --text-2: #a29ec0;
+  --text: #e9e7f5; --text-2: #a5a3ac;
   --accent: #8b7cf6; --accent-hover: color-mix(in srgb, #8b7cf6 70%, #b0a6ff);
   --accent-text: #b0a6ff; --on-accent: #120c33;
   --selection: #2c2752; --focus: #b0a6ff;
-  --status-bg: #100f19; --on-status: #a29ec0;
+  --status-bg: #100f19; --on-status: #a5a3ac;
 }
 
 :root {

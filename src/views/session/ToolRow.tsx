@@ -3,7 +3,8 @@
  * ferramenta (nome em negrito + resumo em mono, recolhida; abre IN/OUT ou
  * diff), raciocínio recolhido e a lista de tarefas (TodoWrite) como checklist.
  */
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, memo, useState, type ReactNode } from "react";
+import { api } from "@/api";
 import { Icon, toolIcon } from "@/shell/icons";
 
 type Input = Record<string, unknown>;
@@ -70,6 +71,16 @@ export function toolSummary(name: string, input: unknown, base: string | null = 
     const pattern = str(o, "pattern");
     const where = str(o, "path", "glob");
     return where ? `${pattern}  em ${where}` : pattern;
+  }
+  if (t === "websearch") return `“${str(o, "query")}”`;
+  if (t === "webfetch") {
+    const url = str(o, "url");
+    try {
+      const u = new URL(url);
+      return `${u.host}${u.pathname === "/" ? "" : u.pathname}`;
+    } catch {
+      return url;
+    }
   }
   if (t === "glob") {
     const pattern = str(o, "pattern");
@@ -255,8 +266,14 @@ export interface ToolRowProps {
   base?: string | null;
 }
 
-/** Uma chamada de ferramenta como item da linha do tempo. */
-export function ToolRow({ name, input, result, live, base = null }: ToolRowProps) {
+/**
+ * Uma chamada de ferramenta como item da linha do tempo.
+ *
+ * Em `memo` porque o resumo e o diff são refeitos a cada desenho: com o texto
+ * do agente chegando aos pedaços, a conversa inteira redesenharia junto.
+ * `input` e `result` vêm das entradas já memoizadas, então a referência segura.
+ */
+export const ToolRow = memo(function ToolRow({ name, input, result, live, base = null }: ToolRowProps) {
   const isTodo = /todo/i.test(name);
   const [open, setOpen] = useState(isTodo);
   const status: ToolStatus = result ? (result.ok ? "ok" : "error") : live ? "running" : "none";
@@ -264,7 +281,8 @@ export function ToolRow({ name, input, result, live, base = null }: ToolRowProps
   // No tooltip o caminho vai inteiro; na linha, encurtado pelo meio.
   const full = isTodo ? "" : toolSummary(name, input, base, false);
   const diff = open ? toolDiff(name, input) : null;
-  const label = isTodo ? "Tarefas" : name;
+  const web = WEB_LABEL[name.toLowerCase()];
+  const label = isTodo ? "Tarefas" : (web ?? name);
   return (
     <TimelineItem dot={<Dot status={status} title={STATUS_TITLE[status]} />} className={`tl-tool${open ? " open" : ""}`}>
       <button type="button" className="tl-row" aria-expanded={open} onClick={() => setOpen((v) => !v)} title={full || undefined}>
@@ -278,6 +296,7 @@ export function ToolRow({ name, input, result, live, base = null }: ToolRowProps
           <TodoList input={input} />
         ) : (
           <div className="tl-detail">
+            {web && <WebLinks name={name} input={input} output={result?.output ?? ""} />}
             {diff ? <Diff lines={diff} /> : <IoBlock label="IN" text={inputText(name, input)} />}
             {result && (result.output.trim() || !result.ok) && (
               <IoBlock label="OUT" text={result.output.trim() || "(sem saída)"} error={!result.ok} />
@@ -287,10 +306,27 @@ export function ToolRow({ name, input, result, live, base = null }: ToolRowProps
         ))}
     </TimelineItem>
   );
+});
+
+/** Raciocínio chegando ao vivo: mostra o fim do texto, que rola sozinho. */
+export function LiveThinking({ text }: { text: string }) {
+  const tail = text.length > 600 ? `…${text.slice(-600)}` : text;
+  return (
+    <TimelineItem dot={<Dot status="running" />} className="tl-think tl-think-live">
+      <div className="tl-row">
+        <Icon name="brain" size={13} className="tl-row-ic" />
+        <span className="tl-think-label">Pensando…</span>
+        <span className="small muted">{text.length.toLocaleString("pt-BR")} caracteres</span>
+      </div>
+      <div className="tl-think-text tl-think-tail" aria-live="off">
+        {tail}
+      </div>
+    </TimelineItem>
+  );
 }
 
 /** Raciocínio do modelo: "Pensou" recolhido; abre em itálico apagado. */
-export function ThinkingRow({ text, live }: { text: string; live: boolean }) {
+export const ThinkingRow = memo(function ThinkingRow({ text, live }: { text: string; live: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <TimelineItem dot={<Dot status={live ? "running" : "text"} />} className={`tl-think${open ? " open" : ""}`}>
@@ -302,4 +338,60 @@ export function ThinkingRow({ text, live }: { text: string; live: boolean }) {
       {open && <div className="tl-think-text">{text}</div>}
     </TimelineItem>
   );
+});
+
+const WEB_LABEL: Record<string, string> = { websearch: "Buscou na web", webfetch: "Leu a página" };
+
+/** Links de uma busca ("title"/"url" do resultado) ou o endereço lido; abrem no navegador. */
+export function webLinks(name: string, input: unknown, output: string): { title: string; url: string }[] {
+  if (name.toLowerCase() === "webfetch") {
+    const url = asInput(input).url;
+    return typeof url === "string" && /^https?:\/\//.test(url) ? [{ title: url, url }] : [];
+  }
+  const seen = new Set<string>();
+  const out: { title: string; url: string }[] = [];
+  for (const m of output.matchAll(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,\s*"url"\s*:\s*"(https?:\/\/[^"]+)"/g)) {
+    if (seen.has(m[2])) continue;
+    seen.add(m[2]);
+    out.push({ title: m[1].replace(/\\"/g, '"'), url: m[2] });
+  }
+  if (out.length === 0)
+    for (const m of output.matchAll(/https?:\/\/[^\s"'<>)\]]+/g)) {
+      if (seen.has(m[0])) continue;
+      seen.add(m[0]);
+      out.push({ title: m[0], url: m[0] });
+    }
+  return out.slice(0, 12);
+}
+
+function WebLinks({ name, input, output }: { name: string; input: unknown; output: string }) {
+  const links = webLinks(name, input, output);
+  if (links.length === 0) return null;
+  return (
+    <ul className="tl-web" role="list">
+      {links.map((l) => (
+        <li key={l.url}>
+          <a
+            href={l.url}
+            title={l.url}
+            onClick={(e) => {
+              e.preventDefault();
+              void api.systemOpenUrl(l.url);
+            }}
+          >
+            <span className="tl-web-t">{l.title}</span>
+            <span className="tl-web-h">{hostOf(l.url)}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
 }

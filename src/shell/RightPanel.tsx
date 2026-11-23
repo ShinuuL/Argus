@@ -5,6 +5,7 @@ import ExplorerView from "@/views/explorer";
 import { AgentsPanel } from "@/views/agentmap/AgentsPanel";
 import { ChangesPanel, diffFiles } from "@/views/session/panels";
 import { ChecklistPanel } from "@/views/session/ChecklistPanel";
+import ServersView from "@/views/servers";
 import { Tab, Tabs } from "@/ui";
 import type { ActiveContext } from "./useActiveContext";
 
@@ -35,12 +36,16 @@ function useChangeCount(taskId: TaskId | null, project: Path | null): number {
  * Inspetor da área de conversas (Ctrl+.): Alterações (diff com Aplicar e
  * Descartar), Arquivos, Agentes e Pendências (check-list do markdown do projeto). O mapa grande abre pelo botão do próprio
  * Mapa de agentes (um só ícone de expandir no canto).
- * Servidores virou área própria (barra de ícones).
+ * Servidores também aparece aqui, ao lado de Agentes (a área própria continua na barra de ícones).
  */
 export function RightPanel({ ctx }: { ctx: ActiveContext }) {
   const tab = useLayout((s) => s.rightTab);
   const setTab = useLayout((s) => s.setRightTab);
   const changes = useChangeCount(ctx.taskId, ctx.project);
+  // A lista de abas rola quando não cabe: a ativa sempre fica à vista.
+  useEffect(() => {
+    document.querySelector(".rp > .ui-tabs .ui-tab.on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [tab]);
 
   return (
     <aside className="rp" aria-label="Inspetor">
@@ -55,6 +60,7 @@ export function RightPanel({ ctx }: { ctx: ActiveContext }) {
         {tab === "files" && <ExplorerView />}
         {tab === "changes" && <ChangesPanel taskId={ctx.taskId} project={ctx.project} />}
         {tab === "agents" && <AgentsPanel taskId={ctx.taskId} />}
+        {tab === "servers" && <ServersView />}
         {tab === "checklist" && <ChecklistPanel taskId={ctx.taskId} project={ctx.project} />}
       </div>
     </aside>

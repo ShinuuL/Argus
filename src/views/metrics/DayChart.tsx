@@ -3,15 +3,23 @@ import { formatTokensPt, formatUsdPt, totalTokens, type DayLine } from "@/api";
 
 export type Measure = "cost" | "tokens";
 
-const HEIGHT = 170;
+/** Piso da altura: abaixo disto as colunas viram risquinhos. */
+const MIN_H = 170;
 const M = { top: 10, right: 8, bottom: 20, left: 52 };
 
-/** Arredonda o topo da escala para um valor "redondo" (1, 2, 2.5, 5 x 10^n). */
+/**
+ * Arredonda o topo da escala para um valor "redondo".
+ *
+ * Os degraus eram 1, 2, 2.5, 5 e 10: entre 5 e 10 não havia nada, então um dia
+ * de pico de 6,5 mi tokens era desenhado contra um eixo de 10 mi e as colunas
+ * usavam dois terços da altura, com um terço de grade vazia por cima. Com 6, 8
+ * e 3 no meio, a barra mais alta fica sempre acima de 80% do gráfico.
+ */
 export function niceMax(v: number): number {
   if (!(v > 0)) return 1;
   const pow = Math.pow(10, Math.floor(Math.log10(v)));
   const f = v / pow;
-  const step = f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10;
+  const step = f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 3 ? 3 : f <= 4 ? 4 : f <= 5 ? 5 : f <= 6 ? 6 : f <= 8 ? 8 : 10;
   return step * pow;
 }
 
@@ -31,19 +39,27 @@ function barPath(x: number, y: number, w: number, h: number): string {
   return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
 }
 
-function useWidth(): [RefObject<HTMLDivElement>, number] {
+/**
+ * Mede o espaço que o contêiner dá, nas duas direções.
+ *
+ * A altura era fixa em 170 px dentro de um cartão que ia até o fim da tela —
+ * daí os quase 450 px de nada embaixo do gráfico na área de Métricas. Medir a
+ * altura não entra em laço porque quem a define é o `flex` do cartão (ver
+ * `.mxa-chart` em metrics-area.css), não o conteúdo.
+ */
+function useBox(): [RefObject<HTMLDivElement>, number, number] {
   const ref = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(600);
+  const [box, setBox] = useState({ w: 600, h: MIN_H });
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const apply = () => setWidth(Math.max(240, Math.floor(el.clientWidth)));
+    const apply = () => setBox({ w: Math.max(240, Math.floor(el.clientWidth)), h: Math.max(MIN_H, Math.floor(el.clientHeight)) });
     apply();
     const ro = new ResizeObserver(apply);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  return [ref, width];
+  return [ref, box.w, box.h];
 }
 
 /**
@@ -52,17 +68,23 @@ function useWidth(): [RefObject<HTMLDivElement>, number] {
  * em foco) mostra os valores do dia.
  */
 export function DayChart({ days, measure }: { days: DayLine[]; measure: Measure }) {
-  const [ref, width] = useWidth();
+  const [ref, width, height] = useBox();
   const [hover, setHover] = useState<number | null>(null);
 
   if (days.length === 0) return <div className="muted small">Sem dados.</div>;
 
   const fmt = measure === "cost" ? formatUsdPt : formatTokensPt;
   const plotW = width - M.left - M.right;
-  const plotH = HEIGHT - M.top - M.bottom;
+  const plotH = height - M.top - M.bottom;
   const n = days.length;
   const slot = plotW / n;
-  const barW = Math.max(1, Math.min(slot - 2, 28));
+  /*
+   * A barra ocupa uma fração da casa, em vez de um teto fixo de 28 px: desde
+   * que o gráfico passou a crescer em altura, 28 px de largura contra 600 px
+   * de altura desenhava palitos separados por vãos maiores que eles. O teto
+   * continua existindo (`slot - 6`) para as colunas não se encostarem.
+   */
+  const barW = Math.max(1, Math.min(slot - 6, Math.max(14, slot * 0.6)));
   const max = niceMax(Math.max(...days.map((d) => valueOf(d, measure))));
   const y = (v: number) => M.top + plotH - (v / max) * plotH;
   const ticks = [0, max / 2, max];
@@ -89,7 +111,7 @@ export function DayChart({ days, measure }: { days: DayLine[]; measure: Measure 
     <div className="m-chart mx-chart" ref={ref}>
       <svg
         width={width}
-        height={HEIGHT}
+        height={height}
         className="mx-day-svg"
         role="img"
         tabIndex={0}
@@ -132,7 +154,7 @@ export function DayChart({ days, measure }: { days: DayLine[]; measure: Measure 
             key={i}
             className="mx-tick"
             x={M.left + slot * i + slot / 2}
-            y={HEIGHT - 5}
+            y={height - 5}
             textAnchor={i === 0 && n > 1 ? "start" : i === n - 1 && n > 1 ? "end" : "middle"}
           >
             {shortDay(days[i].day)}

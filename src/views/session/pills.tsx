@@ -480,6 +480,10 @@ export interface ComposerOptionsProps {
   /** Modo de acesso da conversa (só com tarefa criada). */
   access?: AccessMode;
   onAccess?: (a: AccessMode) => void;
+  /** Seção "Agente" (esforço, teto de custo, reserva); `extraChanged` = quantas fogem do padrão. */
+  extra?: React.ReactNode;
+  extraChanged?: number;
+  extraSummary?: string;
 }
 
 /**
@@ -502,7 +506,7 @@ const WORK_MODE_SHORT: Record<WorkMode, string> = {
   Direct: "Na própria pasta; vale na hora.",
 };
 
-export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditable, noGit, onMode, access = "normal", onAccess }: ComposerOptionsProps) {
+export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditable, noGit, onMode, access = "normal", onAccess, extra, extraChanged = 0, extraSummary }: ComposerOptionsProps) {
   const [open, setOpen] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
   const aw = useAutoWork(project, taskId);
@@ -512,11 +516,12 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
   }, []);
 
   const offMode = taskId == null && mode !== defaultMode;
-  const changed = (offMode ? 1 : 0) + (aw.on ? 1 : 0) + (access !== "normal" ? 1 : 0);
+  const changed = (offMode ? 1 : 0) + (aw.on ? 1 : 0) + (access !== "normal" ? 1 : 0) + extraChanged;
   const summary = [
     mode === "Isolated" ? "isolado" : "direto na pasta",
     access === "normal" ? "edições automáticas" : `acesso ${ACCESS_LABEL[access]}`,
     aw.on ? `auto-work${aw.progress || " ligado"}` : null,
+    extraSummary || null,
   ]
     .filter(Boolean)
     .join(", ");
@@ -572,6 +577,12 @@ export function ComposerOptions({ project, taskId, mode, defaultMode, modeEditab
             </p>
           )}
         </div>
+        )}
+        {extra && (
+          <div className="pop-sec">
+            <div className="pop-title">Agente</div>
+            <div className="pop-fields">{extra}</div>
+          </div>
         )}
         <div className="pop-sec">
           <div className="pop-title">Acesso nesta conversa</div>

@@ -65,3 +65,15 @@
 .sa-check input { accent-color: var(--accent); margin: 0; }
 .sa-check:has(input:disabled) { color: var(--text-2); cursor: default; }
 .sa-mem-head { flex: none; margin-top: var(--space-5); }
+
+/* Ferramentas MCP › servidores da CLI do Claude. */
+.mcp { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; max-width: 980px; }
+.mcp-head { display: flex; align-items: center; gap: 8px; }
+.mcp-head h3 { flex: 1; margin: 0; font-size: 13.5px; }
+.mcp-sub { margin: 10px 0 2px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.mcp-target { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; white-space: nowrap; }
+.mcp-msg { white-space: pre-wrap; }
+.mcp-form { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); max-width: 640px; }
+.mcp-form label, .mcp-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-2); }
+.mcp-form input, .mcp-form textarea { font-size: 12.5px; }

@@ -2,6 +2,7 @@
  * Indicador de estado do agente: um ícone pequeno (spinner, check, alerta...)
  * com tooltip em pt-BR, usado na barra lateral, nas abas e no cabeçalho do chat.
  */
+import { useEffect, useState, type MutableRefObject } from "react";
 import { variantOf, type AgentEvent, type Task, type TaskState } from "@/api";
 import { Icon, type IconName } from "@/shell/icons";
 import { useApp } from "@/store";
@@ -91,6 +92,73 @@ export function AgentStateIcon({ kind, size = 13, title }: { kind: AgentStateKin
   return (
     <span className={`agent-state ${kind}`} title={t} role="img" aria-label={t} data-state={kind}>
       <Icon name={INFO[kind].icon} size={size} />
+    </span>
+  );
+}
+
+/** A partir daqui o silêncio da CLI deixa de ser espera normal e vira aviso. */
+const STALL_MS = 60_000;
+
+export interface StalledPillProps {
+  /** Último sinal de vida do agente (ref: os deltas chegam rápido demais para virar estado). */
+  lastEventAt: MutableRefObject<number | null>;
+  /** Turno em andamento; fora dele não há o que avisar. */
+  active: boolean;
+  /** Interrompe o turno. Ausente enquanto já está sendo interrompido. */
+  onStop?(): void;
+  /** Compactação em andamento ("size" ou "idle"), que explica o silêncio. */
+  compacting?: string | null;
+}
+
+/** Por que o Argus resolveu compactar, em uma linha. */
+const COMPACT_WHY: Record<string, string> = {
+  size: "A conversa passou do limite de contexto: resumir agora deixa o turno mais rápido e mais barato.",
+  idle: "A conversa ficou parada além da vida do cache (1 h): sem resumir, o turno pagaria o histórico inteiro de novo.",
+};
+
+/**
+ * Quanto tempo faz que a CLI não dá sinal de vida, com o atalho para desistir.
+ * Fica invisível enquanto o silêncio for curto: o aviso só aparece quando a
+ * espera deixa de ser normal.
+ *
+ * Durante uma compactação o silêncio é esperado e pode durar minutos, então a
+ * pílula aparece de imediato dizendo o que está acontecendo, em vez de só
+ * reclamar da demora depois de um minuto.
+ */
+export function StalledPill({ lastEventAt, active, onStop, compacting }: StalledPillProps) {
+  const [quiet, setQuiet] = useState(0);
+
+  useEffect(() => {
+    if (!active) {
+      setQuiet(0);
+      return;
+    }
+    // Sem evento neste turno ainda, o silêncio conta do começo dele, não do
+    // último evento do turno anterior.
+    const since = Date.now();
+    const read = () => setQuiet(Date.now() - Math.max(lastEventAt.current ?? 0, since));
+    read();
+    const timer = setInterval(read, 1000);
+    return () => clearInterval(timer);
+  }, [active, lastEventAt]);
+
+  if (!active || (!compacting && quiet < STALL_MS)) return null;
+  const mins = Math.floor(quiet / 60_000);
+  const label = compacting
+    ? `Compactando a conversa${mins >= 1 ? ` · ${mins} min` : ""}`
+    : mins < 1
+      ? "sem resposta há menos de 1 min"
+      : `${mins} min sem resposta`;
+  const title = compacting ? (COMPACT_WHY[compacting] ?? "Resumindo a conversa antes de responder.") : undefined;
+  return (
+    <span className={`agent-stalled${compacting ? " compacting" : ""}`} role="status" title={title}>
+      <Icon name={compacting ? "collapse" : "clock"} size={12} />
+      <span className="agent-stalled-label">{label}</span>
+      {onStop && (
+        <button type="button" className="agent-stalled-stop" onClick={onStop}>
+          Interromper
+        </button>
+      )}
     </span>
   );
 }

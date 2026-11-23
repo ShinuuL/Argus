@@ -1,11 +1,17 @@
 /* Tela 07 · Servidores e portas. Cores só por tokens. */
-.srva-bar { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex: none; }
+/*
+ * Numa janela de 900 px esta barra transbordava: o campo de busca ficava
+ * cortado pela metade, TCP/UDP/Escutando saíam da tela e a área inteira
+ * ganhava uma barra de rolagem horizontal. Ela desce de linha em vez de
+ * empurrar — e o campo encolhe até 120 px antes disso.
+ */
+.srva-bar { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex: none; flex-wrap: wrap; }
 .srva-bar .ui-sp { flex: 1; }
 .srva-tabs { padding: 0; border-bottom: 0; }
-.srva-q { width: 260px; height: 24px; padding: 0 9px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; }
+.srva-q { width: 260px; min-width: 120px; flex: 0 1 260px; height: 24px; padding: 0 9px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; }
 .srva-q:focus { outline: 1px solid var(--focus); }
 .ui-chip.srva-on { color: var(--text); background: var(--selection); }
-.srva-scroll { flex: 1; min-height: 0; overflow: auto; }
+.srva-scroll { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
 .srva-err { padding: 6px 14px; color: var(--err); font-size: 12px; border-bottom: 1px solid var(--border); }
 .srva-panel { width: 290px; flex: none; border-left: 1px solid var(--border); background: var(--surface); overflow-y: auto; }
 .srva-detail { padding: 14px; display: grid; gap: 10px; align-content: start; }

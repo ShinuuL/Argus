@@ -26,3 +26,6 @@
 .mx-table td, .mx-table th { font-variant-numeric: tabular-nums; }
 .mx-side-kpi { display: flex; flex-direction: column; gap: 2px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-raised); }
 .mx-side-kpi b { font-size: 16px; font-variant-numeric: tabular-nums; }
+.mx-rank { width: 100%; table-layout: fixed; margin-top: 6px; }
+.mx-rank td, .mx-rank th { font-variant-numeric: tabular-nums; }
+.mx-rank th:first-child, .mx-rank td:first-child { width: 40%; }

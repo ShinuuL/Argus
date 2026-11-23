@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { CmdSpec, CommandSpec, Path, PtyId } from "@/api";
 import { defaultCwd, useLayout, useTerminals, useWorkbench } from "@/store";
+import { Btn, Empty } from "@/ui";
+import { Icon } from "@/shell/icons";
 import { attachSession, detachSession, fitSession, freshTerminalKey, type TerminalSession } from "./session";
 import "./terminal.css";
 
@@ -154,9 +156,20 @@ export default function TerminalView() {
       </div>
       <div className="terms">
         {tabs.length === 0 && (
-          <div className="pad muted small">
-            Nenhum terminal aberto. Clique em + para abrir um terminal na pasta do projeto.
-          </div>
+          /*
+           * O texto antigo mandava "clicar em +". Na área Terminal em tela
+           * cheia esse `+` não aparece — a faixa de abas fica recolhida e o
+           * botão se chama "Novo terminal" —, então a instrução apontava para
+           * um botão inexistente. Agora a ação é o próprio botão.
+           */
+          <Empty
+            icon={<Icon name="terminal" size={20} />}
+            title="Nenhum terminal aberto"
+            action={<Btn onClick={() => openTab({ cwd: defaultCwd() })}>Novo terminal</Btn>}
+          >
+            Um terminal abre na pasta do projeto, com o mesmo ambiente que o agente usa — útil para
+            conferir à mão o que ele acabou de rodar.
+          </Empty>
         )}
         {tabs.map((t) => (
           <div key={t.id} className="pane" style={{ display: t.id === active ? "block" : "none" }}>

@@ -111,6 +111,48 @@ export function chatAttachmentsCleanup(): void {
   void call<number>("chat_attachments_cleanup", {}).catch(() => undefined);
 }
 
+/** Quando o "Melhorar pedido" entra em ação. */
+export type PolishMode = "off" | "button" | "auto";
+
+/** Contexto que acompanha a reescrita (nada daqui é caminho absoluto). */
+export interface PolishContext {
+  project?: string | null;
+  provider?: string | null;
+  work_mode?: string | null;
+  files?: string[];
+}
+
+/**
+ * Reescreve o rascunho da caixa. Roda um `claude -p` curto no modelo barato,
+ * fora da pasta do projeto e sem nenhuma ferramenta; o texto volta para a caixa,
+ * nunca direto para o agente.
+ */
+export async function chatPolishPrompt(draft: string, context: PolishContext): Promise<string> {
+  const better = await call<string>("chat_polish_prompt", { draft, context, model: null });
+  if (!better) throw new Error("Melhorar pedido ainda não está disponível nesta versão.");
+  return better;
+}
+
+export async function polishModeGet(): Promise<PolishMode> {
+  return (await call<PolishMode>("polish_mode_get", {}).catch(() => null)) ?? "button";
+}
+
+export async function polishModeSet(mode: PolishMode): Promise<void> {
+  await call<void>("polish_mode_set", { mode });
+}
+
+/** Roteiro da entrevista de briefing para pôr na caixa. */
+export async function chatBriefingPrompt(project: string | null): Promise<string> {
+  const text = await call<string>("chat_briefing_prompt", { project });
+  if (!text) throw new Error("A entrevista de briefing ainda não está disponível nesta versão.");
+  return text;
+}
+
+/** O projeto ainda não tem `BRIEFING.md`. */
+export async function chatBriefingMissing(project: Path): Promise<boolean> {
+  return (await call<boolean>("chat_briefing_missing", { project }).catch(() => false)) ?? false;
+}
+
 const capsCache = new Map<string, Promise<AgentCapabilities | null>>();
 
 /**

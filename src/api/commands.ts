@@ -4,9 +4,20 @@
  * Todas devolvem Promise e rejeitam com uma string (mensagem em português
  * pronta para exibir). Use `errorMessage(e)` de `./util` no `catch`.
  */
-import { invoke } from "@tauri-apps/api/core";
+import { invoke as invokeReal } from "@tauri-apps/api/core";
+import { invokeDaGaleria } from "@/dev/galeria";
 import { ensurePtyListeners, forgetPty } from "./events";
+
+/**
+ * Sem cenário de galeria escolhido isto é o `invoke` do Tauri, sem desvio
+ * nenhum (ver src/dev/galeria.ts). É a única linha do app que sabe que a
+ * galeria existe — o `__TAURI_INTERNALS__` do Tauri 2 vem lacrado e não dá
+ * para embrulhar por fora.
+ */
+const invoke = invokeDaGaleria(invokeReal);
 import type {
+  RateLimitInfo,
+  MuralClaim,
   AccessMode,
   AgentEvent,
   AppInfo,
@@ -196,6 +207,76 @@ export const taskCreate = (project: Path, provider: string, prompt: string, opts
   invoke("task_create", { project, provider, prompt, model: opts.model || null, mode: opts.mode ?? null, access: opts.access ?? null });
 
 /** Troca o modelo da tarefa (null = padrão da CLI); vale a partir do próximo turno. */
+export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
+export interface Todo {
+  text: string;
+  done: boolean;
+}
+export interface Reminder {
+  id: string;
+  /** O que fazer. */
+  text: string;
+  /** Hora do compromisso (ms desde 1970). */
+  at: number;
+  /** Quantos minutos antes avisar. */
+  before: number;
+  /** Já avisou. */
+  fired: boolean;
+}
+/**
+ * Últimos limites de uso do plano (um por janela), já sem janela vencida.
+ *
+ * O comando devolve o conteúdo direto. Versões antigas gravavam o evento
+ * inteiro (`{"RateLimit": …}`) e o `rate_limits` tolera isso ao ler do banco,
+ * mas aqui já chega desembrulhado.
+ */
+export const rateLimits = (): Promise<RateLimitInfo[]> => invoke<RateLimitInfo[]>("rate_limits");
+/**
+ * Mural de arquivos: quem está mexendo em quê agora.
+ *
+ * Retrato inicial para quem abre o painel no meio de um turno; depois disso as
+ * anotações chegam ao vivo no evento `orch` (`{ Mural: … }`).
+ */
+export const muralList = (): Promise<MuralClaim[]> => invoke<MuralClaim[]>("mural_list");
+export interface McpServer {
+  name: string;
+  target: string;
+  status: "connected" | "needs_auth" | "failed" | "unknown";
+  status_text: string;
+  /** Conector da conta no claude.ai (não se remove pela CLI). */
+  remote: boolean;
+}
+export const mcpList = (): Promise<McpServer[]> => invoke("mcp_list");
+export const mcpAdd = (a: { name: string; transport: "stdio" | "http" | "sse"; target: string; args: string[]; scope: "local" | "user" | "project"; env: string[] }): Promise<string> =>
+  invoke("mcp_add", a);
+export const mcpRemove = (name: string): Promise<string> => invoke("mcp_remove", { name });
+export interface Plugin {
+  /** "nome@marketplace". */
+  id: string;
+  version: string;
+  scope: string;
+  enabled: boolean;
+  mcp_servers: string[];
+}
+export const pluginsList = (): Promise<Plugin[]> => invoke("plugins_list");
+export const pluginSet = (id: string, enabled: boolean): Promise<string> => invoke("plugin_set", { id, enabled });
+export const notifyUser = (title: string, body: string): Promise<void> => invoke("notify_user", { title, body });
+export const remindersGet = (): Promise<Reminder[]> => invoke<string>("reminders_get").then((s) => JSON.parse(s) as Reminder[]);
+export const remindersSet = (list: Reminder[]): Promise<void> => invoke("reminders_set", { data: JSON.stringify(list) });
+
+export interface Limits {
+  max_budget_usd: number | null;
+  fallback_model: string | null;
+}
+export const taskLimits = (id: TaskId): Promise<Limits> => invoke("task_limits", { id });
+export const taskSetLimits = (id: TaskId, limits: Limits): Promise<void> => invoke("task_set_limits", { id, limits });
+/** Ramifica a conversa; devolve o id da tarefa nova. */
+export const taskFork = (id: TaskId): Promise<TaskId> => invoke("task_fork", { id });
+export const taskEffort = (id: TaskId): Promise<Effort | null> => invoke("task_effort", { id });
+export const taskSetEffort = (id: TaskId, effort: Effort | null): Promise<void> => invoke("task_set_effort", { id, effort });
+export const taskTodos = (id: TaskId): Promise<Todo[]> => invoke("task_todos", { id });
+export const taskSetTodos = (id: TaskId, todos: Todo[]): Promise<Todo[]> => invoke("task_set_todos", { id, todos });
+
 export const taskSetModel = (id: TaskId, model: string | null): Promise<void> =>
   invoke("task_set_model", { id, model: model || null });
 
@@ -236,7 +317,9 @@ export const permissionsSet = (project: Path | null, level: "local" | "remote" |
 /** Grava o modo de permissão no geral (`project` null) ou no projeto; `mode` null apaga a do projeto. */
 /** Limite de contexto (tokens) para compactar antes do próximo turno; 0 = desligado. */
 export const autocompactGet = (): Promise<number> => invoke("autocompact_get");
-export const autocompactSet = (tokens: number | null): Promise<void> => invoke("autocompact_set", { tokens });
+/** Segundos desde a última atividade gravada da conversa (null = sem histórico). */
+export const taskIdleSecs = (id: TaskId): Promise<number | null> => invoke("task_idle_secs", { id });
+export const autocompactSet =(tokens: number | null): Promise<void> => invoke("autocompact_set", { tokens });
 export const permissionModeSet = (project: Path | null, mode: PermissionMode | null): Promise<void> =>
   invoke("permission_mode_set", { project, mode });
 

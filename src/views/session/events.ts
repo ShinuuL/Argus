@@ -2,7 +2,7 @@
  * Funções puras sobre a lista de eventos de uma tarefa: separar o chat
  * principal do chat de cada subagente, montar a árvore e somar o consumo.
  */
-import { variantOf, type AgentEvent, type Pricing, type SubagentInfo, type TokenUsage } from "@/api";
+import { variantOf, type AgentEvent, type ModelPrice, type Pricing, type SubagentInfo, type TokenUsage } from "@/api";
 import { splitPrompt } from "@/views/chat/attachments";
 
 /**
@@ -41,6 +41,8 @@ export type ChatEntry =
   | { type: "switch"; from: string; to: string }
   /** Ferramenta negada por falta de permissão. */
   | { type: "denied"; tool: string; command: string }
+  /** Aviso da CLI: nova tentativa na API, hook com falha, notificação. */
+  | { type: "alert"; level: "info" | "warn" | "err"; text: string }
   | { type: "unknown"; kind: string };
 
 /** Ferramentas que criam subagente: o `SubagentStart` já vira o cartão. */
@@ -80,6 +82,8 @@ export function chatEntries(events: AgentEvent[], owner: string | null): ChatEnt
   const spawnTools: number[] = [];
   /** Ferramentas comuns ainda sem saída, em ordem: o próximo `ToolResult` é da primeira. */
   const pending: Extract<ChatEntry, { type: "tool" }>[] = [];
+  /** Avisos já mostrados: um hook que falha em todo turno aparece só na primeira vez. */
+  const seenAlerts = new Set<string>();
   for (const raw of events) {
     const { owner: evOwner, event } = unwrap(raw);
     const { kind } = variantOf(event);
@@ -97,6 +101,12 @@ export function chatEntries(events: AgentEvent[], owner: string | null): ChatEnt
     if ("User" in event) pending.length = 0;
     if ("Denied" in event) {
       out.push({ type: "denied", ...event.Denied });
+      continue;
+    }
+    if ("Notice" in event) {
+      if (seenAlerts.has(event.Notice.text)) continue;
+      seenAlerts.add(event.Notice.text);
+      out.push({ type: "alert", ...event.Notice });
       continue;
     }
     if ("Compacted" in event) {
@@ -133,7 +143,10 @@ export function chatEntries(events: AgentEvent[], owner: string | null): ChatEnt
     }
     else if ("Usage" in event) out.push({ type: "usage", usage: event.Usage });
     else if ("Raw" in event) pushNotice(out, event.Raw);
-    else if ("Session" in event || "Context" in event) continue;
+    // Eventos que não são conversa: id de sessão, ocupação do contexto, limite
+    // do plano e o aviso de compactação em andamento. Cada um tem o seu lugar
+    // na interface (pílula, popover); no meio do chat viravam "(evento …)".
+    else if ("Session" in event || "Context" in event || "RateLimit" in event || "Compacting" in event) continue;
     else out.push({ type: "unknown", kind });
   }
   return out;
@@ -246,10 +259,17 @@ export function noticeSummary(raw: string): string {
   return chars.length > 90 || lines.length > 1 ? `${cut}…` : cut;
 }
 
+/** Preço de um modelo gratuito: o mesmo zero de `is_free_model` em `metrics.rs`. */
+const FREE_PRICE: ModelPrice = { input: 0, output: 0, cache_read: 0, cache_write: 0 };
+
 /** Mesma regra de `Pricing::price_for` do core: a chave mais longa contida no nome do modelo. */
 function priceFor(pricing: Pricing, model: string | null) {
   if (!model) return pricing.fallback;
   const m = model.toLowerCase();
+  // Modelos `-free` (OpenCode), `:free` (OpenRouter) e `/free` custam 0. Sem
+  // isto a tela mostrava "equivalente em API" para `opencode/beam-free`, mesmo
+  // com a CLI reportando `cost: 0`: o frontend recalculava pelo fallback.
+  if (m.endsWith("-free") || m.endsWith(":free") || m.endsWith("/free")) return FREE_PRICE;
   let best: string | null = null;
   for (const key of Object.keys(pricing.models)) {
     if (m.includes(key.toLowerCase()) && (best == null || key.length > best.length)) best = key;

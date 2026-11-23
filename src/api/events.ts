@@ -10,8 +10,12 @@
  *
  * Os de terminal (`onPtyOutput`, `onPtyExit`) são síncronos e devolvem `Unlisten` direto.
  */
-import { listen } from "@tauri-apps/api/event";
+import { listen as listenReal } from "@tauri-apps/api/event";
+import { listenDaGaleria } from "@/dev/galeria";
 import { decodeBase64 } from "./util";
+
+/** Sem cenário de galeria, é o `listen` do Tauri (ver src/dev/galeria.ts). */
+const listen = listenDaGaleria(listenReal);
 import type {
   AgentEvent,
   AutoWorkEvent,

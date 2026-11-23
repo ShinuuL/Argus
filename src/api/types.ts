@@ -210,6 +210,9 @@ export type AgentEvent =
   | { Text: string }
   /** Pedaço de texto ainda sendo gerado: só ao vivo, nunca no histórico. */
   | { TextDelta: string }
+  | { ThinkingDelta: string }
+  | { SubagentProgress: SubagentProgress }
+  | { Notice: { level: "info" | "warn" | "err"; text: string } }
   | { ToolUse: { name: string; input: unknown } }
   /** Saída de uma ferramenta comum, na mesma ordem dos `ToolUse` do mesmo dono (cortada em 4000 caracteres). */
   | { ToolResult: { ok: boolean; output: string } }
@@ -233,6 +236,13 @@ export type AgentEvent =
   | { ProviderSwitch: { from: string; to: string } }
   /** Conversa compactada: contexto antes e depois; `trigger` = "manual" (Argus) ou "auto" (CLI). */
   | { Compacted: { pre_tokens: number; post_tokens: number; trigger: string } }
+  /**
+   * O Argus vai compactar antes de mandar a mensagem (`reason`: "size" ou
+   * "idle"). Só ao vivo: explica os minutos em que a CLI fica muda. O fim é o
+   * `Compacted`.
+   */
+  | { Compacting: { reason: string } }
+  | { RateLimit: RateLimitInfo }
   /** A CLI negou uma ferramenta por falta de permissão (`command` vazio se não for de shell). */
   | { Denied: { tool: string; command: string } }
   /** Ocupação da janela de contexto (último pedido do agente principal). Não vai para o histórico. */
@@ -374,7 +384,27 @@ export type OrchEvent =
   | { Stderr: { task: TaskId; line: string } }
   | { AutoWork: AutoWorkEvent }
   | { Removed: { task: TaskId } }
+  | { Mural: { claim: MuralClaim; conflicts: MuralClaim[] } }
   | { Other: unknown };
+
+/**
+ * Uma linha do mural de arquivos: um agente tocou num arquivo (crates/core/src/mural.rs).
+ *
+ * Não é tranca, é recado: o Argus anota o que vê passar nas ferramentas e conta
+ * para os outros agentes no começo do turno seguinte.
+ */
+export type MuralClaim = {
+  task: TaskId;
+  /** Subagente que mexeu, ou `null` para o agente principal. */
+  agent: string | null;
+  path: string;
+  /** Escreveu (`true`) ou só leu. */
+  write: boolean;
+  /** Ferramenta de origem: "Edit", "Write", "Read"… */
+  tool: string;
+  /** Segundos desde 1970. */
+  at: number;
+};
 
 // ----------------------------------------------------------------- servidores
 
@@ -480,6 +510,49 @@ export interface MetricsReport {
   days: DayLine[];
   /** false = histórico desligado (sem banco). */
   has_db: boolean;
+  insights: Insights;
+}
+
+/** Custo estimado pela tabela, por tipo de token (USD). */
+export interface CostSplit {
+  input: number;
+  cache_write: number;
+  cache_read: number;
+  output: number;
+}
+
+/** Uma conversa no ranking de custo. */
+export interface TaskCostLine {
+  task_id: number;
+  project: string;
+  /** Prompt inicial; vazio se a conversa foi excluída. */
+  title: string;
+  cost: number;
+  turns: number;
+  cost_per_turn: number;
+  /** Maior contexto conhecido (tokens). */
+  max_context: number;
+  cache_hit_rate: number;
+}
+
+/** Um turno com regravação de cache. */
+export interface RewriteTurn {
+  task_id: number;
+  created_at: number;
+  input_tokens: number;
+  cache_read: number;
+  cache_write: number;
+  write_cost: number;
+}
+
+export interface Insights {
+  /** cache_read / (cache_read + cache_write + entrada). */
+  cache_hit_rate: number;
+  split: CostSplit;
+  tasks: TaskCostLine[];
+  rewrite_turns: number;
+  rewrite_write_cost: number;
+  rewrites: RewriteTurn[];
 }
 
 export interface TodayUsage {
@@ -851,4 +924,26 @@ export interface AutostartInfo {
   /** false na cópia de desenvolvimento. */
   available: boolean;
   reason: string | null;
+}
+
+/** Limite de uso do plano (claude `rate_limit_event`). */
+export interface RateLimitInfo {
+  /** "five_hour", "seven_day", "seven_day_opus"... */
+  window: string;
+  /** Fração usada, de 0 a 1. */
+  utilization: number | null;
+  /** Quando reinicia (segundos desde 1970). */
+  resets_at: number | null;
+  /** "allowed", "allowed_warning" ou "rejected". */
+  status: string;
+}
+
+/** Andamento de um subagente (só ao vivo). */
+export interface SubagentProgress {
+  id: string;
+  /** O que ele está fazendo agora (ex.: "Finding" seguido do padrão buscado). */
+  activity: string;
+  tokens: number | null;
+  tool_uses: number | null;
+  duration_ms: number | null;
 }

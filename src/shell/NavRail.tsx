@@ -45,6 +45,7 @@ function RailItem({ id, label, icon: I }: { id: Area; label: string; icon: Lucid
       className={on ? "ri on" : "ri"}
       aria-current={on ? "page" : undefined}
       aria-label={label}
+      data-ponte={`nav-${id}`}
       title={label}
       onClick={() => useLayout.getState().setArea(id)}
     >

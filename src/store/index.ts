@@ -6,6 +6,7 @@
  * - `useWorkbench`:  grupos e abas da área central (conversa, arquivo, terminal, painel e telas do rodapé).
  * - `useTerminals`:  abas do painel inferior de terminais.
  * - `useTheme`:      tema de cores (Oceano, Ardósia, Grafite, Noite).
+ * - `useMural`:      mural de arquivos (quem está mexendo em quê, agora).
  *
  * Fora de componentes, use `useApp.getState()` / `useWorkbench.getState()`.
  */
@@ -14,4 +15,5 @@ export * from "./layout";
 export * from "./workbench";
 export * from "./terminals";
 export * from "./theme";
+export * from "./mural";
 export { forgetSession, startApp } from "./bootstrap";

@@ -76,19 +76,25 @@ function parseQuestion(raw: unknown): AskQuestion | null {
  * No `claude -p` a ferramenta de pergunta não existe: o Argus pede ao agente
  * (prompt de sistema) que escreva as perguntas com opções num bloco
  * ```argus-ask com JSON `{ "questions": [...] }`, no mesmo formato da ferramenta.
- * Devolve o texto sem o bloco e as perguntas lidas (null se não houver bloco válido).
+ * Devolve o texto sem o bloco e as perguntas lidas.
+ *
+ * O bloco sai do texto mesmo quando não dá para lê-lo (`quebrado`): antes ele
+ * voltava inteiro pelo caminho do markdown, e uma vírgula faltando no JSON
+ * virava mil caracteres de JSON cru na cara do usuário, sem pergunta nenhuma e
+ * sem dizer que havia uma. Agora vira uma linha curta — o agente erra igual, mas
+ * o erro fica legível e a conversa continua.
  */
-export function splitAskBlock(text: string): { text: string; ask: AskQuestion[] | null } {
+export function splitAskBlock(text: string): { text: string; ask: AskQuestion[] | null; quebrado: boolean } {
   const m = /```argus-ask\s*\n([\s\S]*?)\n?```/.exec(text);
-  if (!m) return { text, ask: null };
+  if (!m) return { text, ask: null, quebrado: false };
   let ask: AskQuestion[] | null = null;
   try {
     ask = parseAsk(JSON.parse(m[1]));
   } catch {
     ask = null;
   }
-  if (!ask) return { text, ask: null };
-  return { text: (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim(), ask };
+  const sem = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim();
+  return { text: sem, ask, quebrado: ask == null };
 }
 
 export function parseAsk(input: unknown): AskQuestion[] | null {

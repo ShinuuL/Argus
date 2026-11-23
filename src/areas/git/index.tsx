@@ -10,7 +10,8 @@ import { api, baseName, errorMessage, type Path } from "@/api";
 import { useApp, useLayout, useWorkbench } from "@/store";
 import { useActiveContext } from "@/shell/useActiveContext";
 import { connectionsRepo, connectionsStatus, type Connection, type RepoInfo } from "@/views/connections/api";
-import { Btn, Chip, DataTable, StatusDot, Tab, Tabs, type Column, AreaStatus } from "@/ui";
+import { AreaHeader, Btn, Chip, DataTable, Empty, StatusDot, Tab, Tabs, type Column, AreaStatus } from "@/ui";
+import { Icon } from "@/shell/icons";
 import { Review, useSessionDiff } from "./Review";
 import "./git.css";
 
@@ -159,9 +160,37 @@ export default function GitArea() {
     useWorkbench.getState().openNewChat(r.project);
   };
 
+  /*
+   * Sem projeto com git, as quatro abas estão vazias **pelo mesmo motivo** —
+   * então o motivo é dito uma vez, no lugar delas, em vez de quatro vezes. E
+   * com a saída junto: antes a tela diagnosticava e parava, com "Abrir pasta
+   * raiz" a uma tela de distância.
+   */
+  const semGit = !loading && gitProjects.length === 0 && tab !== "changes";
+
   return (
     <div className="ui-area">
       <div className="ui-area-main gt-area">
+        {semGit ? (
+          <>
+            <AreaHeader title="Git" sub="nenhum repositório" actions={<Btn variant="ghost" small disabled>Atualizar</Btn>} />
+            <Empty
+              icon={<Icon name="diff" size={20} />}
+              title="Nenhum projeto com git na pasta raiz"
+              action={<Btn onClick={() => void useApp.getState().pickRoot()}>Abrir pasta raiz</Btn>}
+            >
+              Com a pasta aberta, aqui ficam os pull requests, os repositórios, as branches locais e
+              as alterações que o agente fez — prontas para revisar antes de virar commit.
+            </Empty>
+          </>
+        ) : (
+        <>
+        {tab !== "changes" && (
+          <AreaHeader
+            title="Git"
+            sub={`${gitProjects.length} repositório${gitProjects.length === 1 ? "" : "s"}${prs.length ? ` · ${prs.length} PR${prs.length === 1 ? "" : "s"} aberto${prs.length === 1 ? "" : "s"}` : ""}`}
+          />
+        )}
         <div className="gt-top">
           <Tabs label="Seções do Git" className="gt-tabs">
             <Tab on={tab === "prs"} onClick={() => setTab("prs")} count={loading ? undefined : prs.length}>Pull requests</Tab>
@@ -189,7 +218,14 @@ export default function GitArea() {
                   rowKey={(r) => r.key}
                   selected={selPr}
                   onRowClick={(r) => setSelPr(r.key)}
-                  empty={loading ? "Consultando o GitHub…" : gitProjects.length === 0 ? "Nenhum projeto com git na pasta raiz." : "Nenhum PR aberto nos repositórios do GitHub."}
+                  empty={
+                    <Empty
+                      icon={<Icon name="diff" size={20} />}
+                      title={loading ? "Consultando o GitHub…" : "Nenhum PR aberto"}
+                    >
+                      {loading ? "Lendo os repositórios pela CLI do gh." : "Nenhum dos repositórios do GitHub tem pull request aberto agora."}
+                    </Empty>
+                  }
                 />
                 {pr && (
                   <div className="ui-card gt-action">
@@ -207,7 +243,7 @@ export default function GitArea() {
             )}
             {tab === "repos" && (
               <>
-                <DataTable columns={repoCols} rows={gitProjects} rowKey={(p) => p} empty="Nenhum projeto com git na pasta raiz." />
+                <DataTable columns={repoCols} rows={gitProjects} rowKey={(p) => p} />
                 <div className="ui-card">
                   <div className="ui-card-h">Login das CLIs</div>
                   {conns.error && <p className="ui-mut ui-sm">{conns.error}</p>}
@@ -233,11 +269,13 @@ export default function GitArea() {
             )}
             {tab === "branches" && (
               <>
-                <DataTable columns={branchCols} rows={gitProjects} rowKey={(p) => p} empty="Nenhum projeto com git na pasta raiz." />
+                <DataTable columns={branchCols} rows={gitProjects} rowKey={(p) => p} />
                 <p className="ui-mut ui-sm">Mostra a branch atual de cada projeto. A lista completa de branches locais ainda não tem comando no Argus.</p>
               </>
             )}
           </div>
+        )}
+        </>
         )}
 
         {tab !== "changes" && (

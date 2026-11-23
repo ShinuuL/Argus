@@ -135,6 +135,32 @@ export interface MessageViewProps {
 }
 
 /**
+ * Dois eventos são o mesmo? Quase toda chamada escreve o evento na hora
+ * (`event={{ User: texto }}`), então comparar por referência reprovaria sempre
+ * e deixaria o `memo` sem efeito. Um evento é um objeto de uma chave só: basta
+ * conferir a chave e o conteúdo dela.
+ */
+function sameEvent(a: AgentEvent, b: AgentEvent): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a == null || b == null) return false;
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  if (ka.length !== 1 || kb.length !== 1 || ka[0] !== kb[0]) return false;
+  return Object.is((a as Record<string, unknown>)[ka[0]], (b as Record<string, unknown>)[kb[0]]);
+}
+
+function sameProps(a: MessageViewProps, b: MessageViewProps): boolean {
+  return (
+    sameEvent(a.event, b.event) &&
+    a.showResultSummary === b.showResultSummary &&
+    a.showUsage === b.showUsage &&
+    a.showRaw === b.showRaw &&
+    a.showScoped === b.showScoped &&
+    a.onOpenSubagent === b.onOpenSubagent
+  );
+}
+
+/**
  * Renderiza UM evento da conversa:
  *
  * - `User`: balão do usuário; os anexos enviados pelo caminho viram miniaturas
@@ -248,7 +274,7 @@ export const MessageView = memo(function MessageView({
     default:
       return null;
   }
-});
+}, sameProps);
 
 export interface MessageListProps {
   /** Eventos da conversa, em ordem. */

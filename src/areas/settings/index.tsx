@@ -18,6 +18,7 @@ import { Select } from "@/shell/Select";
 import AgentDefsPage from "./AgentDefs";
 import PermissionsPage from "./Permissions";
 import MemoryPage from "./Memory";
+import { McpServers, Plugins } from "./McpServers";
 import { PageBody } from "./PageBody";
 import "@/views/settings/settings.css";
 import "./settings-area.css";
@@ -29,6 +30,7 @@ type Page =
   | "provedores"
   | "subagentes"
   | "contexto"
+  | "pedido"
   | "memoria"
   | "permissoes"
   | "mcp"
@@ -39,6 +41,9 @@ type Page =
   | "pet"
   | "player"
   | "autowork";
+
+import { polishModeSet } from "@/views/chat/backend";
+import { polishMode, setPolishModeCache, type PolishMode } from "@/views/chat/polish";
 
 interface Item {
   id: Page;
@@ -60,9 +65,18 @@ const GROUPS: { label: string; items: Item[] }[] = [
       { id: "provedores", label: "Provedores", keywords: "claude codex gemini opencode login modelo" },
       { id: "subagentes", label: "Subagentes", keywords: "agentes skills frontmatter AGENTS.md claude agents arquivo" },
       { id: "contexto", label: "Contexto", keywords: "compactar compact tokens janela resumo economia" },
+      {
+        id: "pedido",
+        label: "Melhorar pedido",
+        keywords: "prompt reescrever melhorar better-prompt briefing entrevista ctrl+i rascunho",
+      },
       { id: "memoria", label: "Preferências e memória", keywords: "prompt global instruções obsidian notas vault lembrar" },
       { id: "permissoes", label: "Permissões", keywords: "política comandos git push permitir bloquear modo trabalho" },
-      { id: "mcp", label: "Ferramentas MCP", keywords: "celular screen-mirror" },
+      { id: "mcp", label: "Ferramentas MCP", keywords: "celular screen-mirror servidores mcp adicionar remover login oauth conectores plugins" },
+      // Estava em "Extras", ao lado do mascote e do tocador de música. O que o
+      // agente faz sozinho na sua pasta não é penduricalho — e o nome em
+      // inglês escondia o assunto de quem lia a lista procurando por ele.
+      { id: "autowork", label: "Trabalho automático", keywords: "autowork automático pendências sozinho fila trabalho" },
     ],
   },
   {
@@ -80,7 +94,6 @@ const GROUPS: { label: string; items: Item[] }[] = [
     items: [
       { id: "pet", label: "Pet", keywords: "mascote" },
       { id: "player", label: "Player", keywords: "música mídia" },
-      { id: "autowork", label: "Autowork", keywords: "automático trabalho" },
     ],
   },
 ];
@@ -199,7 +212,8 @@ const SHORTCUTS: [string, string][] = [
 
 const COMPACT_OPTIONS: { value: number; label: string }[] = [
   { value: 100_000, label: "100 mil tokens" },
-  { value: 200_000, label: "200 mil tokens (padrão)" },
+  { value: 150_000, label: "150 mil tokens (padrão)" },
+  { value: 200_000, label: "200 mil tokens" },
   { value: 400_000, label: "400 mil tokens" },
   { value: 0, label: "Nunca" },
 ];
@@ -217,7 +231,7 @@ function ContextPage() {
   return (
     <PageBody
       title="Contexto"
-      lead="Quando a conversa passa do limite, o Argus compacta antes do próximo turno: o agente segue com um resumo, e cada ferramenta deixa de reler o histórico inteiro. Vale para o Claude Code."
+      lead="Quando a conversa passa do limite, o Argus compacta antes do próximo turno: o agente segue com um resumo, e cada ferramenta deixa de reler o histórico inteiro. Também compacta quando a conversa ficou parada mais de 60 minutos com mais de 60 mil tokens: o cache já expirou e o próximo turno regravaria tudo. Vale para o Claude Code. “Nunca” desliga os dois."
     >
       {err && <div className="err" role="alert">{err}</div>}
       <div className="set-radio" role="radiogroup" aria-label="Compactar a conversa a partir de">
@@ -229,6 +243,58 @@ function ContextPage() {
         ))}
         {limit != null && !COMPACT_OPTIONS.some((o) => o.value === limit) && <span className="small">Atual: {limit} tokens</span>}
       </div>
+    </PageBody>
+  );
+}
+
+const POLISH_OPTIONS: { value: PolishMode; label: string; hint: string }[] = [
+  { value: "off", label: "Desligado", hint: "O botão ✨ e o Ctrl+I somem da caixa." },
+  { value: "button", label: "Só no botão ✨ (ou Ctrl+I)", hint: "Padrão: você decide quando vale a reescrita." },
+  {
+    value: "auto",
+    label: "Em todo envio",
+    hint: "O Enter reescreve e devolve o texto à caixa; o envio sai no Enter seguinte, depois de você conferir.",
+  },
+];
+
+function PolishPage() {
+  const [mode, setMode] = useState<PolishMode | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    polishMode().then(setMode, (e) => setErr(errorMessage(e)));
+  }, []);
+  const choose = (m: PolishMode) => {
+    setMode(m);
+    setPolishModeCache(m);
+    polishModeSet(m).catch((e) => setErr(errorMessage(e)));
+  };
+  return (
+    <PageBody
+      title="Melhorar pedido"
+      lead="Reescreve o rascunho da caixa antes de ele ir ao agente: objetivo, o que muda, onde, o que não mexer e como saber que ficou pronto. O que estiver ambíguo vira uma lista “Em aberto” em vez de palpite. O texto volta para a caixa — nada é enviado sem você ver, e o Desfazer devolve o original."
+    >
+      {err && <div className="err" role="alert">{err}</div>}
+      <div className="set-radio" role="radiogroup" aria-label="Quando melhorar o pedido">
+        {POLISH_OPTIONS.map((o) => (
+          <label key={o.value} className="set-radio-it">
+            <input type="radio" name="polish" checked={mode === o.value} disabled={mode == null} onChange={() => choose(o.value)} />
+            <span>
+              {o.label}
+              <span className="small"> — {o.hint}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      <p className="small">
+        A reescrita roda um <code>claude -p</code> curto no modelo mais barato (haiku), fora da pasta do projeto e sem
+        nenhuma ferramenta: ela não lê arquivo, não roda comando e não grava sessão. Texto colado de fora entra
+        delimitado e marcado como dado, não como instrução. O custo aparece normalmente nas Métricas.
+      </p>
+      <p className="small">
+        Em projeto novo, a primeira conversa oferece a <b>entrevista de briefing</b>: o agente lê o que já existe,
+        pergunta em blocos e grava o <code>BRIEFING.md</code> com escopo, restrições e critério de pronto, sem alterar
+        nada. Também dá para chamar a qualquer momento com <code>/briefing</code>.
+      </p>
     </PageBody>
   );
 }
@@ -298,7 +364,7 @@ function McpPage() {
   const toggle = (v: boolean) =>
     api.devicesSetAgents(v).then((s) => setOn(s.agentsMcp), (e) => setErr(String(e)));
   return (
-    <PageBody title="Ferramentas MCP" lead="Servidores MCP que o Argus oferece às conversas de agente.">
+    <PageBody title="Ferramentas MCP" lead="Servidores MCP das conversas de agente: o do Argus (celular) e os da CLI do Claude.">
       {err && <div className="err small">{err}</div>}
       <table className="ui-t sa-narrow">
         <thead>
@@ -325,6 +391,8 @@ function McpPage() {
           </tr>
         </tbody>
       </table>
+      <McpServers />
+      <Plugins />
     </PageBody>
   );
 }
@@ -346,7 +414,7 @@ function AutoworkPage() {
   const [chosen, setChosen] = useState<Path | null>(null);
   const project = projects.find((p) => samePath(p.path, chosen ?? selected)) ?? projects[0] ?? null;
   return (
-    <PageBody title="Autowork" lead="Trabalho automático por projeto.">
+    <PageBody title="Trabalho automático" lead="O agente tira pendências da lista do projeto sozinho, um item por vez.">
       {project ? (
         <>
           <label className="set-field sa-narrow">
@@ -441,6 +509,7 @@ export default function SettingsArea() {
           )}
           {page === "subagentes" && <AgentDefsPage />}
           {page === "contexto" && <ContextPage />}
+          {page === "pedido" && <PolishPage />}
           {page === "memoria" && <MemoryPage />}
           {page === "mcp" && <McpPage />}
           {page === "inicializacao" && <StartupPage />}

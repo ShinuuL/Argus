@@ -187,6 +187,8 @@ button.chat-sub:hover { background: var(--bg-hover); }
 .chat-notice.err { border-color: var(--err); color: var(--err); }
 .chat-notice.warn { border-color: var(--warn); }
 .chat-notice button { flex: none; padding: 1px 8px; font-size: 12px; }
+.chat-notice-undo { border: 1px solid var(--border-strong); border-radius: var(--radius); background: none; color: inherit; }
+.chat-notice-undo:hover { background: var(--bg-hover); }
 .chat-view > .chat-notice { margin: 8px 14px 0; }
 
 /* ------------------------------------------------------------ composição */
@@ -208,6 +210,10 @@ button.chat-sub:hover { background: var(--bg-hover); }
   width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--radius); background: none; color: var(--text-2);
 }
 .chat-ibtn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.chat-ibtn.is-busy { color: var(--accent); }
+.chat-ibtn.is-busy svg { animation: chat-spin 1s linear infinite; }
+@keyframes chat-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .chat-ibtn.is-busy svg { animation: none; } }
 .chat-pills { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 1px 0 1px 4px; }
 .chat-pill-group { display: inline-flex; gap: 1px; }
 .chat-pill-group .chat-pill:first-child { border-radius: var(--radius-pill) 0 0 var(--radius-pill); }
@@ -231,6 +237,13 @@ button.chat-pill:hover:not(:disabled), .chat-pill-select:hover { background: var
 }
 .chat-send { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .chat-send:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+/*
+ * Desligado, parece desligado. Sem isto o botão de enviar ficava inteiro na
+ * cor de destaque numa tela que não tem projeto para enviar nada — o único
+ * elemento vivo da caixa convidando a clicar no que não funciona. Mesma regra
+ * de `.ui-btn:disabled`: a borda tracejada é que diz "ainda não".
+ */
+.chat-send:disabled { background: transparent; color: var(--text-2); border-color: var(--border-strong); border-style: dashed; }
 /* Parar é neutro (não usa o destaque): claro sobre escuro em qualquer tema. */
 .chat-stop { background: var(--text); border-color: var(--text); color: var(--bg); }
 .chat-stop:hover { background: var(--text-2); border-color: var(--text-2); }
@@ -292,3 +305,32 @@ button.chat-pill:hover:not(:disabled), .chat-pill-select:hover { background: var
 .chat-pills > .sel-pill { min-width: 84px; flex: 0 0 auto; }
 .chat-pills { flex-wrap: nowrap; overflow: hidden; }
 .chat-pills > .chat-usage { flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Bolinha de uso do plano (UsageRing) e o detalhe por janela. */
+.ur { position: relative; display: inline-flex; flex: none; }
+.ur-btn { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--radius); background: none; cursor: pointer; --ur: var(--accent); }
+.ur-btn.warn { --ur: var(--warn); }
+.ur-btn.err { --ur: var(--err); }
+.ur-btn:hover { background: var(--bg-hover); }
+.ur-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 0; }
+.ur-track { fill: none; stroke: var(--border); stroke-width: 2.5; }
+.ur-fill { fill: none; stroke: var(--ur); stroke-width: 2.5; stroke-linecap: round; transition: stroke-dashoffset var(--dur-panel) var(--ease-out); }
+.ur-pop { display: flex; flex-direction: column; gap: 12px; padding: 14px; }
+@media (prefers-reduced-motion: reduce) {
+  .ur-fill, .ur-bar i { transition: none; }
+}
+.ur-head { color: var(--text-2); font-size: 12px; }
+.ur-row { display: flex; flex-direction: column; gap: 6px; }
+.ur-line { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; }
+.ur-name { color: var(--text); font-weight: 600; }
+.ur-meta { display: inline-flex; gap: 10px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.ur-meta b { color: var(--text); font-weight: 500; min-width: 3ch; text-align: right; }
+.ur-bar { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.ur-bar i { display: block; height: 100%; transform-origin: left; background: var(--accent); transition: transform var(--dur-panel) var(--ease-out); }
+.ur-bar i.warn { background: var(--warn); }
+.ur-bar i.err { background: var(--err); }
+.ur-note { margin: 0; color: var(--text-2); font-size: 11px; line-height: 1.4; }
+
+/* Aviso de conversa cara (ContextAdvice). */
+.ctx-advice { align-items: center; }
+.ctx-advice-txt { flex: 1; line-height: 1.4; }

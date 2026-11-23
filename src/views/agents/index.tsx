@@ -106,6 +106,14 @@ export default function ProvidersView() {
                 <span className="ag-status-dot" aria-hidden="true" />
                 {label}
               </span>
+              {p.id === "claude" && st !== "NotInstalled" && st !== undefined && (
+                <button
+                  title="Roda `claude update` num terminal: confere se há versão nova e instala. Turnos em andamento seguem com a versão atual."
+                  onClick={() => openTerminal({ title: "Atualizar a CLI do Claude", cwd: defaultCwd(), command: { program: "claude", args: ["update"] } })}
+                >
+                  Atualizar CLI
+                </button>
+              )}
               {st === "NotInstalled" ? (
                 <button title="Mostra o comando de instalação e pede confirmação antes de executar" onClick={() => void doInstall(p)}>
                   Instalar...

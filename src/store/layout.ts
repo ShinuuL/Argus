@@ -23,12 +23,13 @@ export const AREAS: { id: Area; label: string }[] = [
 ];
 
 /** Abas do inspetor (painel direito da área chat). */
-export type RightTab = "changes" | "files" | "agents" | "checklist";
+export type RightTab = "changes" | "files" | "agents" | "servers" | "checklist";
 
 export const RIGHT_TABS: { id: RightTab; label: string }[] = [
   { id: "changes", label: "Alterações" },
   { id: "files", label: "Arquivos" },
   { id: "agents", label: "Agentes" },
+  { id: "servers", label: "Servidores" },
   { id: "checklist", label: "Pendências" },
 ];
 

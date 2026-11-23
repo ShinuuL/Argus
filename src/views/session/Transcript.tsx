@@ -10,6 +10,7 @@ import { MessageView } from "@/views/chat";
 import { isAskTool, parseAsk, splitAskBlock } from "./ask";
 import { AskCard } from "./AskCard";
 import { allowAndRetry } from "./actions";
+import { QuoteButton, useQuoteSelection } from "./quote";
 import { Dot, ThinkingRow, TimelineItem, ToolRow, toolSummary } from "./ToolRow";
 import {
   noticeSummary,
@@ -242,7 +243,15 @@ export interface TranscriptProps {
   hideDenied?: boolean;
   /** Envia um turno (para "Liberar e repetir" no comando negado). Sem isto, só "Liberar". */
   onRetry?(text: string): Promise<void>;
+  /**
+   * Leva um trecho marcado para a caixa, como citação. Sem isto (chat de
+   * subagente, conversa encerrada) a seleção não oferece "Responder".
+   */
+  onQuote?(quote: string): void;
 }
+
+/** Entradas que podem vir depois da resposta final sem fazer parte dela. */
+const TRAILING = new Set(["alert", "notices", "usage", "result"]);
 
 /** Passos que ficam à vista enquanto o turno roda. */
 const LIVE_KEEP = 8;
@@ -279,24 +288,36 @@ export function Transcript(props: TranscriptProps) {
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [entries.length, resetKey, after != null, props.follow]);
 
+  const [spot, limparSpot] = useQuoteSelection(ref, !!props.onQuote);
+
   const onScroll = () => {
     const el = ref.current;
     if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    // O botão é posicionado em coordenadas de viewport: rolou, saiu do lugar.
+    if (spot) limparSpot();
   };
 
   /** `live` = o turno do item ainda roda; `last` = é o último item do turno. */
   /** `awaiting` = é o último turno e o agente parou: uma pergunta ali espera resposta. */
-  const item = (entry: ChatEntry, key: string, live: boolean, last: boolean, awaiting = false): ReactNode => {
+  /** `openAsk` = é a última pergunta do último turno, já parado: ainda aceita resposta. */
+  const item = (entry: ChatEntry, key: string, live: boolean, last: boolean, awaiting = false, openAsk = false): ReactNode => {
     switch (entry.type) {
       case "user":
         return <MessageView key={key} event={{ User: entry.text }} />;
       case "text": {
         // Perguntas com opções escritas no bloco ```argus-ask viram o cartão clicável.
-        const { text, ask } = splitAskBlock(entry.text);
+        // `argus-feito: N` marca um item da lista do usuário (painel Agentes); não é para ler.
+        const { text, ask, quebrado } = splitAskBlock(entry.text.replace(/^\s*`?argus-feito:\s*\d+`?\s*$/gm, "").trim());
         return (
           <TimelineItem key={key} dot={<Dot status="text" />} className="tl-text">
             {text && <MessageView event={{ Text: text }} />}
             {ask && <AskCard questions={ask} pending={awaiting && last} onAnswer={props.onAnswer} />}
+            {quebrado && (
+              <div className="tl-alert warn" role="status">
+                <Icon name="circleAlert" size={13} />
+                <span className="tl-alert-text">O agente mandou uma pergunta com opções que não deu para ler. Peça para ele repetir.</span>
+              </div>
+            )}
           </TimelineItem>
         );
       }
@@ -306,8 +327,24 @@ export function Transcript(props: TranscriptProps) {
         // Pergunta de múltipla escolha: cartão com as opções, não linha de ferramenta.
         const ask = isAskTool(entry.name) ? parseAsk(entry.input) : null;
         if (ask) {
-          // Turno cancelado ou terminado sem saída da ferramenta: não espera mais nada.
-          return <AskCard key={key} questions={ask} pending={entry.result == null && live} onAnswer={props.onAnswer} />;
+          // No modo sem terminal a CLI recusa a pergunta na hora e o turno termina;
+          // a última pergunta do último turno continua respondível (vira mensagem nova).
+          return <AskCard key={key} questions={ask} pending={(entry.result == null && live) || openAsk} onAnswer={props.onAnswer} />;
+        }
+        // Plano entregue pelo modo plan da CLI: o texto do plano, não o JSON.
+        if (entry.name === "ExitPlanMode") {
+          const plan = typeof (entry.input as { plan?: unknown } | null)?.plan === "string" ? (entry.input as { plan: string }).plan : "";
+          if (plan)
+            return (
+              <TimelineItem key={key} dot={<Dot status="text" />}>
+                <div className="tl-plan">
+                  <div className="tl-plan-head">
+                    <Icon name="listChecks" size={13} /> Plano proposto
+                  </div>
+                  <MessageView event={{ Text: plan }} />
+                </div>
+              </TimelineItem>
+            );
         }
         return <ToolRow key={key} name={entry.name} input={entry.input} result={entry.result} live={live} base={props.project ?? null} />;
       }
@@ -328,6 +365,17 @@ export function Transcript(props: TranscriptProps) {
         return (
           <TimelineItem key={key} dot={null} className="tl-plain">
             <UsageLine usage={entry.usage} pricing={pricing} />
+          </TimelineItem>
+        );
+      case "alert":
+        return (
+          <TimelineItem key={key} dot={<Dot status={entry.level === "info" ? "text" : "warn"} />} className="tl-plain">
+            <div className={`tl-alert ${entry.level}`} role={entry.level === "info" ? undefined : "status"}>
+              <Icon name={entry.level === "info" ? "circleDot" : "circleAlert"} size={13} />
+              <span className="tl-alert-text" title={entry.text}>
+                {entry.text}
+              </span>
+            </div>
           </TimelineItem>
         );
       case "notices":
@@ -388,7 +436,17 @@ export function Transcript(props: TranscriptProps) {
           // Turno terminado: tudo antes da resposta final vira "N passos".
           // Turno em andamento: só os últimos passos ficam à vista; o resto
           // recolhe, para a conversa não virar uma lista sem fim.
-          const cut = group ? (finished ? stepsCut(turn.items) : liveCut(turn.items)) : -1;
+          // Última pergunta do último turno, com o agente parado: segue clicável e à vista.
+          const openAsk =
+            t === turns.length - 1 && !taskActive && props.onAnswer
+              ? turn.items.map((e) => e.type === "tool" && isAskTool(e.name) && parseAsk(e.input) != null).lastIndexOf(true)
+              : -1;
+          const cut0 = group ? (finished ? stepsCut(turn.items) : liveCut(turn.items)) : -1;
+          const cut = openAsk >= 0 && cut0 > openAsk ? openAsk : cut0;
+          const restItems = cut > 0 ? turn.items.slice(cut) : turn.items;
+          // "Último" ignora avisos e linhas de uso que chegam depois da resposta (hook do Stop,
+          // notificação): uma pergunta no fim do turno continua sendo a última coisa dita.
+          const lastContent = restItems.map((e) => !TRAILING.has(e.type)).lastIndexOf(true);
           const steps = cut > 0 ? turn.items.slice(0, cut) : [];
           const rest = cut > 0 ? turn.items.slice(cut) : turn.items;
           // O rascunho entra na mesma linha do tempo em que a resposta final vai cair:
@@ -427,7 +485,9 @@ export function Transcript(props: TranscriptProps) {
                   )}
                   {/* Chave = posição do item no turno inteiro (não no recorte): um item novo
                       monta uma vez e os que já estavam não trocam de conteúdo no lugar. */}
-                  {rest.map((e, i) => item(e, `i${Math.max(cut, 0) + i}`, live, i === rest.length - 1, t === turns.length - 1 && !taskActive))}
+                  {rest.map((e, i) =>
+                    item(e, `i${Math.max(cut, 0) + i}`, live, i === lastContent, t === turns.length - 1 && !taskActive, Math.max(cut, 0) + i === openAsk),
+                  )}
                   {tail}
                 </div>
               )}
@@ -436,6 +496,7 @@ export function Transcript(props: TranscriptProps) {
         })}
         {after}
       </div>
+      {spot && props.onQuote && <QuoteButton spot={spot} onQuote={props.onQuote} onClose={limparSpot} />}
     </div>
   );
 }

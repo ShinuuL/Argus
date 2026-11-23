@@ -36,6 +36,13 @@ button.ui-chip:hover { color: var(--text); }
 .ui-btn.bad { background: transparent; color: var(--err); border-color: color-mix(in srgb, var(--err) 55%, transparent); }
 .ui-btn.bad:hover:not(:disabled) { background: color-mix(in srgb, var(--err) 14%, transparent); }
 .ui-btn.sm { padding: 2px 8px; font-size: 11.5px; }
+/*
+ * Desligado, mas legível. O "Dividir" do Terminal lia como rabisco: quem olha
+ * não sabia se o botão existe ou se ela não está enxergando. A borda tracejada
+ * é o que diz "desligado" — o texto fica no contraste do texto secundário.
+ */
+.ui-btn:disabled { cursor: default; color: var(--text-2); background: transparent; border-style: dashed; border-color: var(--border-strong); }
+.ui-btn.g:disabled { color: var(--text-2); }
 
 table.ui-t { width: 100%; border-collapse: collapse; font-size: 12px; }
 .ui-t th { text-align: left; font-weight: 500; color: var(--text-2); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
@@ -44,7 +51,7 @@ table.ui-t { width: 100%; border-collapse: collapse; font-size: 12px; }
 .ui-t tr.click { cursor: pointer; }
 .ui-t tr.click:hover td { background: color-mix(in srgb, var(--selection) 45%, transparent); }
 .ui-t tr.sel td { background: var(--selection); }
-.ui-t td.ui-t-empty { padding: 18px 10px; color: var(--text-2); text-align: center; }
+/* Não há mais célula de "vazio": tabela sem linha não é desenhada (ver DataTable). */
 
 .ui-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-2); flex: none; display: inline-block; }
 .ui-dot.ok { background: var(--ok); }
@@ -63,13 +70,43 @@ table.ui-t { width: 100%; border-collapse: collapse; font-size: 12px; }
 .ui-it { display: flex; align-items: center; gap: 8px; padding: 5px 12px; color: var(--text-2); background: none; border: 0; border-radius: 0; font: inherit; font-size: 12.5px; text-align: left; width: 100%; cursor: pointer; }
 .ui-it:hover { color: var(--text); background: color-mix(in srgb, var(--selection) 45%, transparent); }
 .ui-it.on { background: var(--selection); color: var(--text); }
-.ui-it .grow { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ui-it .meta { font-size: 11px; color: var(--text-2); }
+.ui-it .grow { flex: 1 1 55%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/*
+ * O `meta` também tem freio. Sem `nowrap` ele quebrava em duas linhas, e aí
+ * sua largura mínima passava a ser a da maior palavra: numa lista de 200 px,
+ * um meta longo ("autorize a depuração no celular") espremia o nome do item
+ * até zero e a linha ficava só com o recado, sem dizer de quem era.
+ */
+.ui-it .meta { flex: 0 1 auto; min-width: 0; font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.ui-ah { display: flex; align-items: center; gap: 12px; padding: 18px 22px 12px; flex-wrap: wrap; }
-.ui-ah h1 { font-size: 16px; font-weight: 600; margin: 0; color: var(--text); }
-.ui-ah .sub { color: var(--text-2); font-size: 12.5px; }
+/*
+ * Cabeçalho de área. O título é pequeno porque a trilha do topo já nomeia a
+ * área: aqui ele é referência, não anúncio. O padding é o mesmo nas nove.
+ */
+.ui-ah { display: flex; align-items: center; gap: 10px; padding: 16px 22px 12px; flex-wrap: wrap; flex: none; }
+.ui-ah h1 { font-size: 13px; font-weight: 600; margin: 0; color: var(--text); letter-spacing: 0.01em; }
+.ui-ah .sub { color: var(--text-2); font-size: 12px; }
 .ui-ah .ui-sp { flex: 1; }
+
+/*
+ * Estado vazio. Um só desenho para as nove telas. Cresce para ocupar o espaço
+ * que sobra (era de 450 a 790 px de nada abaixo do conteúdo), em vez de
+ * encostar o texto no topo de um container que vai até o rodapé.
+ */
+.ui-vazio {
+  flex: 1; min-height: 240px; margin: 0 22px 22px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; text-align: center; padding: 28px;
+  border: 1px dashed var(--border); border-radius: var(--radius-lg); background: var(--surface);
+}
+.ui-vazio.compact { min-height: 0; margin: 0; padding: 20px; flex: none; }
+.ui-vazio-ic {
+  width: 38px; height: 38px; border-radius: var(--radius-lg); display: grid; place-items: center;
+  background: var(--surface-2); color: var(--text-2);
+}
+.ui-vazio h3 { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--text); }
+.ui-vazio p { margin: 0; color: var(--text-2); font-size: 12.5px; max-width: 48ch; line-height: 1.55; }
+.ui-vazio-acao { display: flex; gap: 8px; margin-top: 2px; }
 
 /* Utilitários do mockup e contêiner de área em tela cheia. */
 .ui-mut { color: var(--text-2); }

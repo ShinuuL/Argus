@@ -6,15 +6,15 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { baseName, isTaskActive, samePath } from "@/api";
 import { requestNewTask } from "@/areas/tasks/intent";
-import { AREAS, PAGES, useApp, useLayout, useWorkbench, type Area } from "@/store";
+import { AREAS, PAGES, tabTitle, useApp, useLayout, useWorkbench, type Area } from "@/store";
 import { sessionTitle } from "@/views/session/events";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { Icon, type IconName } from "./icons";
 import { areaIcon } from "./NavRail";
 import "./CommandPalette.css";
 
-type Group = "Sessões" | "Projetos" | "Arquivos" | "Portas" | "Ações" | "Ir para";
-const GROUPS: Group[] = ["Portas", "Sessões", "Projetos", "Arquivos", "Ações", "Ir para"];
+type Group = "Abas abertas" | "Sessões" | "Projetos" | "Arquivos" | "Portas" | "Ações" | "Ir para";
+const GROUPS: Group[] = ["Abas abertas", "Portas", "Sessões", "Projetos", "Arquivos", "Ações", "Ir para"];
 
 interface Cmd {
   id: string;
@@ -42,6 +42,25 @@ function commands(): Cmd[] {
   const app = useApp.getState();
   const go = (a: Area) => () => layout.setArea(a);
   const list: Cmd[] = [];
+
+  // Abas abertas em todos os grupos do editor (inclusive o espelhamento do celular).
+  wb.groups.forEach((g, gi) => {
+    for (const t of g.tabs) {
+      const k = t.kind;
+      const task = k.type === "chat" && k.task != null ? app.tasks.find((x) => x.id === k.task) : undefined;
+      const title = task ? sessionTitle(task.prompt, 60) : tabTitle(t.kind);
+      const on = gi === wb.groups.findIndex((x) => x.id === wb.activeGroup) && g.active === t.id;
+      list.push({
+        id: `tab-${g.id}-${t.id}`,
+        group: "Abas abertas",
+        label: title,
+        keys: `aba ${t.kind.type}`,
+        lead: <Icon name={t.kind.type === "mirror" ? "phone" : t.kind.type === "chat" ? "chat" : t.kind.type === "terminal" ? "terminal" : "file"} size={14} className="pal-ic" />,
+        meta: on ? <span className="pal-meta">atual</span> : wb.groups.length > 1 ? <span className="pal-meta">grupo {gi + 1}</span> : undefined,
+        run: () => (layout.setArea("chat"), wb.activate(g.id, t.id)),
+      });
+    }
+  });
 
   for (const s of app.servers) {
     list.push({

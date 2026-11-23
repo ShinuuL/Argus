@@ -70,7 +70,10 @@ export function Shell() {
   const termFull = area === "terminal";
 
   return (
-    <div className="shell">
+    // `data-area` é a área à vista, para a ponte de validação conferir que a
+    // tela trocou de verdade. Sem isso um clique que não navegou passava por
+    // bom: o roteiro só via que "algum" texto apareceu (ver src/dev/ponte.ts).
+    <div className="shell" data-area={area}>
       <TopBar />
       {error && (
         <div className="banner" role="alert">

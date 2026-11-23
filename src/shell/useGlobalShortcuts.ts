@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useApp, useLayout, useWorkbench } from "@/store";
 
 /**
@@ -33,6 +34,12 @@ export function useGlobalShortcuts(): void {
       action();
     };
     document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
+    // No Windows o Ctrl+K é pego pelo WebView2 em qualquer frame (inclusive o iframe
+    // do espelhamento) e chega como evento; aí o keydown acima não dispara.
+    const off = listen("argus://palette", () => useLayout.getState().togglePalette()).catch(() => () => undefined);
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      void off.then((f) => f());
+    };
   }, []);
 }

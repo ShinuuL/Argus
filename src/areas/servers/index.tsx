@@ -9,7 +9,8 @@ import { api, baseName, errorMessage, formatUptime, ownerLabel, sameOwner, type 
 import { useApp, useLayout } from "@/store";
 import { DevServersSection } from "@/views/servers/devservers";
 import { useOwnersUsage } from "@/views/servers";
-import { Btn, Card, Chip, DataTable, Tab, Tabs, type Column } from "@/ui";
+import { AreaHeader, Btn, Card, Chip, DataTable, Empty, Tab, Tabs, type Column } from "@/ui";
+import { Icon } from "@/shell/icons";
 import "./servers-area.css";
 
 type PortTab = "mine" | "all" | "conflicts" | "reserved";
@@ -162,6 +163,14 @@ export default function ServersArea() {
 
   const selected = rows.find((s) => keyOf(s) === sel) ?? rows[0] ?? null;
 
+  /*
+   * Lista vazia e nada escolhido: a tela inteira vira o estado vazio. Os três
+   * filtros ligados e o campo "filtrar porta ou processo" só aparecem quando
+   * há o que refinar — refino antes de existir conteúdo é controle pedindo
+   * trabalho sem oferecer resultado.
+   */
+  const semServidor = tab === "mine" && !filter && !q.trim() && servers.length === 0;
+
   const columns: Column<ServerInfo>[] = [
     { key: "port", header: "Porta", width: 90, render: (s) => <span className="ui-mono">{s.port}</span> },
     { key: "proto", header: "Proto", width: 60, render: () => "TCP" },
@@ -197,6 +206,31 @@ export default function ServersArea() {
   return (
     <div className="ui-area srva">
       <div className="ui-area-main">
+        {semServidor ? (
+          <>
+            <AreaHeader title="Servidores" sub="nenhum em execução" />
+            <Empty
+              icon={<Icon name="server" size={20} />}
+              title="Nenhum servidor em execução"
+              action={
+                hasProjects ? undefined : <Btn onClick={() => void useApp.getState().pickRoot()}>Abrir pasta raiz</Btn>
+              }
+            >
+              Quando um agente subir um servidor — ou quando um já estiver rodando na pasta do
+              projeto — ele aparece aqui, com a porta, o processo e o botão de abrir, parar ou
+              expor por túnel.
+            </Empty>
+            {hasProjects && (
+              <div className="ui-pad">
+                <Card title="Servidores de dev dos projetos">
+                  <DevServersSection />
+                </Card>
+              </div>
+            )}
+          </>
+        ) : (
+        <>
+        <AreaHeader title="Servidores" sub={`${servers.length} em execução`} />
         <div className="srva-bar">
           <Tabs label="Visões de portas" className="srva-tabs">
             <Tab on={tab === "mine"} count={servers.length} onClick={() => setTab("mine")}>
@@ -248,7 +282,21 @@ export default function ServersArea() {
               rowKey={keyOf}
               selected={selected ? keyOf(selected) : undefined}
               onRowClick={(s) => setSel(keyOf(s))}
-              empty={filter ? `Nenhum servidor em execução em ${ownerLabel(filter)}.` : "Nenhum servidor em execução vinculado às sessões."}
+              /*
+               * O `empty` é montado sempre, mesmo com linhas na tabela — então
+               * aqui não cabe `filter!`: sem filtro, `ownerLabel(null)` derruba
+               * a área inteira. Quem não tem filtro tem o campo de busca.
+               */
+              empty={
+                <Empty
+                  icon={<Icon name="filter" size={20} />}
+                  title={filter ? `Nenhum servidor em ${ownerLabel(filter)}` : "Nenhum servidor com esse filtro"}
+                >
+                  {filter
+                    ? "Os servidores de outras sessões continuam na lista sem este filtro."
+                    : "Limpe a busca ou religue TCP e Escutando para ver a lista inteira."}
+                </Empty>
+              }
             />
             {!filter && hasProjects && (
               <div className="ui-pad">
@@ -263,6 +311,8 @@ export default function ServersArea() {
             <b>Módulo de portas em construção</b>
             <div className="ui-mut ui-sm">{EMPTY_TEXT[tab]}</div>
           </div>
+        )}
+        </>
         )}
       </div>
       {/* O painel de detalhe só ocupa espaço quando há um servidor escolhido. */}

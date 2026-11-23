@@ -23,6 +23,8 @@ import {
   variantOf,
   type Path,
   type AccessMode,
+  type Effort,
+  type Limits,
   type IsolationReport,
   type Pricing,
   type Task,
@@ -48,7 +50,7 @@ import {
   type LocalCommandName,
 } from "@/views/chat";
 import { SessionServersBadge } from "@/views/servers";
-import { applyTask, cancelTask, deleteTask, discardTask } from "./actions";
+import { applyTask, canFork, cancelTask, deleteTask, discardTask, forkTask } from "./actions";
 import { ContextMenu, type MenuItem } from "@/shell/ContextMenu";
 import {
   chatEntries,
@@ -65,12 +67,26 @@ import { ServerStoppedNotice } from "./ServerStoppedNotice";
 import { ACCESS_LABEL, AgentModelPill, BypassBadge, ComposerOptions, DirectHold, hasGaps, IsolationHold, useWorkModeInfo, WORK_MODE_LABEL } from "./pills";
 import { ContextMeter } from "./ContextMeter";
 import { UsagePill } from "@/views/chat/UsagePill";
+import { UsageRing } from "@/views/chat/UsageRing";
+import { ContextAdvice } from "@/views/chat/ContextAdvice";
+import { chatBriefingMissing, chatBriefingPrompt } from "@/views/chat/backend";
 import { DraftText, liveActivity, Transcript, WorkingLine } from "./Transcript";
+import { LiveThinking } from "./ToolRow";
 import { useTaskEvents } from "./useTaskEvents";
 import { EditorChips } from "./EditorChips";
 import { withEditorContext } from "@/views/workbench/editorContext";
-import { AgentState, agentStateLabel, agentStateOf, lastTurnDenied } from "./AgentState";
+import { AgentState, agentStateLabel, agentStateOf, lastTurnDenied, StalledPill } from "./AgentState";
 import "./session.css";
+
+const BUDGETS = [0.5, 1, 2, 5, 10];
+
+const EFFORTS: { value: Effort; label: string }[] = [
+  { value: "low", label: "Esforço baixo" },
+  { value: "medium", label: "Esforço médio" },
+  { value: "high", label: "Esforço alto" },
+  { value: "xhigh", label: "Esforço muito alto" },
+  { value: "max", label: "Esforço máximo" },
+];
 
 export interface ChatTabProps {
   /** Aba do workbench que hospeda a conversa. */
@@ -163,17 +179,31 @@ function SessionPicker(props: { current: Task | null; project: Path | null; onNe
 
   return (
     <div className="cv-picker" ref={root}>
+      {/*
+        * Diz o que o botão faz, não qual conversa está aberta.
+        *
+        * O título da conversa já aparece duas vezes acima desta linha — na aba
+        * e na trilha do topo —, e repeti-lo aqui fazia o cabeçalho da sessão
+        * parecer uma segunda barra de abas com uma aba só. O que este controle
+        * tem de próprio é a lista das conversas anteriores, com busca; é ela
+        * que o rótulo anuncia agora.
+        */}
       <button
         className="cv-title"
         aria-haspopup="listbox"
         aria-expanded={open}
-        title={current ? `${current.prompt}\n\nClique para trocar de conversa` : "Conversas anteriores"}
+        title={
+          project
+            ? `Conversas anteriores de ${baseName(project)}, com busca`
+            : "Conversas anteriores, com busca"
+        }
         onClick={() => {
           setQuery("");
           setOpen((v) => !v);
         }}
       >
-        <span className="ellipsis">{current ? sessionTitle(current.prompt) : "Nova conversa"}</span>
+        <Icon name="history" size={14} />
+        <span className="ellipsis">Conversas anteriores</span>
         <Icon name="chevronDown" size={13} />
       </button>
       {open && (
@@ -218,6 +248,9 @@ function SessionPicker(props: { current: Task | null; project: Path | null; onNe
                     y: e.clientY,
                     items: [
                       { label: "Abrir", onSelect: () => pick(t.id) },
+                      ...(canFork(t)
+                        ? [{ label: "Ramificar (cópia da conversa)", onSelect: () => void forkTask(t).catch((err) => useApp.getState().setError(errorMessage(err))) }]
+                        : []),
                       {
                         label: "Excluir sessão…",
                         danger: true,
@@ -283,6 +316,29 @@ const SUGGESTIONS = [
 function Welcome(props: { project: Path | null; hasRoot: boolean; mode: WorkMode; onPick(text: string): void }) {
   const { project, hasRoot, mode, onPick } = props;
   const pickRoot = useApp((s) => s.pickRoot);
+  // Projeto sem nenhuma conversa ainda: é a hora da entrevista de briefing.
+  const firstEver = useApp((s) => project != null && !s.tasks.some((t) => t.project === project));
+  const [noBriefing, setNoBriefing] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    if (!project || !firstEver) {
+      setNoBriefing(false);
+      return;
+    }
+    void chatBriefingMissing(project).then((missing) => {
+      if (alive) setNoBriefing(missing);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [firstEver, project]);
+
+  const startBriefing = () => {
+    void chatBriefingPrompt(project ? baseName(project) : null)
+      .then(onPick)
+      .catch(() => undefined);
+  };
+
   return (
     <div className="cv-welcome">
       <Icon name="chat" size={30} className="cv-welcome-ic" />
@@ -296,6 +352,19 @@ function Welcome(props: { project: Path | null; hasRoot: boolean; mode: WorkMode
               ? "Escreva o pedido abaixo. No modo Isolado o agente trabalha numa cópia do projeto, só com o que está commitado; você revisa e aplica as alterações depois."
               : "Escreva o pedido abaixo. No modo Direto na pasta o agente trabalha na própria pasta do projeto, enxerga tudo, e as alterações valem na hora."}
           </p>
+          {noBriefing && (
+            <div className="cv-briefing">
+              <Icon name="interview" size={16} />
+              <div>
+                <b>Projeto novo por aqui.</b> Antes de pedir código, faça o briefing: o agente lê o que já existe,
+                entrevista você em blocos de perguntas e grava o <code>BRIEFING.md</code> com escopo, restrições e
+                critério de pronto. Nada é alterado durante a entrevista.
+              </div>
+              <button className="primary" onClick={startBriefing}>
+                Começar o briefing
+              </button>
+            </div>
+          )}
           <div className="cv-suggest">
             {SUGGESTIONS.map((s) => (
               <button key={s} onClick={() => onPick(s)}>
@@ -335,7 +404,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   const providers = useProviders();
 
   const busy = task ? isTaskActive(task.state) : false;
-  const { events, times, loaded, error: loadError, draft } = useTaskEvents(taskId, busy);
+  const { events, times, loaded, error: loadError, draft, thinking, lastEventAt, compacting } = useTaskEvents(taskId, busy);
   const pricing = usePricing();
   const [provider, setProvider] = useState("");
   /** Modelo escolhido para a conversa nova (undefined = o inicial do provedor). */
@@ -344,6 +413,54 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   const [modeChoice, setModeChoice] = useState<WorkMode | null>(null);
   /** Acesso escolhido para a conversa nova (vale já no primeiro turno). */
   const [accessChoice, setAccessChoice] = useState<AccessMode>("normal");
+  /** Esforço da conversa ("" = padrão da CLI); na conversa nova, aplicado ao criar. */
+  const [effort, setEffort] = useState<Effort | "">("");
+  useEffect(() => {
+    if (taskId == null) return;
+    let alive = true;
+    api.taskEffort(taskId).then(
+      (e) => alive && setEffort(e ?? ""),
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, [taskId]);
+  /** Teto de custo por turno e modelo reserva (só na conversa já criada). */
+  const [limits, setLimits] = useState<Limits>({ max_budget_usd: null, fallback_model: null });
+  useEffect(() => {
+    setLimits({ max_budget_usd: null, fallback_model: null });
+    if (taskId == null) return;
+    let alive = true;
+    api.taskLimits(taskId).then(
+      (l) => alive && setLimits(l),
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, [taskId]);
+  const changeLimits = async (next: Limits) => {
+    if (taskId == null) return;
+    setLimits(next);
+    try {
+      await api.taskSetLimits(taskId, next);
+      setError(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+  const changeEffort = async (v: string) => {
+    const e = (v || "") as Effort | "";
+    setEffort(e);
+    if (taskId == null) return;
+    try {
+      await api.taskSetEffort(taskId, e || null);
+      setError(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
   /** Pedido segurado por um aviso, antes de ser enviado. */
   const [hold, setHold] = useState<
     | { kind: "isolation"; prompt: string; report: IsolationReport }
@@ -522,6 +639,9 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
       if (others.length) return setHold({ kind: "direct", prompt, mode, others });
     }
     const id = await api.taskCreate(newProject, providerId, prompt, { model: newModel, mode, access: accessChoice });
+    // O primeiro turno já está na fila: o esforço escolhido vale a partir do segundo
+    // se a gravação chegar depois de ele começar.
+    if (effort) await api.taskSetEffort(id, effort).catch(() => undefined);
     await useApp.getState().refreshTasks();
     useWorkbench.getState().bindChat(tabId, id);
   };
@@ -672,7 +792,13 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
       : taskId == null
         ? newProject
           ? "Descreva a tarefa…"
-          : "Escolha um projeto na pílula abaixo para escrever o pedido."
+          : // Sem nenhum projeto, a caixa mandava escolher um na pílula que não
+            // tem o que listar, enquanto o centro da tela mandava abrir a pasta
+            // raiz: duas instruções diferentes para o mesmo impedimento. Quando
+            // não há de onde escolher, a caixa repete o que o centro já diz.
+            projects.length > 0
+            ? "Escolha um projeto na pílula abaixo para escrever o pedido."
+            : "Abra a pasta raiz para começar — é no botão acima."
         : undefined;
 
   /** O último turno do agente principal escreveu a chamada de ferramenta como texto? */
@@ -690,6 +816,60 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   const providerName = (id: string) => providers.find((p) => p.id === id)?.display_name ?? id;
 
   const providerChoices = providers.map((p) => ({ id: p.id, name: p.display_name }));
+  const agentFields = (
+    <>
+      {(task?.provider ?? providerId) === "claude" && (
+        <Select
+          variant="field"
+          ariaLabel="Nível de esforço"
+          title="Nível de esforço do agente (quanto ele pensa antes de agir). Vale a partir do próximo turno."
+          icon={<Icon name="brain" size={12} />}
+          placeholder="Esforço padrão"
+          value={effort}
+          disabled={closed}
+          options={[
+            { value: "", label: "Esforço padrão" },
+            ...EFFORTS.map((e) => ({ value: e.value, label: e.label })),
+          ]}
+          onChange={(v) => void changeEffort(v)}
+        />
+      )}
+      {task?.provider === "claude" && (
+        <>
+          <Select
+            variant="field"
+            ariaLabel="Teto de custo por turno"
+            title="Teto de custo de cada turno (equivalente em API). Ao passar, a CLI encerra o turno. Vale a partir do próximo turno."
+            icon={<Icon name="shield" size={12} />}
+            placeholder="Sem teto"
+            value={limits.max_budget_usd == null ? "" : String(limits.max_budget_usd)}
+            disabled={closed}
+            options={[{ value: "", label: "Sem teto" }, ...BUDGETS.map((b) => ({ value: String(b), label: `Teto ${formatUsdPt(b)}/turno` }))]}
+            onChange={(v) => void changeLimits({ ...limits, max_budget_usd: v ? Number(v) : null })}
+          />
+          <Select
+            variant="field"
+            ariaLabel="Modelo reserva"
+            title="Modelo usado quando o principal estiver sobrecarregado ou indisponível. Vale a partir do próximo turno."
+            icon={<Icon name="refresh" size={12} />}
+            placeholder="Sem reserva"
+            value={limits.fallback_model ?? ""}
+            disabled={closed}
+            options={[
+              { value: "", label: "Sem reserva" },
+              { value: "sonnet", label: "Reserva: Sonnet" },
+              { value: "haiku", label: "Reserva: Haiku" },
+              { value: "opus", label: "Reserva: Opus" },
+            ]}
+            onChange={(v) => void changeLimits({ ...limits, fallback_model: v || null })}
+          />
+        </>
+      )}
+    </>
+  );
+  const agentChanged = (effort ? 1 : 0) + (limits.max_budget_usd != null ? 1 : 0) + (limits.fallback_model ? 1 : 0);
+  const agentSummary = [effort && `esforço ${effort}`, limits.max_budget_usd != null && `teto US$ ${limits.max_budget_usd}`, limits.fallback_model && `reserva ${limits.fallback_model}`].filter(Boolean).join(", ");
+
   const pills = (
     <>
       {taskId == null && (
@@ -750,9 +930,19 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
       )}
       <span className="chat-pills-gap" />
       {task && <AgentState task={task} label />}
+      <StalledPill
+        lastEventAt={lastEventAt}
+        active={busy}
+        compacting={compacting}
+        onStop={taskId != null && !cancelling ? cancel : undefined}
+      />
       {task?.context && <ContextMeter ctx={task.context} />}
       <UsagePill />
+      <UsageRing />
       <ComposerOptions
+        extra={(task?.provider ?? providerId) === "claude" ? agentFields : undefined}
+        extraChanged={agentChanged}
+        extraSummary={agentSummary}
         project={project}
         taskId={taskId}
         mode={task ? task.mode : newMode}
@@ -774,10 +964,23 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
     >
       <div className="cv-root" data-chat-tab={tabId}>
         <header className="cv-head">
+          {/*
+            * Sem "+" aqui: a barra de abas tem um idêntico 36 px acima, com o
+            * mesmo ícone e o mesmo rótulo, e a lista deste botão também abre
+            * com "Nova conversa" dentro. Eram três portas para a mesma ação em
+            * dois centímetros de tela.
+            */}
           <SessionPicker current={task ?? null} project={project} onNew={() => newChat()} />
-          <button className="cv-hbtn" title="Nova conversa" aria-label="Nova conversa" onClick={() => newChat()}>
-            <Icon name="plus" size={15} />
-          </button>
+          {task && canFork(task) && (
+            <button
+              className="cv-hbtn"
+              title="Ramificar: abre uma cópia desta conversa em outra aba para testar outro caminho. A original continua como está (a pasta é a mesma)."
+              aria-label="Ramificar a conversa"
+              onClick={() => void forkTask(task).catch((err) => setError(errorMessage(err)))}
+            >
+              <Icon name="splitH" size={15} />
+            </button>
+          )}
           <span className="cv-head-space" />
           {task && (
             <span
@@ -837,6 +1040,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
             project={project}
             onRetry={current || closed || noSession || busy ? undefined : (text) => send(text)}
             hideDenied={task?.access === "plan"}
+            onQuote={current || closed ? undefined : (q) => composer.current?.insertText(q)}
             checkpoints={current || closed ? undefined : checkpoints}
             onRestore={current || closed ? undefined : (n) => void restore(n)}
             onAnswer={
@@ -859,7 +1063,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
               ) : null
             }
             follow={draft.length}
-            liveItem={!current && busy && draft ? <DraftText text={draft} /> : null}
+            liveItem={!current && busy && draft ? <DraftText text={draft} /> : !current && busy && thinking ? <LiveThinking text={thinking} /> : null}
             after={
               current ? (
                 current.done ? (
@@ -876,7 +1080,11 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                   <div className="cv-note">O turno parou antes de o subagente terminar.</div>
                 )
               ) : busy ? (
-                <WorkingLine activity={liveActivity(entries, project)} />
+                <WorkingLine
+                  activity={
+                    task?.state === "Queued" ? "na fila: esperando outra conversa terminar para começar…" : liveActivity(entries, project)
+                  }
+                />
               ) : null
             }
           />
@@ -935,11 +1143,26 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                 />
               )}
               {task?.access === "plan" && !busy && !closed && task.session_id != null && (
-                <div className="cv-note cv-plan">
-                  <span>Modo Planejar: o agente só propôs, nada foi alterado.</span>
-                  <button type="button" className="pop-link" onClick={() => void runPlan()}>
-                    Executar o plano
-                  </button>
+                <div className="cv-plan-card" role="group" aria-label="Aprovar plano">
+                  <div className="cv-plan-text">
+                    <b>Aprovar o plano?</b>
+                    <span>Em Planejar o agente só leu e propôs; nada foi alterado. Aprovar volta ao modo normal e pede a execução.</span>
+                  </div>
+                  <div className="cv-plan-actions">
+                    <button type="button" className="primary" onClick={() => void runPlan()}>
+                      Aprovar e executar
+                    </button>
+                    <button
+                      type="button"
+                      title="Continua em Planejar: escreva o que mudar no plano"
+                      onClick={() => {
+                        composer.current?.insertText("Ajuste o plano: ");
+                        composer.current?.focus();
+                      }}
+                    >
+                      Pedir ajuste
+                    </button>
+                  </div>
                 </div>
               )}
               {task?.handoff && !busy && !closed && (
@@ -951,6 +1174,9 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                 <div className="cv-strip">
                   <AutoWorkBadge taskId={taskId} readOnly={closed} />
                 </div>
+              )}
+              {taskId != null && !closed && (
+                <ContextAdvice taskId={taskId} context={task?.context} busy={busy} onCompact={() => void send("/compact")} onNewChat={() => newChat()} />
               )}
               {!closed && <EditorChips root={project} />}
               <Composer

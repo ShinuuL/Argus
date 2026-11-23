@@ -19,7 +19,7 @@ import {
 } from "@/api";
 import { useApp, useWorkbench } from "@/store";
 import { Select } from "@/shell/Select";
-import { AreaHeader, AreaStatus, Btn, Chip, DataTable, Seg, type Column } from "@/ui";
+import { AreaHeader, AreaStatus, Btn, Chip, DataTable, Empty, Seg, type Column } from "@/ui";
 import { describeRecurrence, formatWhen, fromLocalInput, runStatusLabel, toLocalInput, WEEKDAYS } from "./format";
 import { onNewTaskRequest, takeNewTaskRequest } from "./intent";
 import "./tasks.css";
@@ -451,19 +451,21 @@ export default function TasksArea() {
               selected={editing?.id ?? null}
               onRowClick={(s) => setEditing(s)}
               empty={
-                <div className="tka-empty">
-                  <span>Nenhuma tarefa agendada. Peça a um agente para rodar algo todo dia, numa data ou de tantas em tantas horas.</span>
-                  {!editing && (
-                    <Btn small onClick={openNew}>
-                      Nova tarefa agendada
-                    </Btn>
-                  )}
-                </div>
+                <Empty
+                  icon={<Icon name="clock" size={20} />}
+                  title="Nenhuma tarefa agendada"
+                  action={!editing ? <Btn onClick={openNew}>Nova tarefa agendada</Btn> : undefined}
+                >
+                  Peça a um agente para rodar algo todo dia, numa data ou de tantas em tantas horas.{" "}
+                  {/* A frase estava na barra de estado, sem sujeito e cortada na borda. Aqui ela
+                      muda uma decisão: é agora que a pessoa escolhe se vale agendar. */}
+                  <b>As tarefas só rodam com o Argus aberto</b> — ele não deixa serviço no sistema.
+                </Empty>
               }
             />
           )}
         </div>
-        <AreaStatus>roda só com o Argus aberto</AreaStatus>
+        <AreaStatus>As tarefas agendadas rodam só com o Argus aberto</AreaStatus>
       </div>
       {editing && (
         <Editor

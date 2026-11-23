@@ -121,7 +121,15 @@ button.df-file:hover { background: var(--bg-hover); }
 .wb-status { position: relative; height: var(--status-height); border-top: 1px solid var(--border); }
 .wb-status-l, .wb-status-r { height: 100%; gap: 4px; }
 .wb-status-l { flex: 1 1 auto; overflow: hidden; }
-.wb-status-r { flex: 0 1 auto; }
+/*
+ * Bandeja. A faixa tinha duas vidas na mesma altura de 22 px: o estado do app
+ * à esquerda e uma vitrola ocupando a metade direita, em todas as telas. A
+ * linha divisória assume isso em vez de disfarçar — à direita ficam os
+ * acessórios (player, divisão, pet), como a bandeja do sistema.
+ */
+.wb-status-r { flex: 0 0 auto; padding-left: 8px; margin-left: 4px; border-left: 1px solid var(--border); }
+/* Nunca mais que um terço da barra: o estado do app é que não pode ser espremido. */
+.wb-status-r .mp-title { max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sb-item { display: inline-flex; align-items: center; gap: 5px; height: 100%; padding: 0 7px; border-radius: 0; white-space: nowrap; color: var(--on-status); }
 .wb-status .wb-sbtn:hover:not(:disabled) { background: color-mix(in srgb, var(--on-status) 16%, transparent); color: var(--on-status); }
 .wb-status .wb-sbtn:disabled { opacity: 0.75; }
@@ -206,7 +214,10 @@ button.df-file:hover { background: var(--bg-hover); }
 .sh-chat.term-full .bottom.collapsed .terms { display: flex; }
 
 /* Inspetor */
-.rp > .ui-tabs { align-items: center; }
+.rp > .ui-tabs { align-items: center; gap: 0; padding: 6px 4px; overflow-x: auto; scrollbar-width: none; }
+.rp > .ui-tabs::-webkit-scrollbar { display: none; }
+/* Cinco abas não cabem em ~300 px: mais justas, e a lista rola (a ativa vem para a vista). */
+.rp > .ui-tabs .ui-tab { flex: none; padding: 3px 6px; font-size: 12px; }
 
 /* Barra de status (.sb) */
 .wb-status { font-size: 11px; color: var(--text-2); background: var(--bg); padding: 0 10px; }

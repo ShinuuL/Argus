@@ -3,7 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { api, baseName, formatTokensPt, formatUsdPt, isTaskActive, samePath, type Path, type Schedule } from "@/api";
 import { formatWhen } from "@/areas/tasks/format";
 import { useApp, useLayout, useWorkbench } from "@/store";
-import { Btn, StatusDot, type Tone } from "@/ui";
+import { Btn, Empty, StatusDot, type Tone } from "@/ui";
+import { Icon } from "@/shell/icons";
 import { ensureRunsSync, useRuns } from "@/views/builds";
 import { sessionTitle } from "@/views/session/events";
 import "./home.css";
@@ -117,10 +118,14 @@ export default function HomeArea() {
     return (
       <div className="ui-area">
         <div className="ui-area-main hm">
-          <div className="hm-start">
-            <span className="ui-mut">Nenhum projeto aberto.</span>
-            <Btn onClick={() => void useApp.getState().pickRoot()}>Abrir pasta raiz</Btn>
-          </div>
+          <Empty
+            icon={<Icon name="folderOpen" size={20} />}
+            title="Nenhum projeto aberto"
+            action={<Btn onClick={() => void useApp.getState().pickRoot()}>Abrir pasta raiz</Btn>}
+          >
+            A pasta raiz é onde o Argus procura seus projetos, o git deles e os servidores que
+            subirem. É por ela que tudo começa.
+          </Empty>
         </div>
       </div>
     );
@@ -167,8 +172,14 @@ export default function HomeArea() {
 
         <div className="hm-cols">
           <section className="hm-card hm-list">
-            <h2 className="hm-ttl">Em andamento</h2>
-            {active.length === 0 && <div className="ui-empty">Nenhum agente rodando.</div>}
+            {/*
+              * O título segue o conteúdo: com agente rodando é "Em andamento",
+              * parado é "Continuar". Antes era sempre "Em andamento" e a última
+              * sessão — a coisa mais útil da tela vazia — ficava escondida como
+              * rodapé de um cartão que dizia presente e mostrava passado.
+              */}
+            <h2 className="hm-ttl">{active.length > 0 ? "Em andamento" : "Continuar"}</h2>
+            {active.length === 0 && !last && <div className="ui-empty">Nenhum agente rodando agora.</div>}
             {active.map((t) => (
               <button key={t.id} className="ui-it hm-it" onClick={() => open(t.id)} title={t.project}>
                 <StatusDot tone={attention[t.id] ? "warn" : "info"} />
@@ -177,11 +188,12 @@ export default function HomeArea() {
               </button>
             ))}
             {last && (
-              <div className="hm-resume">
+              <div className={active.length > 0 ? "hm-resume" : "hm-resume first"}>
                 <span className="grow ui-mut">
-                  Última: <span className="hm-resume-t">#{last.id} {sessionTitle(last.prompt, 50)}</span> · {baseName(last.project)}
+                  {active.length > 0 && "Última: "}
+                  <span className="hm-resume-t">#{last.id} {sessionTitle(last.prompt, 50)}</span> · {baseName(last.project)}
                 </span>
-                <Btn variant="ghost" onClick={() => open(last.id)}>Retomar</Btn>
+                <Btn variant={active.length > 0 ? "ghost" : "primary"} onClick={() => open(last.id)}>Retomar</Btn>
               </div>
             )}
           </section>
@@ -200,12 +212,11 @@ export default function HomeArea() {
           <section className="hm-card hm-list">
             <h2 className="hm-ttl">Projetos recentes</h2>
             {recent.length === 0 && (
-              <div className="ui-empty">
-                Nenhum projeto aberto.{" "}
-                <button type="button" className="pop-link" onClick={() => void useApp.getState().pickRoot()}>
-                  Abrir pasta raiz
-                </button>
-              </div>
+              <Empty
+                compact
+                title="Nenhum projeto aberto"
+                action={<Btn small onClick={() => void useApp.getState().pickRoot()}>Abrir pasta raiz</Btn>}
+              />
             )}
             {recent.map(({ p, sessions, running }) => {
               const st = statuses[p.path];

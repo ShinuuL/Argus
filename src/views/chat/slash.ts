@@ -6,7 +6,17 @@
  *   de `chatAgentCapabilities` (só o claude informa).
  */
 
-export type LocalCommandName = "nova" | "parar" | "diff" | "aplicar" | "descartar" | "sessoes" | "modelo" | "ajuda";
+export type LocalCommandName =
+  | "nova"
+  | "parar"
+  | "diff"
+  | "aplicar"
+  | "descartar"
+  | "sessoes"
+  | "modelo"
+  | "melhorar"
+  | "briefing"
+  | "ajuda";
 
 export interface LocalCommand {
   name: LocalCommandName;
@@ -26,6 +36,12 @@ export const LOCAL_COMMANDS: LocalCommand[] = [
   { name: "descartar", aliases: ["discard"], description: "Descarta as alterações da tarefa", needsTask: true },
   { name: "sessoes", aliases: ["sessions", "sessões"], description: "Lista as tarefas para trocar de conversa" },
   { name: "modelo", aliases: ["model", "models", "modelos"], description: "Escolhe o modelo da conversa", args: "[modelo]" },
+  {
+    name: "melhorar",
+    aliases: ["melhorar-pedido", "improve", "polish"],
+    description: "Reescreve o rascunho da caixa (não envia)",
+  },
+  { name: "briefing", aliases: ["entrevista", "brief"], description: "Entrevista de briefing do projeto" },
   { name: "ajuda", aliases: ["help", "?"], description: "Lista os comandos" },
 ];
 
@@ -42,6 +58,37 @@ const TERMINAL_ONLY = new Set([
   "ide",
   "resume",
   "doctor",
+  // Abrem diálogo ou mudam a tela do terminal interativo; em `-p` não fazem nada útil.
+  "agents",
+  "mcp",
+  "color",
+  "usage",
+  "usage-credits",
+  "extra-usage",
+  "heapdump",
+  "permissions",
+  "hooks",
+  "statusline",
+  "keybindings",
+  "privacy-settings",
+  "upgrade",
+  "install-github-app",
+  "bug",
+  "feedback",
+  "release-notes",
+  "memory",
+  "status",
+  "export",
+  "add-dir",
+  "design-consent",
+  "design-revoke",
+  "workflow-launch-exec",
+  // O Argus faz por conta própria: pílulas de modelo e esforço, "Nova conversa",
+  // Configurações › Ferramentas MCP e Subagentes.
+  "model",
+  "effort",
+  "fast",
+  "clear",
 ]);
 
 /**
@@ -73,7 +120,8 @@ export function allSlashItems(cliCommands: string[]): SlashItem[] {
   }));
   const taken = new Set(LOCAL_COMMANDS.flatMap((c) => [c.name, ...c.aliases]));
   const cli: SlashItem[] = [...new Set(cliCommands)]
-    .filter((c) => c && !TERMINAL_ONLY.has(c) && !taken.has(c.toLowerCase()))
+    // Nomes com "__" na frente são internos da CLI.
+    .filter((c) => c && !c.startsWith("__") && !TERMINAL_ONLY.has(c.toLowerCase()) && !taken.has(c.toLowerCase()))
     .sort((a, b) => a.localeCompare(b))
     .map((c) => ({ name: c, description: c.includes(":") ? `da CLI · ${c.split(":")[0]}` : "da CLI", local: false }));
   return [...local, ...cli];

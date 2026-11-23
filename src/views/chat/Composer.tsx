@@ -23,7 +23,16 @@ import {
   type Prepared,
   type SentAttachment,
 } from "./attachments";
-import { chatAgentCapabilities, chatAgents, chatAttachmentsCleanup, chatProjectFiles, type ChatAgent } from "./backend";
+import {
+  chatAgentCapabilities,
+  chatAgents,
+  chatAttachmentsCleanup,
+  chatBriefingPrompt,
+  chatPolishPrompt,
+  chatProjectFiles,
+  type ChatAgent,
+  type PolishMode,
+} from "./backend";
 import { DropZone } from "./DropZone";
 import { atCursor, isSafeRelative, replaceAt, score, type AtToken } from "./mentions";
 import { QueueStrip } from "./QueueStrip";
@@ -38,6 +47,7 @@ import {
   type LocalCommandName,
   type SlashToken,
 } from "./slash";
+import { mentionedFiles, polishMode, projectName } from "./polish";
 import { chatKey, markUrgent, selectAttachments, selectQueue, sendNextQueued, useChat, type QueueItem } from "./store";
 import { SuggestPopover, type SuggestItem } from "./SuggestPopover";
 
@@ -138,6 +148,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const [agents, setAgents] = useState<ChatAgent[]>([]);
   const [cliCommands, setCliCommands] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
+  const [polishing, setPolishing] = useState(false);
+  /** Rascunho de antes da reescrita, enquanto o "Desfazer" estiver à vista. */
+  const [beforePolish, setBeforePolish] = useState<string | null>(null);
+  const [mode, setMode] = useState<PolishMode>("button");
 
   const input = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -146,6 +160,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const capsAsked = useRef<string | null>(null);
   /** Posição na lista `recall` enquanto o usuário navega com as setas (null = fora dela). */
   const recallAt = useRef<number | null>(null);
+  /** Texto que o modo "todo envio" já reescreveu (não reescreve duas vezes). */
+  const autoDone = useRef<string | null>(null);
 
   const setText = useCallback((value: string) => useChat.getState().setDraft(key, value), [key]);
 
@@ -176,6 +192,59 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   }, [autoFocus, key]);
 
   useEffect(() => () => window.clearTimeout(searchTimer.current), []);
+
+  useEffect(() => {
+    let alive = true;
+    void polishMode().then((m) => {
+      if (alive) setMode(m);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // -------------------------------------------------------- melhorar pedido
+
+  /**
+   * Reescreve o rascunho e devolve o texto melhorado à caixa (nunca envia
+   * direto). Devolve `true` quando trocou o texto.
+   */
+  const polish = useCallback(async (): Promise<boolean> => {
+    const raw = (useChat.getState().drafts[key] ?? "").trim();
+    if (!raw || polishing || disabled) return false;
+    if (readLocalCommand(raw)) return false;
+    setPolishing(true);
+    setNotice(null);
+    try {
+      const better = await chatPolishPrompt(raw, {
+        project: projectName(workdir),
+        provider: provider ?? null,
+        files: mentionedFiles(raw),
+      });
+      if (better.trim() === raw) {
+        setNotice({ tone: "info", text: "O pedido já estava claro: nada mudou." });
+        return false;
+      }
+      useChat.getState().setDraft(key, better);
+      setBeforePolish(raw);
+      setNotice({ tone: "info", text: "Pedido melhorado. Confira (e edite) antes de enviar." });
+      input.current?.focus();
+      return true;
+    } catch (e) {
+      setNotice({ tone: "err", text: errorMessage(e) });
+      return false;
+    } finally {
+      setPolishing(false);
+    }
+  }, [disabled, key, polishing, provider, workdir]);
+
+  const undoPolish = () => {
+    if (beforePolish == null) return;
+    useChat.getState().setDraft(key, beforePolish);
+    setBeforePolish(null);
+    setNotice(null);
+    input.current?.focus();
+  };
 
   // ------------------------------------------------------------- anexos
 
@@ -218,7 +287,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       focus: () => input.current?.focus(),
       insertText: (extra: string) => {
         const current = useChat.getState().drafts[key] ?? "";
-        setText(current && !/\s$/.test(current) ? `${current} ${extra}` : current + extra);
+        // Texto de várias linhas (citação de um trecho da conversa) entra em
+        // linha nova: um `> …` emendado no fim da frase não é citação nenhuma.
+        const sep = !current ? "" : extra.includes("\n") ? (/\n\n$/.test(current) ? "" : "\n\n") : /\s$/.test(current) ? "" : " ";
+        setText(current + sep + extra);
         input.current?.focus();
       },
     }),
@@ -334,6 +406,30 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       });
       return;
     }
+    if (command.name === "melhorar") {
+      // A barra já saiu da caixa: devolve o texto antes de reescrever.
+      if (args) useChat.getState().setDraft(key, args);
+      if (mode === "off") {
+        setNotice({ tone: "info", text: "Melhorar pedido está desligado em Configurações › Agentes." });
+        return;
+      }
+      if (!args) {
+        setNotice({
+          tone: "info",
+          text: "Escreva /melhorar <pedido> — ou escreva o pedido na caixa e use o ✨ (Ctrl+I).",
+        });
+        return;
+      }
+      await polish();
+      return;
+    }
+    if (command.name === "briefing") {
+      const text = await chatBriefingPrompt(projectName(workdir));
+      useChat.getState().setDraft(key, args ? `${text}\n\nContexto que já tenho: ${args}` : text);
+      setNotice({ tone: "info", text: "Roteiro da entrevista na caixa. Confira e envie." });
+      input.current?.focus();
+      return;
+    }
     if (command.name === "parar") {
       if (busy && onStop) await onStop();
       else setNotice({ tone: "info", text: "Não há turno em andamento." });
@@ -375,6 +471,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       return;
     }
 
+    // Em "todo envio": reescreve e devolve o texto à caixa; o envio sai no
+    // Enter seguinte, com o usuário tendo visto o que vai.
+    if (mode === "auto" && autoDone.current !== raw && !polishing) {
+      autoDone.current = raw;
+      if (await polish()) return;
+    }
+
     if (busy) {
       if (now && taskId != null && onStop) {
         const ok = await api
@@ -395,6 +498,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       store.enqueue(key, { text: raw, attachments });
       store.setDraft(key, "");
       store.setAttachments(key, []);
+      setBeforePolish(null);
       return;
     }
 
@@ -404,6 +508,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       .map((a) => ({ kind: a.kind, name: a.name, path: a.path! }));
     store.setDraft(key, "");
     store.setAttachments(key, []);
+    setBeforePolish(null);
     setSending(true);
     try {
       await onSend(prompt, { text: raw, attachments: sent, prompt });
@@ -437,6 +542,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       e.preventDefault();
       e.stopPropagation();
       closeSuggest();
+      return;
+    }
+    // Ctrl+I: melhora o pedido sem enviar.
+    if ((e.ctrlKey || e.metaKey) && (e.key === "i" || e.key === "I")) {
+      e.preventDefault();
+      if (mode !== "off") void polish();
       return;
     }
     if (e.key === "Enter" && !e.shiftKey) {
@@ -522,7 +633,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const canSend = !disabled && !sending && (!!text.trim() || attachments.length > 0);
   const hint = busy
     ? "Enter põe na fila · Ctrl+Enter para o turno e envia agora"
-    : "Enter envia · Shift+Enter quebra a linha · ↑ recupera o último pedido";
+    : `Enter envia · Shift+Enter quebra a linha · ↑ recupera o último pedido${mode !== "off" ? " · Ctrl+I melhora o pedido" : ""}`;
 
   return (
     <DropZone className="chat-composer" onFiles={addFiles} disabled={disabled}>
@@ -530,6 +641,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       {notice && (
         <div className={`chat-notice ${notice.tone}`}>
           <pre>{notice.text}</pre>
+          {beforePolish != null && (
+            <button type="button" className="chat-notice-undo" onClick={undoPolish}>
+              Desfazer
+            </button>
+          )}
           <button type="button" title="Fechar" aria-label="Fechar aviso" onClick={() => setNotice(null)}>
             ✕
           </button>
@@ -626,6 +742,23 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           >
             <Icon name="at" size={15} />
           </button>
+          {mode !== "off" && (
+            <button
+              type="button"
+              className={`chat-ibtn${polishing ? " is-busy" : ""}`}
+              title={
+                polishing
+                  ? "Melhorando o pedido…"
+                  : "Melhorar pedido (Ctrl+I): reescreve o rascunho aqui na caixa, sem enviar"
+              }
+              aria-label="Melhorar pedido"
+              disabled={disabled || polishing || !text.trim()}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => void polish()}
+            >
+              <Icon name={polishing ? "spinner" : "sparkles"} size={15} />
+            </button>
+          )}
           <div className="chat-pills">{toolbar}</div>
           {busy && canSend && (
             <button type="button" className="chat-queue-btn" title="Pôr na fila (Enter)" onClick={() => void send(false)}>

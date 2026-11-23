@@ -4,7 +4,8 @@
  * ícones eram SVGs próprios: os arquivos que usam não mudam.
  */
 import type { LucideIcon } from "lucide-react";
-import {
+import { Clock,
+  History,
   ArrowUp,
   AtSign,
   SquareSlash,
@@ -67,10 +68,14 @@ import {
   Wrench,
   X,
   Undo2,
+  Quote,
+  Sparkles,
+  MessagesSquare,
 } from "lucide-react";
 
 const ICONS = {
   undo: Undo2,
+  quote: Quote,
   sidebarLeft: PanelLeft,
   sidebarRight: PanelRight,
   terminal: SquareTerminal,
@@ -95,6 +100,9 @@ const ICONS = {
   /** Botões da caixa de composição: comandos de barra e menção. */
   slash: SquareSlash,
   at: AtSign,
+  /** "Melhorar pedido" (reescrita do rascunho) e a entrevista de briefing. */
+  sparkles: Sparkles,
+  interview: MessagesSquare,
   send: ArrowUp,
   stop: Square,
   file: File,
@@ -127,6 +135,8 @@ const ICONS = {
   listChecks: ListChecks,
   brain: Brain,
   circle: Circle,
+  clock: Clock,
+  history: History,
   // Estados do agente (AgentState)
   spinner: LoaderCircle,
   circleCheck: CircleCheck,
