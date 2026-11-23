@@ -64,7 +64,7 @@ O Screen-Mirror funciona e tem MCP pronto. Reescrever o protocolo do scrcpy de c
 
 ### Fase A: sidecar (sem mudar o projeto)
 
-> **Feito em 2026-11-16 (branch `integracao-screen-mirror`):** `argus-core::devices` inicia, confere e encerra o Screen-Mirror; a aba **Dispositivos** embute o painel completo num iframe (sem mudar o Screen-Mirror) e lista os aparelhos. Falta conferir na janela e empacotar.
+> **Feito em 2026-11-16 (branch `integracao-screen-mirror`):** `argus-core::devices` inicia, confere e encerra o Screen-Mirror; a aba **Dispositivos** embute o painel completo num iframe (sem mudar o Screen-Mirror) e lista os aparelhos. Conferido na janela em 2026-11-19 (SM-M556B por USB, Android 16): o auxiliar sobe em 127.0.0.1 com porta livre, a lista mostra o aparelho, o espelho roda ao vivo (~11 fps) com logcat, controles e Info; a aba **Celular** (espelhamento como aba do editor) abre ao lado das conversas. Falta empacotar.
 
 - [ ] A1. Empacotar o Screen-Mirror como recurso do Argus e iniciá-lo com `node src/cli.ts serve` pelo gerenciador de sidecars, em `127.0.0.1` com porta livre escolhida pelo Argus (`SM_PORT`). Requisito: Node 22.18 ou mais novo; avisar na aba Provedores/Dependências se faltar.
 - [ ] A2. Aba **Dispositivos**: lista de aparelhos (`/api/devices`), info, apps, logcat e arquivos usando a API HTTP.

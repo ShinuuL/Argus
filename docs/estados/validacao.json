@@ -1,0 +1,223 @@
+{
+  "gerado": "2026-11-22T02:49:53.028Z",
+  "total": 27,
+  "falhas": 0,
+  "resultados": [
+    {
+      "id": "inicio-vazio",
+      "rotulo": "Início · vazio",
+      "area": "home",
+      "ok": true,
+      "problemas": [],
+      "ms": 1025
+    },
+    {
+      "id": "conversas-vazio",
+      "rotulo": "Conversas · sem pasta raiz",
+      "area": "chat",
+      "ok": true,
+      "problemas": [],
+      "ms": 1020
+    },
+    {
+      "id": "dispositivos-vazio",
+      "rotulo": "Dispositivos · sidecar parado",
+      "area": "devices",
+      "ok": true,
+      "problemas": [],
+      "ms": 1022
+    },
+    {
+      "id": "git-vazio",
+      "rotulo": "Git · vazio",
+      "area": "git",
+      "ok": true,
+      "problemas": [],
+      "ms": 1026
+    },
+    {
+      "id": "servidores-vazio",
+      "rotulo": "Servidores · vazio",
+      "area": "servers",
+      "ok": true,
+      "problemas": [],
+      "ms": 1022
+    },
+    {
+      "id": "agendadas-vazio",
+      "rotulo": "Agendadas · vazio",
+      "area": "tasks",
+      "ok": true,
+      "problemas": [],
+      "ms": 1022
+    },
+    {
+      "id": "metricas-vazio",
+      "rotulo": "Métricas · sem histórico",
+      "area": "metrics",
+      "ok": true,
+      "problemas": [],
+      "ms": 1019
+    },
+    {
+      "id": "inicio-carregando",
+      "rotulo": "Início · carregando",
+      "area": "home",
+      "ok": true,
+      "problemas": [],
+      "ms": 1020
+    },
+    {
+      "id": "servidores-carregando",
+      "rotulo": "Servidores · carregando",
+      "area": "servers",
+      "ok": true,
+      "problemas": [],
+      "ms": 1030
+    },
+    {
+      "id": "metricas-carregando",
+      "rotulo": "Métricas · carregando",
+      "area": "metrics",
+      "ok": true,
+      "problemas": [],
+      "ms": 1024
+    },
+    {
+      "id": "agendadas-carregando",
+      "rotulo": "Agendadas · carregando",
+      "area": "tasks",
+      "ok": true,
+      "problemas": [],
+      "ms": 1024
+    },
+    {
+      "id": "servidores-erro",
+      "rotulo": "Servidores · erro",
+      "area": "servers",
+      "ok": true,
+      "problemas": [],
+      "ms": 1028
+    },
+    {
+      "id": "metricas-erro",
+      "rotulo": "Métricas · erro",
+      "area": "metrics",
+      "ok": true,
+      "problemas": [],
+      "ms": 1029
+    },
+    {
+      "id": "agendadas-erro",
+      "rotulo": "Agendadas · erro",
+      "area": "tasks",
+      "ok": true,
+      "problemas": [],
+      "ms": 1026
+    },
+    {
+      "id": "dispositivos-erro",
+      "rotulo": "Dispositivos · ADB recusando",
+      "area": "devices",
+      "ok": true,
+      "problemas": [],
+      "ms": 1023
+    },
+    {
+      "id": "inicio-cheio",
+      "rotulo": "Início · cheio",
+      "area": "home",
+      "ok": true,
+      "problemas": [],
+      "ms": 1028
+    },
+    {
+      "id": "servidores-cheio",
+      "rotulo": "Servidores · cheio",
+      "area": "servers",
+      "ok": true,
+      "problemas": [],
+      "ms": 1023
+    },
+    {
+      "id": "agendadas-cheio",
+      "rotulo": "Agendadas · cheio",
+      "area": "tasks",
+      "ok": true,
+      "problemas": [],
+      "ms": 1025
+    },
+    {
+      "id": "metricas-cheio",
+      "rotulo": "Métricas · 14 dias",
+      "area": "metrics",
+      "ok": true,
+      "problemas": [],
+      "ms": 1022
+    },
+    {
+      "id": "conversas-cheio",
+      "rotulo": "Conversas · com histórico",
+      "area": "chat",
+      "ok": true,
+      "problemas": [],
+      "ms": 1030
+    },
+    {
+      "id": "conversas-ask-quebrado",
+      "rotulo": "Conversas · pergunta ilegível",
+      "area": "chat",
+      "ok": true,
+      "problemas": [],
+      "ms": 1024
+    },
+    {
+      "id": "dispositivos-cheio",
+      "rotulo": "Dispositivos · três aparelhos",
+      "area": "devices",
+      "ok": true,
+      "problemas": [],
+      "ms": 1026
+    },
+    {
+      "id": "servidores-estreito",
+      "rotulo": "Servidores · 900 px",
+      "area": "servers",
+      "ok": true,
+      "problemas": [],
+      "ms": 1026
+    },
+    {
+      "id": "inicio-estreito",
+      "rotulo": "Início · 900 px",
+      "area": "home",
+      "ok": true,
+      "problemas": [],
+      "ms": 1024
+    },
+    {
+      "id": "metricas-ciano",
+      "rotulo": "Métricas · Ardósia",
+      "area": "metrics",
+      "ok": true,
+      "problemas": [],
+      "ms": 1025
+    },
+    {
+      "id": "metricas-ambar",
+      "rotulo": "Métricas · Grafite",
+      "area": "metrics",
+      "ok": true,
+      "problemas": [],
+      "ms": 1028
+    },
+    {
+      "id": "metricas-violeta",
+      "rotulo": "Métricas · Noite",
+      "area": "metrics",
+      "ok": true,
+      "problemas": [],
+      "ms": 1025
+    }
+  ]
+}

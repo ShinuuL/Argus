@@ -14,6 +14,116 @@ A conferência na janela foi feita pelo protocolo de depuração do WebView2 (cl
 
 Uso no dia a dia como o Claude Code no VS Code (equivalências e diferenças): [docs/USO_COMO_CLAUDE_CODE.md](docs/USO_COMO_CLAUDE_CODE.md).
 
+## P5 — redesenhar as telas com evidência (proposto em 2026-11-21)
+
+Até ontem uma crítica de design do Argus era chute: eu não via a tela. Com a ponte de validação (que navega) junto do `gdigrab` (que fotografa), passou a ser possível pegar os pixels de cada área sem ninguém clicando:
+
+```powershell
+$env:ARGUS_PONTE = "1"; npm run app:dev
+node scripts/telas-print.mjs            # docs/telas/01-conversas.png … 10-agentes.png
+```
+
+A partir daí a crítica tem evidência, e aí sim vale rodar `/impeccable` ou `/design-critic` tela a tela. **A crítica das nove telas está pronta** em [docs/critica-telas.md](docs/critica-telas.md), e o resultado dela manda no resto deste plano: das 36 observações, **27 aparecem em quatro telas ou mais**. Não há dez redesenhos a fazer — há três componentes e uma paleta. O passo 2 da ordem abaixo deixou de ser aposta e virou o trabalho principal.
+
+**Duas armadilhas que custaram caro para descobrir, e que o roteiro já evita:**
+
+- **`gdigrab -i "title=Argus Dev"` devolve quadro velho com WebView2.** Saíram nove retratos da tela de Conversas com o DOM comprovadamente três telas adiante. O desenho da página não passa pelo DC da janela, então o que o `gdigrab` copia de lá está congelado no primeiro quadro. A saída é fotografar a **tela inteira** (`-i desktop`) e recortar a moldura da janela, que a ponte informa na ação `janela`. Essa ação também põe a janela "sempre à frente" durante as fotos (e desfaz no fim): janela coberta não aparece na tela composta.
+- **Conferir texto não é conferir navegação.** O roteiro dava `✔ Agentes` para um clique que não tinha navegado para lugar nenhum — o rótulo bateu com um botão de outra tela e texto, claro, existia. Agora a `Shell` expõe `data-area` e o roteiro compara com a área esperada. (A área `agents` saiu das listas: ela não tem ícone na barra, abre pelo inspetor ou pela paleta.)
+
+**A referência já existe e não deve ser reinventada.** Em 2026-11-17 foi aprovado o redesign de `docs/mockups/argus-telas.html` (12 telas, barra de ícones à esquerda, inspetor opcional, Ctrl+K para o que é raro) mais os três temas novos. O trabalho aqui é *aproximar o app do mockup aprovado*, com os ajustes que a prática mostrar — não abrir uma nova direção de design.
+
+**Ordem**, porque redesenhar dez áreas de uma vez é como não redesenhar nenhuma:
+
+1. ~~Fotografar as áreas e escrever uma crítica por tela.~~ **Feito**: `docs/critica-telas.md`, nove telas.
+2. ~~Corrigir os sete problemas de sistema.~~ **Feitos os sete**, em 2026-11-21. O que mudou, e onde:
+
+   1. **`<Empty icon titulo filhos acao>`** (`src/ui/components.tsx`), um desenho para as nove telas. Aplicado em Git, Servidores, Terminal, Agendadas e Início. *Os dois defeitos de fato foram junto*: Git e Servidores agora oferecem "Abrir pasta raiz", e o Terminal parou de mandar clicar num `+` que, na área em tela cheia, não existe — a ação virou o próprio botão.
+   2. **Tabela vazia não desenha cabeçalho.** `DataTable` com zero linhas devolve só o `empty`, no lugar dela inteira — passe um `<Empty>` ali e ele ocupa o espaço todo. Antes o estado vazio era espremido dentro de um `<td colSpan>`, debaixo de sete rótulos anunciando nada.
+   3. **Token de texto secundário separado do de link.** `--text-2` era a matiz do acento clareada, nos quatro temas; virou neutro (texto misturado ao fundo, 5,0:1 sobre a superfície). O azul ficou para o que se clica. Isso sozinho conserta as nove telas, porque era uma variável, não nove enganos.
+   4. **`<AreaHeader>` em todas as áreas**, com o título pequeno: a trilha do topo já nomeia a área, então o que carrega informação é a contagem. Git e Servidores, que começavam direto na fileira de abas, ganharam cabeçalho; o padding de topo passou a ser um só (era 51, 62 e 63 px).
+   5. **O vazio de meia tela**, no caso que mais aparecia: o `<Empty>` cresce para ocupar a altura (`flex: 1`), e os contêineres de rolagem de Agendadas e Servidores viraram coluna para deixar. Tabela **cheia** que não estica continua como estava — é o passo 3.
+   6. **Barra de estado.** A metade direita virou **bandeja**, separada por uma linha e sem poder espremer o estado do app; o "PID" saiu de Dispositivos e virou dica do próprio estado do sidecar; e "roda só com o Argus aberto" ganhou sujeito tanto na barra quanto no estado vazio de Agendadas, que é onde a frase muda uma decisão.
+   7. **Desligado legível**: `.ui-btn:disabled` com borda tracejada e texto no contraste do secundário. A borda é que diz "desligado" — o texto não precisa sumir para isso.
+
+   **Conferido na janela em 2026-11-21**, pela galeria: 22 de 22 cenários fotografados em `docs/estados/`. A conferência achou quatro coisas, todas corrigidas antes desta linha ser escrita:
+
+   - **A galeria nunca tinha funcionado.** O Tauri 2 injeta `window.__TAURI_INTERNALS__` e o `invoke` dentro dele como propriedades **não graváveis e não configuráveis**: os dois `defineProperty` jogavam `TypeError`, a galeria caía no próprio `catch` e o app subia normal. O sintoma era mudo — a tela certa, com os dados de verdade e sem erro no console. A troca passou para o `invoke` importado em `src/api/commands.ts` (e o `listen` em `events.ts`): continua sendo um ponto só, continua cobrindo as nove áreas, e o custo é uma linha em cada arquivo.
+   - **Servidores derrubava a área** quando não havia filtro de sessão: o `empty` da tabela é montado sempre, mesmo com linhas, e chamava `ownerLabel(filter!)` com `filter` nulo. Defeito meu, do passo 2, que só a galeria mostraria — é preciso ter o que listar *e* nenhum filtro.
+   - **Os dois cenários de "carregando" nunca montavam.** Eles penduram um comando da carga inicial de propósito, e a ida para a área esperava justamente pelo `ready` que esse comando impede. Agora navega na montagem *e* a cada mudança de `ready`.
+   - **A barra de Servidores transbordava a 900 px** (busca cortada pela metade, TCP/UDP/Escutando fora da tela, rolagem horizontal na área inteira): passou a quebrar linha. E o instante fixo das fixtures, escrito há um mês, já mostrava "No ar há 8775h13" — virou `Date.now()`.
+
+3. ~~Tela a tela, do que mais se usa para o que menos se usa.~~ **Feitas as quatro**, em 2026-11-21, cada uma conferida na foto antes e depois:
+
+   - **Conversas.** O cabeçalho da sessão repetia a barra de abas: mesmo título da conversa (que já aparece na aba *e* na trilha do topo) e um `+` idêntico ao de 36 px acima. O título saiu e o botão passou a dizer o que faz — "Conversas anteriores", que é o que ele tem de próprio, a lista com busca. O `+` saiu (a ação continua na barra de abas e dentro da lista). E os dois centros pararam de competir: sem nenhum projeto, a caixa mandava escolher um na pílula vazia enquanto o centro mandava abrir a pasta raiz — agora a caixa repete o centro, e o botão de enviar deixa de ser o único elemento aceso numa tela que não envia nada.
+   - **Dispositivos.** Quatro das cinco abas existiam só para dizer que não existem: cada uma abria um painel inteiro cuja única frase mandava olhar a moldura ao lado. Com duas fileiras de aba na mesma tela, "Logcat" e "Arquivos" apareciam duas vezes cada, apontando para coisas diferentes. A fileira do Argus saiu; sobrou o que é real (dados do aparelho e configuração do sidecar), e o roteiro do que falta virou uma linha. A moldura, que lia como um aplicativo estranho mal encaixado, ganhou legenda: é um aplicativo estranho, e agora diz isso, com "abrir fora".
+   - **Métricas.** O cartão "Limite da janela atual" dizia "o Argus ainda não lê o limite do plano" — texto que ficou velho na 0.1.3, quando o anel do compositor passou a mostrar exatamente esse número. Virou o dado (`rate_limits`), e some quando a CLI não informa janela nenhuma. O gráfico tinha altura fixa de 170 px dentro de um cartão que ia até o rodapé (daí os ~450 px de nada) e uma escala sem degrau entre 5 e 10, que desenhava um pico de 6,5 mi contra um eixo de 10 mi. Agora o gráfico ocupa o cartão, o eixo tem 3, 4, 6 e 8 no meio, e a barra acompanha a casa em vez de um teto de 28 px.
+   - **Configurações.** "Autowork" estava em **Extras**, ao lado do mascote e do tocador de música, com nome em inglês. Foi para **Agentes**, como "Trabalho automático".
+
+4. **Comparar o antes e o depois, com massa de teste e crítica de novo** (começado em 2026-11-21). Mudança de layout que ninguém conferiu depois é como teste que ninguém rodou. Pendências:
+
+   - [x] 4.1 Congelar o baseline: copiar as nove fotos atuais de `docs/telas/` para `docs/telas/base/` antes de refotografar. Sem o "antes" guardado, "comparar com o print anterior" é chute — as fotos anteriores foram sobrescritas a cada rodada.
+   - [x] 4.2 Ferramenta de comparação (`scripts/comparar-telas.mjs`): SSIM por tela contra o baseline, imagem de diferença quando houver mudança e relatório em `docs/telas/comparacao.md`. O número sozinho não diz se a mudança foi para melhor; a imagem de diferença diz onde olhar. Rodado: SSIM médio 0,9980 nas nove telas — as mudanças são o relógio e o player, não layout.
+   - [x] 4.3 Massa de validação (`scripts/validar-galeria.mjs`): percorrer os 27 cenários e conferir, por cenário, área correta, galeria instalada, texto/seletor declarado em `esperar` e console sem erro. Saída em `docs/estados/validacao.json`. Hoje `galeria.mjs` só fotografa e confere a área — uma fixture que monta com o console cheio de erro passa. Rodado: **27/27 passaram**.
+   - [x] 4.4 Marcas `data-ponte` nos elementos que a validação opera: `nav-<área>` na barra de ícones e `vazio` no `<Empty>` (vale para as nove áreas). A ponte procura primeiro pela marca; sem ela, trocar um rótulo quebra o roteiro silenciosamente.
+   - [x] 4.5 Subir o app com a ponte, rodar validação e fotos, corrigir o que aparecer e rodar de novo até limpo. Rodado em 2026-11-22: validação 27/27, nove telas e 27 estados fotografados, `tsc` limpo. Nenhum defeito novo apareceu nesta rodada.
+   - [x] 4.6 Rodar `/impeccable critique` nas telas novas (avaliação de design + detector no WebView2 por CDP) e registrar o resultado em `docs/critica-telas.md`, substituindo a crítica escrita sobre os prints antigos. **Feito em 2026-11-23**: 9 telas e 27 estados revisitados, tema Noite. Nielsen 28/40, carga cognitiva moderada (5/8 itens), 1 finding do detector (`tiny-text` em `div.chat-hint`). Correções priorizadas no próprio documento; ainda não aplicadas.
+
+5. ~~Cenários de Conversas e Dispositivos.~~ **Feitos**, em 2026-11-21. Eram as duas únicas áreas sem cenário, e por isso as duas únicas que só tinham sido vistas **vazias** — justamente as que mais se usam. Cinco cenários novos: conversa com histórico, conversa sem pasta raiz, pergunta com opções ilegível, três aparelhos conectados e sidecar parado. Um cenário agora pode abrir uma aba de conversa (`sessao` em `cenarios.ts`), porque a área "chat" sozinha só sabe mostrar a conversa nova e vazia.
+
+   Fotografar o cheio achou duas coisas, as duas corrigidas:
+
+   - **O nome do item sumia atrás do recado** nas listas laterais de 200 px: o `meta` quebrava em duas linhas, sua largura mínima virava a da maior palavra e o rótulo era espremido até zero — "autorize a depuração no celular" ocupava a linha inteira sem dizer de qual aparelho era. O `meta` ganhou corte com reticências (vale para as nove áreas), e na lista de aparelhos o estado vai curto, com o recado inteiro no `title`.
+   - **A moldura do Screen-Mirror fica branca quando o painel não sobe** — o sidecar anuncia uma URL, a página não responde e quem pinta o quadro é a página de erro do WebView2: 620 px de branco num app escuro. `color-scheme: dark` no iframe **não** resolve (testado). Resolver pede sondar a URL antes de montar o iframe. **Não feito**, anotado aqui.
+
+   **Pendência do bloco `argus-ask`, corrigida junto**: quando o agente erra o JSON da pergunta com opções, o bloco voltava inteiro pelo caminho do markdown e o usuário levava mil caracteres de JSON cru, sem pergunta e sem aviso de que havia uma. Aconteceu de verdade nesta sessão. Agora o bloco sai do texto de qualquer jeito e vira uma linha: "o agente mandou uma pergunta com opções que não deu para ler". O cenário `conversas-ask-quebrado` fotografa isso.
+
+**Ferramenta: a galeria de estados está construída** (`src/dev/cenarios.ts`, `src/dev/galeria.ts`, `scripts/galeria.mjs`, ação `cenario` da ponte). Era a peça que mais rendia e resolve três dos cinco buracos da lista antiga: estados, tema e largura.
+
+Como funciona, e por que foi feita assim: um cenário declara **o que o backend responde** a cada comando — `{ valor }`, `"demora"` (nunca responde → carregando) ou `{ erro }` (rejeita). A interceptação é no `invoke` que `src/api/commands.ts` usa — o único ponto por onde a interface fala com o Rust (o `__TAURI_INTERNALS__`, que seria o ponto mais baixo, vem lacrado pelo Tauri 2) —, então as nove áreas ficam cobertas sem que nenhuma saiba que a galeria existe: nenhum componente ganhou prop de teste, nenhuma tela tem caminho só de desenvolvimento. O que é fotografado é o código que vai para o usuário. Comando não declarado passa direto para o backend real, por isso a janela, o tema e a própria ponte continuam vivos. São 27 cenários cobrindo vazio, carregando, erro, cheio, janela de 900 px e os três temas que nunca foram vistos.
+
+```powershell
+$env:ARGUS_PONTE = "1"; npm run app:dev
+node scripts/galeria.mjs                 # docs/estados/<id>.png
+node scripts/galeria.mjs metricas        # só os que casam
+```
+
+Três coisas aprendidas construindo, que valem para quem mexer nisso:
+
+- **Fabricar a resposta do comando não basta.** O backend continua empurrando a realidade por evento, e segundos depois do boot um `servers-changed` com a lista verdadeira apaga a fixture — a primeira foto de "Servidores · cheio" saiu com a tela certa e zero linhas. Por isso o cenário também **cala eventos**, na mesma interceptação (`plugin:event|listen`).
+- **Navegar na montagem não adianta.** Quando a carga inicial termina, a Shell abre uma conversa nova e `openNewChat` leva a área para "chat". O cenário só pode navegar depois de `ready`.
+- **`alvo.invoke = meu` joga TypeError** num módulo ES se a propriedade não for gravável, e como isso roda no topo do `main.tsx` derrubava o boot inteiro — janela em branco, ponte junto. É `defineProperty`, e a instalação inteira é `try`/`catch`: galeria é ferramenta de desenvolvimento, não pode derrubar o app.
+
+**Conferida na janela** em 2026-11-21: os 27 cenários saíram em `docs/estados/`, com os dados fabricados na tela. (O parágrafo que ficava aqui dizia que o embrulho no `__TAURI_INTERNALS__` ainda não tinha sido exercitado — não funcionava mesmo, e por isso a interceptação mudou de lugar; ver o item 2 acima.) Para checar de fora: `{"acao":"js","codigo":"window.__ARGUS_GALERIA__"}` devolve o id do cenário ativo.
+
+**Aviso de segurança sobre fotografar**: `scripts/galeria.mjs` e `telas-print.mjs` capturam a **tela inteira** e recortam. Se a janela do Argus perder o "sempre à frente" — o que acontece quando alguém está usando o computador —, o recorte sai com o que estiver por cima. Aconteceu: uma captura pegou o Argus do usuário com uma conversa real dentro, e foi apagada. **Não rodar sessão de fotos com a máquina em uso.**
+
+**O que ainda falta de ferramenta:**
+
+- **Marcas `data-ponte`** nos elementos que importam. Hoje a ponte acha pelo rótulo visível, o que quebra quando o texto muda — e um rótulo ambíguo clica no lugar errado, que é pior do que falhar.
+- **Comparar duas capturas.** Para pegar regressão visual sem reler tudo.
+- **Cenários para Conversas e Dispositivos**, as duas telas mais densas e as únicas sem fixture — Conversas porque a transcrição vem por evento (`orch`) e não por comando, Dispositivos porque depende do sidecar.
+
+## Argus como servidor MCP (proposto em 2026-11-21)
+
+Ideia do usuário: em vez de cada projeto reaprender onde fica a memória, o Argus se oferece como servidor MCP e qualquer agente — de qualquer projeto — consulta as fontes dele. Vale a pena, e boa parte da encanação já existe.
+
+**O que o Argus tem para servir que hoje ninguém alcança:**
+
+- `memoria_buscar(consulta)` — as notas de `_Argus/Memoria` e a nota de cada projeto. Hoje o agente tem que lembrar do índice e abrir arquivo por arquivo; metade do valor da memória se perde aí.
+- `memoria_gravar(titulo, texto, tipo, projetos)` — grava já com o frontmatter certo e a linha no índice. Hoje isso é prosa repetida em todo prompt de sistema, e cada agente cumpre um pedaço.
+- `sessoes_buscar(texto)` — o banco guarda todos os eventos de todas as conversas. "O que a gente decidiu sobre X" viraria uma consulta em vez de arqueologia no histórico.
+- `projetos_listar` / `projeto_status` — a raiz aberta, o status git, os servidores de dev no ar.
+- `mural_ver` — o mural de arquivos legível sob demanda, não só injetado no começo do turno.
+- `fontes_projeto` — `PRODUCT.md`, `DESIGN.md`, `PROXIMOS_PASSOS.md`, checklist.
+
+**Como:** o `remote.rs` já é um servidor axum com token; a rota `/mcp` (HTTP streamable) entra nele e aproveita a mesma autenticação. O registro na CLI o Argus já sabe fazer sozinho — `mcp.rs` tem o `add`, então é um botão em Configurações, não um passo manual.
+
+**Três coisas para decidir antes de escrever código**, porque todas mudam o desenho:
+
+1. **Escopo de leitura.** A memória é pessoal e atravessa projetos. Um agente trabalhando no projeto A consultando uma nota do projeto B copia aquele conteúdo para o histórico de A. O frontmatter já tem `projetos:` — o filtro natural é servir por projeto e exigir pedido explícito para sair dele. Credencial nenhuma passa, em hipótese alguma.
+2. **Recursão.** Um agente *do Argus* consultando o Argus no meio de um turno do Argus. O `loop_guard` existe, mas foi feito para outro problema; vale conferir antes, não depois.
+3. **Quando o servidor liga.** O remoto hoje sobe sob demanda e com Funnel; o MCP precisa estar de pé sempre que houver agente rodando. A resposta compatível com o que já foi decidido é: `127.0.0.1`, sem Funnel, sem prompt de firewall.
+
 ## Pendências por prioridade (2026-11-19)
 
 Fila de trabalho. P1 a P3 em andamento; P4 é conferência que o usuário faz em casa (aparelho, sistema, chave).
@@ -42,14 +152,16 @@ Fila de trabalho. P1 a P3 em andamento; P4 é conferência que o usuário faz em
 - [x] Um só laço de "rodando" (o anel); pontos, ícone e pendência em andamento ficaram fixos.
 
 ### P4 — o usuário confere em casa
-- [ ] Celular: pareamento pelo QR (cookie `Lax`), fonte Geist, divisória de troca de agente / comando negado / subtítulo na web app.
+- [x] Celular: pareamento pelo QR (cookie `Lax`), fonte Geist, divisória de troca de agente / comando negado / subtítulo na web app. **Conferido em 2026-11-21 num Galaxy M55 (Android 16, Chrome)**, com o servidor só em `127.0.0.1` e o aparelho chegando por `adb reverse` — sem Firewall e sem Tailscale. O roteiro está no teste `remote::tests::live_mobile_web_app` (`--ignored`) e em `scripts/celular-camera.mjs`, que faz o papel do leitor de QR servindo o link numa origem diferente (`localhost` → `127.0.0.1`), que é a navegação de fora do site onde o cookie `Strict` não ia. O que se viu: pareou e caiu na lista "ao vivo"; o cookie do token antigo deu "Não autorizado" depois de revogar; a Geist desenha diferente do fallback `system-ui` (`scripts/celular-fonte.mjs`); a divisória "Agente trocado: claude → opencode", o cartão "Comando negado · git status" e o selo "contexto 87% (acima de 80%)" aparecem como projetados.
+  - Achado e corrigido na conferência: no celular o subtítulo da conversa era uma linha só com reticências, e o selo de contexto — justamente o aviso de janela enchendo — ficava espremido fora da tela. Agora quem corta é o nome do projeto (`.bar-sub` virou flex, `.bar-sub-main` trunca, `.ctx` fica inteiro).
+- [ ] Melhorar pedido: uma reescrita de verdade com a CLI (custo real no haiku), o modo "em todo envio" e o Desfazer.
 - [ ] Métricas: virada do "Hoje" depois das 21h.
-- [ ] OpenCode real: modelo `-free` com custo 0, uso do último passo.
+- [x] OpenCode real: modelo `-free` com custo 0, uso do último passo. **Conferido em 2026-11-21** na tarefa #25 (`opencode/beam-free`): `US$ 0,00 equivalente em API` na tela e `61 entrada · 76 saída · cache 13,4 mil lido` no último passo.
 - [ ] Selo de auto-work sem "Reiniciar" em sessão aplicada/descartada.
 - [ ] Arrastar do Explorer, Ctrl+V de print, login do claude no terminal.
 - [ ] Player tocando música.
 - [ ] "Iniciar com o Windows" no app instalado (reiniciar e ver abrir minimizado).
-- [ ] APK assinado (chave do usuário).
+- [x] APK assinado: keystore do usuário criado (PKCS12, RSA 4096) e `app-universal-release.apk` gerado em 2026-11-21. `apksigner verify` confirma — um assinante, esquema v2, RSA 4096. O `key.properties` e o `.jks` ficam fora do repositório. O `gerar-apk.ps1` agora repõe o bloco de assinatura no `build.gradle.kts` toda vez que acha o `key.properties`: `gen/android` é regenerável, e sem o bloco o release saía **sem assinatura** mesmo com as chaves no lugar.
 - [ ] Codex e gemini: instalar e logar as CLIs; conferir `--add-dir`/`--include-directories` na pasta `_Argus` e o Planejar/Bypass deles.
 - [ ] Toast do Windows das tarefas agendadas (o evento sai; a notificação do sistema não foi vista).
 
@@ -228,9 +340,9 @@ Legenda: **na janela** = visto funcionando na janela do Tauri; **compila** = imp
 | Modelo por conversa (pílula, `/modelo`, cabeçalho, banco) | ✓ na janela com tarefas reais: lista do claude (opus[1m], claude-fable-5[1m], sonnet, haiku) e do opencode (146, com busca); sessão trocada de haiku para sonnet e a linha de uso seguinte veio como `claude-sonnet-5`. ⚠ a troca de modelo no claude regrava o cache inteiro da conversa (visto: 107 mil tokens de cache gravados, US$ 0,64 equivalentes em API num turno de uma linha) |
 | Troca de agente na sessão (Claude Code ↔ OpenCode) | ✓ na janela com tarefa real: claude → OpenCode, divisória no chat, sessão nova do opencode respondeu certo qual tinha sido o primeiro pedido e o arquivo alterado (veio do resumo). Voltar ao provedor anterior retomando a sessão guardada: só teste automático |
 | Modo de trabalho (Isolado / Direto na pasta) e aviso antes do envio | ✓ na janela com tarefas reais: pasta fora do git + Isolado mostra o aviso antes de enviar, com o caminho citado em destaque; "Continuar isolado" roda no worktree e o agente responde em 2 passos que a pasta não existe na cópia; "Usar Direto na pasta" roda na pasta, acha e edita o arquivo, e a aba Alterações mostra o diff sem Aplicar/Descartar. ⚠ o aviso de segunda sessão direta e as preferências em Configurações gravando: lógica com teste automático, não exercitados com duas sessões reais |
-| Git e inspeção liberados por padrão; "Comando negado" no chat | ✓ na janela com tarefa real (claude): `git status` e `git log -1` rodaram, `git push` foi negado e apareceu a caixa "Comando negado" com o atalho. ⚠ níveis "Git local"/"Git remoto" ligados e o clique no atalho: montagem com teste automático, não vistos numa tarefa real. ⚠ OpenCode: não rodou o `git status` pedido no teste (terminou o turno sem chamar ferramenta); permissões dele não foram alteradas |
-| Tarefas em worktree isolado, stream, diff, responder (`--resume`) | ✓ na janela com tarefas reais do claude: Aplicar leva a alteração ao projeto (commit, merge, worktree e branch removidos) e Descartar remove o worktree e a branch. Aplicar e descartar uma sessão do OpenCode não foram conferidos |
-| Tarefa pelo OpenCode | ✓ na janela com `ARGUS_OPENCODE_MODEL=openai/gpt-6-luna`: stream, ferramenta, tokens e custo equivalente. ⚠ o opencode 2.0.22 não imprime o `step_finish` do último passo, então o uso desse passo não entra; edição de arquivos pelo OpenCode não conferida |
+| Git e inspeção liberados por padrão; "Comando negado" no chat | ✓ na janela com tarefa real (claude): `git status` e `git log -1` rodaram, `git push` foi negado e apareceu a caixa "Comando negado" com o atalho. ⚠ níveis "Git local"/"Git remoto" ligados e o clique no atalho: montagem com teste automático, não vistos numa tarefa real. ✓ OpenCode 2.3.0 rodou `git status` na tarefa #25 (ferramenta `shell`, exit 0); permissões dele não foram alteradas |
+| Tarefas em worktree isolado, stream, diff, responder (`--resume`) | ✓ na janela com tarefas reais do claude: Aplicar leva a alteração ao projeto (commit, merge, worktree e branch removidos) e Descartar remove o worktree e a branch. ✓ Aplicar (#25) e Descartar (#26) conferidos com o opencode 2.3.0; worktree removido nos dois casos |
+| Tarefa pelo OpenCode | ✓ na janela com `ARGUS_OPENCODE_MODEL=openai/gpt-6-luna`: stream, ferramenta, tokens e custo equivalente. ✓ 2.3.0 emite o `step_finish` final com tokens (uso registrado); edição de arquivos pela ferramenta `write` conferida; `opencode/beam-free` mostra US$ 0,00 equivalente em API |
 | Histórico SQLite persistente | ✓ na janela (a tarefa e o chat voltam depois de fechar e abrir) |
 | Subagentes: árvore, cartão "→ subagente", chat somente leitura sem caixa de resposta | ✓ na janela com um subagente real do claude |
 | Subagentes do opencode e subagente em segundo plano do claude | ⚠ escritos sem conferir contra saída real. A linha real de ferramenta do opencode 2.0.22 foi conferida e virou teste (o id da chamada vem em `part.id`), mas nenhuma execução trouxe a ferramenta `task` |
@@ -244,6 +356,7 @@ Legenda: **na janela** = visto funcionando na janela do Tauri; **compila** = imp
 | Servidores + painel lateral | ✓ na janela com um terminal da IDE e com uma sessão de agente: com `python -m http.server:*` em Comandos permitidos, o servidor aberto pelo claude aparece no selo da sessão, na status bar e na aba Servidores ("Sessão #N"); "Derrubar" mata o processo e fecha a porta. Limite: o `claude -p` encerra os processos em segundo plano quando o turno termina, então o servidor só vive durante o turno |
 | Conversa (aba única: conversa nova + sessão) | ✓ na janela com tarefas reais: o primeiro envio cria a tarefa na mesma aba, com stream ao vivo, Enviar virando Parar, fila, "1 agente rodando", ponto pulsando e negrito quando a novidade chega com a aba fora de foco |
 | Caixa de composição numa linha (pílula "provedor · modelo", opções, pílula de projeto) | ✓ na janela em 2026-11-16: lista de modelos do claude (Padrão, opus[1m], claude-fable-5[1m], sonnet, haiku) e do opencode (busca, "Usar “nome”" para modelo digitado); botão de opções com explicações, Esc fecha e devolve o foco, contagem "1" com Direto na pasta num projeto git; pílula de projeto só na conversa nova. Corrigido na mesma rodada: a pílula de agente e modelo era cortada ("Claude Code · pad…") e, em aba estreita (split), a barra quebrava em duas linhas. "Carregando modelos…" não foi visto: a lista já estava pronta quando a pílula foi aberta |
+| Melhorar pedido (✨ / Ctrl+I / `/melhorar`) e entrevista de briefing (`/briefing` e o convite na primeira conversa do projeto) | compila + core testado (`crates/core/src/polish.rs`, 9 testes: quando pular, montagem do meta-pedido, leitura da resposta, regra contra injeção; comandos `chat_polish_prompt`, `polish_mode_get/set`, `chat_briefing_prompt/missing`). **Falta ver na janela**: a reescrita com a CLI real (gasta tokens), o modo "em todo envio", o Desfazer e o convite de briefing num projeto sem `BRIEFING.md` |
 | Configurações com navegação lateral (Tema, Agentes, Provedores, Por projeto) | ✓ na janela em 2026-11-16: os três temas trocam a interface inteira; Provedores mostra claude e opencode "conectado"; o rodapé não tem mais Provedores. Corrigido: num grupo estreito (split) a navegação não empilhava e os campos estouravam o cartão (agora pela largura do grupo) |
 | Pasta raiz que se atualiza sozinha | ✓ na janela em 2026-11-16: criar, renomear e apagar uma subpasta de projeto aparece na lista em 440–565 ms; botão Atualizar redetecta também os comandos de build; projeto apagado com sessão vira "pasta ausente" (riscado) e some depois de excluir a última sessão |
 | Excluir sessão e "Excluir encerradas" | ✓ na janela em 2026-11-16: pelo menu da barra esquerda e pelo clique direito no seletor de conversas do cabeçalho (caixa nativa com o texto certo para modo Direto), aba da sessão fecha; "Excluir encerradas (1)" depois de descartar uma sessão isolada do OpenCode (worktree e branch removidos). Métricas iguais antes e depois (US$ 0,18 → 0,18; no fim, US$ 0,79 com 5 turnos, incluindo os das sessões excluídas) |
@@ -291,6 +404,27 @@ Ficou pendente do Digitama:
 
 Marcado com `[x]` o que foi visto funcionando na janela em 2026-11-14.
 
+**Por que tanta coisa trava em "falta ver na janela" (apurado em 2026-11-21).** Dá para **fotografar** a janela sem ajuda: `ffmpeg -f gdigrab -framerate 10 -i "title=Argus"` grava em `.mkv` (formato que aguenta ser interrompido no meio), e `-frames:v 1` tira um quadro só. Foi assim que saíram os dois defeitos de hoje (a linha `(evento RateLimit)` e a compactação muda). O que **não** dá é **mexer** nela: numa instância `Argus Dev` subida à parte, nem `SendKeys` nem clique sintético (`mouse_event`) chegam ao WebView2 — o cursor até acende o estado de passagem do mouse sobre a caixa de busca, provando que o movimento chega, mas o clique e o `Ctrl+K` não abrem a paleta, com a janela comprovadamente em primeiro plano. Ou seja: **ver, sim; navegar, não.** Vale também notar que a instância `Argus Dev` tem identificador próprio mas **compartilha o banco** com a normal, então não é um ambiente limpo e não convém deixar as duas abertas juntas.
+
+**A saída: a ponte de validação (feita em 2026-11-21).** Se o sistema operacional não deixa entrar de fora, entra-se por dentro. Com a variável `ARGUS_PONTE` definida, o Argus sobe um servidor minúsculo em `127.0.0.1:8787` que repassa pedidos para a própria página; o `src/dev/ponte.ts` executa lá dentro e devolve a resposta. Um `elemento.click()` dali passa pelos mesmos ouvintes de um clique humano — o React não sabe a diferença.
+
+```powershell
+$env:ARGUS_PONTE = "1"; npm run app:dev
+```
+
+```bash
+node scripts/ui.mjs ver                 # título, texto visível e o que é clicável
+node scripts/ui.mjs clicar "Métricas"   # pelo rótulo, ou --seletor <css>
+node scripts/ui.mjs tecla k --ctrl      # abre a paleta
+node scripts/ui.mjs esperar "Tudo certo" --ms 15000
+node scripts/ui.mjs erros               # erros de console desde que a janela abriu
+node scripts/ui.mjs js "document.querySelectorAll('.ap-mural-item').length"
+```
+
+Sai 1 quando a ação falha, então dá para encadear um roteiro e parar no primeiro erro. Três travas: só existe com a variável definida, só escuta em `127.0.0.1`, e não toca em arquivo nem no banco — tudo o que ela faz, a janela já fazia.
+
+O limite que sobra é outro, e é honesto: a ponte opera a interface, não o mundo. Item que depende de um celular ligado, de uma conta com limite de plano de verdade ou de um turno caro continua dependendo de você — mas a parte que era só "alguém precisa clicar" deixou de depender.
+
 - [x] Primeiro envio numa conversa nova: criar a tarefa e a mesma aba virar a sessão (com stream ao vivo, botão Parar e fila).
 - [x] "N agentes rodando" na status bar e o ponto pulsando na barra esquerda com um agente de verdade; negrito de "não lida" com a aba fora de foco.
 - [x] Pílula de auto-work ligando e desligando o projeto; seta para cima recuperando o pedido anterior.
@@ -299,7 +433,7 @@ Marcado com `[x]` o que foi visto funcionando na janela em 2026-11-14.
 - [x] Arrastar abas entre grupos e para a borda; colar imagem na caixa (evento sintético).
 - [ ] Arrastar um arquivo do Explorer do Windows para a conversa e Ctrl+V de um print de verdade (dependem do sistema; o protocolo de depuração não cobre).
 - [x] Aplicar e descartar uma tarefa com alterações (claude).
-- [ ] Aplicar e descartar uma sessão do OpenCode (ver o defeito do worktree preso, abaixo).
+- [x] Aplicar e descartar uma sessão do OpenCode (ver o defeito do worktree preso, abaixo). **Conferido em 2026-11-21**: Aplicar na #25 e Descartar na #26, ambos sem worktree preso.
 - [x] Auto-work rodando um ciclo na interface nova.
 - [ ] Auto-work: Pausar, Retomar, Parar, travas e verificação de build/testes na janela.
 - [ ] Player tocando música (só a detecção da mídia do sistema foi vista).
@@ -314,6 +448,8 @@ Marcado com `[x]` o que foi visto funcionando na janela em 2026-11-14.
 
 Corrigidos (`[x]` = visto funcionando; `[ ]` = corrigido no código, falta ver):
 
+- [x] As dez áreas abrem e o console fica limpo ao passar por todas (`npm run teste:telas`, pela ponte de validação — foi a primeira vez que isso pôde ser conferido sem alguém clicando).
+- [ ] Dois agentes editavam o mesmo arquivo sem saber um do outro, e o conflito só aparecia no diff. Agora o Argus anota as ferramentas de arquivo que passam (`crates/core/src/mural.rs`) e avisa no começo do turno seguinte; falta ver o painel "Arquivos em uso" com duas sessões reais mexendo na mesma pasta.
 - [x] "Enviar" em Nova tarefa não abria a aba da sessão. A conversa nova cria a tarefa e a mesma aba vira a sessão (visto com tarefas reais).
 - [x] As métricas contavam 2 turnos quando um turno usava dois modelos (teste automático; na janela, 8 turnos para 11 linhas de uso).
 - [x] O botão "Fazer login" aparecia mesmo com o provedor já conectado. Agora, conectado, aparece só "Trocar de conta" (visto na aba Provedores).
@@ -337,24 +473,36 @@ Corrigidos (`[x]` = visto funcionando; `[ ]` = corrigido no código, falta ver):
 
 Em aberto:
 
-- [ ] (2026-11-16) Formatos misturados. **Corrigido fora da conversa:** `formatIntPt`, `formatTokensPt` e `formatUsdPt` em `src/api/util.ts`, usados nas Métricas (vistas na janela em pt-BR), mapa de agentes, auto-work, pet e chat. **Falta em `src/views/session`:** `index.tsx` (tooltip do total com números crus e `formatTokens`/`formatUsd`), `Transcript.tsx` e `ContextMeter.tsx`; trocar pelas versões `Pt`.
-- [ ] (2026-11-16) Modelo gratuito do OpenCode aparecia com custo "equivalente em API". Corrigido: nomes terminados em `-free`, `:free` ou `/free` custam 0 (`metrics.rs`, com teste). Falta ver com o opencode real.
-- [ ] (2026-11-16) Web app do celular passou a usar Geist, embutida no binário e servida em `/geist.woff2` (atrás da mesma autenticação). A escala tipográfica não mudou (não há escala nos tokens além de `--font-ui`). Não vista num aparelho.
+- [x] (2026-11-21) Sem a saída bruta do OpenCode, os defeitos dele ficavam sem diagnóstico. Agora todo `opencode run` leva `--print-logs --log-level debug` (com `--standalone`, os logs do servidor privado também saem) e o Argus grava stdout e stderr em `%APPDATA%\argus\logs\opencode-<tarefa>-<turno>.log`, sempre (`crates/core/src/agentlog.rs`). Linhas `timestamp=... level=...` vão só para o arquivo, não para o chat; o resto do stderr continua virando evento `Stderr`. Valores de credenciais são mascarados antes da gravação. **Conferido na janela em 2026-11-21**: tarefa #25 (`opencode/beam-free`) gerou `%APPDATA%\argus-dev\logs\opencode-25-1795281349852.log` (71 978 bytes) com `meta`, `cmd`, `out` e `err`, incluindo os logs `timestamp=... level=...` da CLI fora do chat. Gates passaram.
+- [ ] (2026-11-21) A pílula "Trabalhando" nunca girou: o ícone `LoaderCircle` só recebia cor, sem `animation` (a única rotação do projeto era `.pj-spin`, de outra tela). Medido num vídeo da janela: zero repinturas em 4 s a 60 fps. Corrigido em `session.css`; falta ver na janela.
+- [ ] (2026-11-21) Nada avisava que a CLI tinha emudecido: `idle_secs` só é lido **antes** do turno (para compactar), então uma sessão parada há 5 minutos ficava igual a uma respondendo. Agora a pílula `StalledPill` mostra o tempo sem resposta a partir de 1 min, com "Interromper". Falta ver na janela.
+- [ ] (2026-11-21) Cada `TextDelta` redesenhava a conversa inteira (um `setState` por token; `MessageView` era `memo` mas inerte, porque todo call site escreve `event={{ … }}` inline). Agora os deltas saem num `setState` por quadro (`requestAnimationFrame`), `MessageView` compara a variante do evento e `ToolRow`/`ThinkingRow` são `memo`. Falta medir com um turno longo de verdade.
+- [ ] (2026-11-21) Limites de uso do plano: o popover era meio inventado. Três defeitos. (a) O orquestrador gravava o evento inteiro (`{"RateLimit": …}`) e a interface esperava o conteúdo, então **nada guardado voltava** depois de reiniciar — só valia o evento ao vivo do turno. (b) `rate_limits` lia só `ratelimit.claude.*`, mas a chave gravada é `ratelimit.<provedor>.<janela>`. (c) A interface inventava as linhas `five_hour` e `seven_day` com "ainda não informado" quando a CLI não as informava, e mantinha a porcentagem de um ciclo já vencido. Agora grava só o conteúdo, lê todos os provedores, descarta janela com `resets_at` no passado e não inventa linha nenhuma. Falta ver com turnos reais do claude.
+
+- [ ] (2026-11-21) **Compactação sem aviso nenhum.** Quando a conversa passa do limite (ou ficou parada além da vida do cache), o Argus roda um turno `/compact` **antes** da mensagem. Esse turno pode levar minutos sem imprimir nada, e a tela ficava idêntica a uma CLI travada: "Trabalhando" parado e, desde a correção da pílula, ainda um "N min sem resposta" — um alarme falso, porque o silêncio estava explicado. Visto na gravação da janela de 2026-11-21 (183 mil → 11 mil tokens). Agora o orquestrador manda um `AgentEvent::Compacting { reason }` (só ao vivo, fora do histórico) antes do turno, e a pílula diz "Compactando a conversa · N min", em cor de "rodando" e não de aviso, com o motivo no tooltip (`size` ou `idle`) e o "Interromper". O fim vem do `Compacted`, com o `Result` como rede de segurança. Falta ver na janela.
+- [x] (2026-11-21) A linha solta **"(evento RateLimit)"** aparecia no meio da conversa (vista na gravação da janela): o limite de uso chega ao vivo, não é conversa e não tinha tratamento, então caía no ramo "evento desconhecido" do `Transcript`. Agora ele sai antes de entrar na lista (`useTaskEvents`), e `Session`/`Context`/`RateLimit`/`Compacting` são ignorados também no `chatEntries`.
+- [x] (2026-11-21) A seleção dos limites de uso (desembrulhar o formato antigo, exigir `window`, descartar ciclo vencido) saiu do comando Tauri e foi para `live_rate_limits`/`rate_limit_key` no `orchestrator.rs`, **ao lado de quem grava**, com teste. O formato já se separou duas vezes quando leitura e escrita moravam em arquivos diferentes; agora não dá para mudar um sem ver o outro.
+- [x] (2026-11-21) **Defeito que eu mesmo criei na rodada anterior:** ao fazer o `rate_limits` devolver o conteúdo em vez do evento inteiro, o lado TypeScript continuou desembrulhando `.RateLimit` (`api/commands.ts`), o que transformava a lista inteira em `undefined`. Ou seja: o popover de limites continuaria vazio mesmo com as três correções do banco. Corrigido.
+
+- [x] (2026-11-16) Formatos misturados. `formatIntPt`, `formatTokensPt` e `formatUsdPt` em `src/api/util.ts`. **2026-11-21:** `src/views/session` está inteiro nas versões `Pt` (`index.tsx`, `Transcript.tsx`, `ContextMeter.tsx`) e `formatTokens`/`formatUsd` viraram apelidos das versões `Pt`, sem nenhuma chamada restante — conferido por busca no `src/`. Falta só rever na janela.
+- [x] (2026-11-16) Modelo gratuito do OpenCode aparecia com custo "equivalente em API". Corrigido no core: nomes terminados em `-free`, `:free` ou `/free` custam 0 (`metrics.rs`, com teste). **2026-11-21:** o custo continuava errado na janela (US$ 0,0053 para `opencode/beam-free`, embora a CLI reportasse `cost: 0`) porque o frontend recalculava com `priceFor` sem a regra de modelo gratuito. Corrigido em `src/views/session/events.ts` (mesma regra de `is_free_model` do core). Conferido na tarefa #25: cabeçalho e linha de uso passaram a mostrar `US$ 0,00 equivalente em API`.
+- [ ] (2026-11-16) Web app do celular passou a usar Geist, embutida no binário e servida em `/geist.woff2` (atrás da mesma autenticação). A escala tipográfica não mudou (não há escala nos tokens além de `--font-ui`). **2026-11-21:** teste `geist_is_served_locally_and_referenced_by_css` confere a rota (200, `font/woff2`, `nosniff`), que o arquivo embutido começa com a assinatura `wOF2` e tem tamanho de fonte de verdade, e que a CSS declara `@font-face` apontando para `/geist.woff2` sem nada de fora. **Falta ver a fonte desenhada num aparelho** (que ela carregue e não caia no fallback).
 - [ ] (2026-11-16) A primeira tarefa haiku de um projeto gravou 73 mil tokens de cache (US$ 0,16 equivalentes para listar 3 arquivos); as seguintes leram o cache. Custo da CLI, não do Argus, mas vale avisar na pílula de modelo.
 - [ ] Trocar o modelo de uma sessão do claude regrava o cache da conversa inteira no modelo novo: o primeiro turno depois da troca sai caro (visto: US$ 0,64 equivalentes em API). **2026-11-16:** a lista de modelos de uma sessão do claude com histórico mostra o aviso; falta ver na janela.
 - [ ] `cd <pasta>; git status` escrito pelo agente no PowerShell foi negado numa tarefa real (o `cd` não estava liberado). `cd` e `Set-Location` entraram no padrão, mas a correção não foi vista funcionando: no teste seguinte o agente se recusou sozinho a encadear o `cd`.
-- [ ] OpenCode: permissões de comando seguem a configuração de agentes do usuário (com regras "ask" e "deny" próprias); o Argus não as altera. Num `opencode run` sem interação, o que cai em "ask" não tem quem aprove. Não conferido com um comando git real (o turno de teste terminou sem chamar ferramenta).
+- [ ] OpenCode: permissões de comando seguem a configuração de agentes do usuário (com regras "ask" e "deny" próprias); o Argus não as altera. Num `opencode run` sem interação, o que cai em "ask" não tem quem aprove. **2026-11-21:** comando git real conferido na tarefa #25 — `tool_use` com `tool: "shell"`, `git status`, `status: completed`, `exit 0` no log. As regras "ask"/"deny" da config do usuário continuam sem conferir.
 - [ ] O aviso de ambiente do modo Isolado não impede o agente de procurar: no teste ele ainda fez 2 buscas antes de responder.
-- [ ] Web app do celular: a divisória de troca de agente, a linha "Comando negado" e o provedor/modelo no subtítulo foram escritos e passam no `node --check`, mas não foram vistos numa tela.
+- [ ] Web app do celular: a divisória de troca de agente, a linha "Comando negado" e o provedor/modelo no subtítulo foram escritos e passam no `node --check`, mas não foram vistos numa tela. **2026-11-21:** `npm run teste:celular` (`scripts/teste-webapp.mjs`) carrega o `app.js` de verdade num DOM mínimo e monta as três coisas a partir de eventos: a divisória sai de um `ProviderSwitch` com os dois agentes, trocas seguidas viram uma só, ida e volta não deixa divisória, a divisória fica sozinha entre os turnos (fora de "N passos"); `Denied` vira a linha com ferramenta e comando (e sem comando mantém o nome); o subtítulo some sem dado, mostra tokens em pt-BR sem janela conhecida e a porcentagem com os níveis em 80% e 95%. **Falta ver numa tela** (layout, quebra de linha e toque).
 - [ ] Turno cancelado não registra uso. **2026-11-16:** corrigido no código: soma o `usage` das mensagens `assistant` vistas depois do último `result` e grava uma linha parcial (custo estimado pela tabela). Teste automático; falta ver com um turno real cancelado.
-- [ ] OpenCode 2.0.22 não imprime o `step_finish` do último passo no `run --format json` (numa tarefa real: 10 959 de 11 547 tokens de entrada registrados). **2026-11-16:** o resultado agora é sintetizado no fim do processo; o uso do último passo só entra se outra linha trouxer os tokens (nenhum número inventado), então a diferença pode continuar. Falta ver com o opencode real.
-- [ ] `which_bin` agora segue a ordem do PATH e, em cada pasta, a da PATHEXT (antes: `.exe` sempre antes de `.cmd`). Coberto por testes com pastas falsas; não conferido com os dois opencode reais instalados.
-- [ ] Worktree preso por processo da sessão: Aplicar e Descartar agora encerram os processos ligados ao worktree (árvore da sessão, cwd ou linha de comando dentro da pasta), tentam a remoção 4 vezes com espera curta e, por fim, `--force --force` + `prune`; se a pasta continuar, dão erro e mantêm a branch e o estado (dá para repetir). Seleção dos processos coberta por teste; não conferido com o serviço real do opencode.
+- [x] OpenCode 2.0.22 não imprime o `step_finish` do último passo no `run --format json` (numa tarefa real: 10 959 de 11 547 tokens de entrada registrados). **2026-11-16:** o resultado agora é sintetizado no fim do processo; o uso do último passo só entra se outra linha trouxer os tokens (nenhum número inventado). **2026-11-21:** conferido com o opencode 2.3.0 na tarefa #25: o último `step_finish` (`reason: "stop"`) veio com `input: 61`, `output: 45`, `reasoning: 31`, `cache.read: 13376`, e a tela mostrou `61 entrada · 76 saída · cache 13,4 mil lido`. A CLI atual já emite o passo final; a síntese do core continua como rede de segurança.
+- [ ] `which_bin` agora segue a ordem do PATH e, em cada pasta, a da PATHEXT (antes: `.exe` sempre antes de `.cmd`). Coberto por testes com pastas falsas. **2026-11-21:** na máquina há uma instalação real só (a do npm: `opencode.ps1`, `opencode.cmd` e o arquivo sem extensão na mesma pasta); o `opencode run` disparado pelo Argus resolveu para `...\@opencode\cli\bin\opencode.exe`. Não há dois executáveis distintos para comparar a preferência.
+- [x] Worktree preso por processo da sessão: Aplicar e Descartar agora encerram os processos ligados ao worktree (árvore da sessão, cwd ou linha de comando dentro da pasta), tentam a remoção 4 vezes com espera curta e, por fim, `--force --force` + `prune`; se a pasta continuar, dão erro e mantêm a branch e o estado (dá para repetir). Seleção dos processos coberta por teste. **2026-11-21:** conferido com o serviço real do opencode (`--standalone`): Aplicar na tarefa #25 levou `NOTA.md` ao projeto e removeu `.argus-worktrees/proj-25`; Descartar na tarefa #26 removeu `.argus-worktrees/proj-26` sem levar `DESCARTAR.md` ao projeto (estado `Discarded`). Nenhum processo ficou prendendo o worktree.
+- [ ] (2026-11-21) Ao calcular o diff da tarefa #26, o painel mostrou `git add -A -N: fatal: Unable to create '.../.git/worktrees/proj-26/index.lock': File exists`. Não havia processo git e o lock desapareceu sozinho segundos depois — disputa entre o cálculo do diff e outro comando git no mesmo worktree. Conferido que um "Recarregar" resolve; não corrigido (o diff usa o índice do worktree para mostrar arquivos novos com `intent-to-add`).
 - [ ] O servidor aberto pelo claude numa sessão morre quando o turno termina (a CLI encerra os processos em segundo plano). Para um servidor que sobreviva ao turno, o agente precisa iniciá-lo desvinculado, o que pede outro comando permitido.
 - [x] `anexos\novo\` era compartilhada por todas as conversas novas: o `--add-dir` dessa pasta deixava o agente de uma conversa ler os anexos recentes das outras. **2026-11-16:** cada aba de conversa nova tem a sua subpasta `anexos\novo\<id>\` (visto na janela com duas abas).
-- [ ] Edição de arquivos pelo OpenCode v2 não conferida: sem `--auto`, o `run` pode negar a permissão de escrita.
+- [x] Edição de arquivos pelo OpenCode v2 não conferida: sem `--auto`, o `run` pode negar a permissão de escrita. **2026-11-21:** conferido na tarefa #25 — `tool_use` com `tool: "write"`, `path: "NOTA.md"`, `status: completed`, saída "Created file successfully: NOTA.md"; o arquivo apareceu no worktree com o conteúdo `ok` e no diff do inspetor (`+1`). A escrita foi permitida sem `--auto`.
 - [ ] Um turno retomado gravou um evento de resultado vazio (ok, custo 0) logo no começo. **2026-11-16:** `result` de sucesso sem texto, sem uso novo e custo 0 não vira mais evento. Causa deduzida (não reproduzida): `result` de zero turnos do processo retomado ou repetido com o mesmo acumulado.
-- [ ] Pareamento pelo celular dava "Não autorizado" ao abrir o link do QR (visto pelo Tailscale). Causa provável: cookie `SameSite=Strict`, que o navegador do celular não envia quando o link vem da câmera ou de outro app. Corrigido no código (cookie `Lax` e página de pareamento que segue sozinha para a tela inicial); **falta confirmar num aparelho**.
+- [ ] Pareamento pelo celular dava "Não autorizado" ao abrir o link do QR (visto pelo Tailscale). Causa provável: cookie `SameSite=Strict`, que o navegador do celular não envia quando o link vem da câmera ou de outro app. Corrigido no código (cookie `Lax` e página de pareamento que segue sozinha para a tela inicial). **2026-11-21:** teste `qr_cookie_authorizes_next_navigation` faz o caminho inteiro — pareia, pega o `Set-Cookie` e navega com ele — e confere o que antes não era conferido: o cookie **autoriza mesmo** `/`, `/app.js`, `/style.css`, `/geist.woff2` e `/api/tasks`, as mesmas rotas dão 401 sem ele, um cookie com outro valor não passa e revogar derruba o cookie já entregue. Também fixa `HttpOnly`, `Path=/` e `SameSite=Lax`. **Falta confirmar num aparelho, e não dá para fechar sem isso:** o teste afirma o *atributo* `SameSite=Lax`, mas quem decide mandar ou não o cookie numa navegação vinda da câmera é o navegador, e isso só um aparelho de verdade mostra.
 
 ## Codex e Gemini (2026-11-16)
 
@@ -521,3 +669,51 @@ Motion (revisão só pelo código; falta captura quadro a quadro):
 - [x] Ao trocar de conversa todo o histórico anima: só animar o que chega depois do primeiro paint.
 - [~] (parcial: sem o brilho no texto "trabalhando"; pet em rajadas de 3) 6–7 laços de "rodando" ao mesmo tempo; deixar o halo como único laço focal. Pet em laço infinito.
 - [x] Tokens de duração e curva em `tokens.css`; entrada curta na paleta, menus e painel de Nova tarefa.
+
+## Suporte às ferramentas da CLI (loop iniciado em 2026-11-19)
+
+Do levantamento `claude` 2.1.220 x Argus. Uma volta por item: implementar, validar (`cargo test -p argus-core`, `cargo check` do src-tauri, `tsc`), corrigir e validar de novo.
+
+- [x] 1. MCP completo: `crates/core/src/mcp.rs` (lê `claude mcp list`, add, remove) e Configurações › Ferramentas MCP com estado, Adicionar (comando local/HTTP/SSE, escopo, variáveis), Remover e Entrar (abre `claude mcp login` num terminal). Falta conferir na janela.
+- [x] 2. Cartão "Aprovar plano" no fim do turno em Planejar ("Aprovar e executar" / "Pedir ajuste") e `ExitPlanMode` mostrado como plano (não JSON). O Planejar segue emulado (`plan_args`), não com `--permission-mode plan`: no 2.1.220 a CLI troca o haiku pelo sonnet sozinha nesse modo.
+- [x] 3. Raciocínio ao vivo: `thinking_delta` vira `ThinkingDelta` (só ao vivo, como o `TextDelta`) e a conversa mostra "Pensando…" com as últimas linhas e a contagem de caracteres. O acesso remoto não recebe esses pedaços.
+- [x] 4. Evento `Notice` (gravado no histórico): `api_retry` ("A API falhou; tentando de novo (2 de 10) em 4 s: 529"), `notification` (sem o "ctrl+o" do terminal) e hook com saída ≠ 0 ou `outcome` ≠ success. Hook ok e `status` continuam fora. O formato do `api_retry` não foi visto numa execução real: a leitura aceita os campos que vierem.
+- [x] 5. `task_progress` vira `SubagentProgress` (só ao vivo; conferido na fixture real): o cartão do subagente no painel Agentes mostra o que ele está fazendo agora. Comandos e processos em segundo plano que estão rodando ganharam "Parar" (`server_kill`, com confirmação). Falta: andamento também no cartão do subagente dentro da conversa.
+- [x] 6. WebSearch vira "Buscou na web “consulta”" e WebFetch "Leu a página host/caminho"; aberta, a linha lista os links do resultado (título e domínio, sem repetidos, até 12) que abrem no navegador. Conferido com saída de exemplo no formato `Links: [{"title","url"}]`; falta ver numa busca real.
+- [x] 7. Teto de custo por turno (`--max-budget-usd`: sem teto, US$ 0,50 a 10) e modelo reserva (`--fallback-model`: Sonnet, Haiku, Opus) como pílulas do compositor, só no claude e na conversa já criada; guardados em `settings` (`task.limits.<id>`); a CLI só recebe os flags se o `--help` os listar. A barra de pílulas ficou cheia: rever o arranjo (talvez mover limites para o popover de opções).
+- [x] 8. Ramificar conversa: `Orchestrator::fork` cria a tarefa "(ramo de #N)" com o histórico copiado, a mesma sessão, esforço/limites/lista; o 1º turno do ramo usa `--resume <s> --fork-session` e a marca (`task.fork.<id>`) some quando a sessão própria chega. Botão no cabeçalho da conversa e item no clique direito da lista de sessões. Só claude + "Direto na pasta" (isolada dividiria a cópia). Falta: conferir numa conversa real; ramo de conversa isolada (worktree próprio).
+- [x] 9. Autocompletar sem os comandos que só servem no terminal interativo (`/mcp`, `/agents`, `/usage`, `/color`, `/heapdump`, `/permissions`…) nem os que o Argus faz por conta própria (`/model`, `/effort`, `/clear`, `/fast`); nomes `__interno` somem; comparação sem caixa. Lista em `src/views/chat/slash.ts` (`TERMINAL_ONLY`), conferida contra o `slash_commands` real do 2.1.220.
+- [x] 10. Provedores: "Atualizar CLI" (abre `claude update` num terminal; o login já existia). Configurações › Ferramentas MCP ganhou "Plugins da CLI do Claude": lista (`plugin list --json`, conferido no 2.1.220) com versão, escopo e servidores MCP do plugin, e Ativar/Desativar. Instalar plugins segue pelo terminal.
+
+Loop encerrado em 2026-11-19 com os 10 itens. Nada foi conferido com o app aberto: falta uma passada visual em cada tela nova.
+
+Feito antes do loop, na mesma sessão: cartão de pergunta com abas, "Minhas tarefas", lembretes (com notificação do Windows), esforço, aba Servidores no inspetor, bolinha de uso do plano (`rate_limit_event`), Ctrl+K em qualquer frame e "Abas abertas" na paleta.
+
+Consumo (análise de 2026-11-19, banco real: 162 turnos, US$ 299,71): opus[1m] = 95,5%; uma conversa = 62%; regravação de cache ≈ 54% do custo (50 turnos com escrita > 50 k); compactação automática nunca disparou. A fazer depois do loop:
+- [x] Revisar `needs_compact` (2026-11-19). Causa de não ter disparado: a compactação automática só entrou no commit 1aae607 (18/11 22:46); todos os turnos da conversa #9 (17/11 21:18 a 18/11 21:50) rodaram antes dela existir. Depois disso disparou, ao que tudo indica (tarefa #15, compactação pedida pelo Argus: 215 k -> 8,7 k). Mudou: padrão 150 k (`AUTOCOMPACT_DEFAULT`); novo gatilho de pausa (`compact_reason`: parada > `CACHE_TTL_SECS` = 60 min e contexto >= `IDLE_COMPACT_MIN` = 60 k), com a pausa medida antes de gravar a mensagem nova (`Db::last_event_at`); o evento `Compacted` troca o contexto guardado pelo tamanho do resumo (antes ficava o valor antigo, acima do limite, até o próximo pedido). Configurações › Contexto: opção 150 mil como padrão e o texto explica o gatilho de pausa. Testes: `compact_by_size`, `compact_after_cache_expired`, `idle_and_compacted_update_context`.
+- [x] Métricas (2026-11-19): `metrics::insights` (acerto do cache, `CostSplit` entrada/escrita/leitura/saída pela tabela, `by_task` com custo, turnos, custo/turno e maior contexto, turnos com regravação: escrita > 50 k ou > 30% da entrada do turno). Escrita de cache a 2x (`CACHE_WRITE_1H`). Relatório (`metrics_report`) leva `insights`; seção "Onde o custo vai" na tela de métricas. Testes: `split_and_hit_rate`, `ranking_and_rewrites`.
+- [x] Aviso na conversa (2026-11-19): `src/views/chat/ContextAdvice.tsx` (contexto >= 150 k, ou pausa > 60 min com >= 60 k), comando `task_idle_secs`. **Falta encaixar** em `src/views/session/index.tsx` (acima do `<Composer`, perto do aviso de handoff), que estava com outra pessoa.
+- [x] `SHELL_NOTE` (2026-11-19): frase fixa pedindo saída curta (head, tail, --quiet, git status -s, git log --oneline -n 20) e leitura por trechos (offset e limit).
+
+## Processos da sessão que morriam no fim do turno (investigado em 2026-11-19)
+
+- [x] Causa: a própria CLI do Claude. Em `-p`, ao sair, ela encerra os comandos que abriu com `run_in_background`. Reproduzido fora do Argus: `python -m http.server 4199` em segundo plano e, com o `claude -p` encerrado, a porta já estava fechada. O Argus não mata nada no fim normal do turno: `kill_tree` só roda em cancelar/laço (`orchestrator.rs`), e "parar servidores da sessão" só com a escolha do usuário ao cancelar/descartar.
+- [x] Correção: o `SHELL_NOTE` (texto fixo, não quebra o cache) avisa o agente que o fim do turno encerra o segundo plano e pede servidor duradouro como processo independente (`Start-Process -WindowStyle Hidden`), com PID e como parar. Processos com a pasta de trabalho da conversa continuam associados à sessão (`procs::track_dir`) e aparecem em Servidores, com Parar.
+- [ ] Solução de fundo (maior): manter um processo da CLI vivo por conversa (`--input-format stream-json`), para o segundo plano sobreviver entre turnos. Muda o ciclo de vida do turno e o cancelamento.
+- [ ] TODO em crates/core/src/autowork.rs:2 — /FIXME no código, falhas de
+- [ ] TODO em crates/core/src/autowork.rs:20 — .md`, nessa ordem). Sem nenhum,
+- [ ] TODO em crates/core/src/autowork.rs:253 — `/`FIXME` (palavra inteira, depois de um marcador de comentário).
+- [ ] TODO em crates/core/src/autowork.rs:280 — /FIXME em arquivos de texto, ignorando target/node_modules/.git.
+- [ ] TODO em crates/core/src/autowork.rs:997 — tratar erro\nlet todos = 1; // FIXME(ana) - lento\nlet s = \"TODO\";\n").unwrap();
+- [ ] TODO em crates/core/src/autowork.rs:998 — ignorar\n").unwrap();
+- [ ] TODO em crates/core/src/checklist.rs:2 — .md na raiz) e separa os itens `- [ ]` / `- [x]`
+- [ ] TODO em crates/core/src/checklist.rs:8 — .md"];
+- [ ] TODO em dist/assets/index-DPb8qXlz.js:434 — /FIXME e build/testes, e dispara novos turnos até tudo ficar [x]."}),t.jsxs("div",{className:"aw-limits",children:[t.jsx
+- [ ] TODO em dist/assets/index-DPb8qXlz.js:513 — .md na raiz do projeto."}),l&&y===0&&t.jsxs("p",{className:"rp-empty",children:[l.name," não tem itens no formato “- [ ]
+- [ ] TODO em dist/assets/r-CdQndTaG.js:6 — ","@usage","@useDynLib"],constants:["NULL","FALSE","TRUE","NA","Inf","NaN","NA_integer_","NA_real_","NA_complex_","NA_ch
+- [ ] TODO em src-mobile/gen/android/app/src/main/java/dev/argus/celular/generated/Ipc.kt:26 — call the handler on the UI thread once WebView methods called from IPC handlers no longer wait on it,
+- [ ] TODO em src-mobile/gen/android/gradle.properties:24 — Remove this in v3
+- [ ] TODO em src-tauri/src/commands/fs.rs:112 — .md na raiz).
+- [ ] TODO em src/api/commands.ts:109 — .md); null se não houver.
+- [ ] TODO em src/areas/home/index.tsx:61 — ) dos projetos recentes.
+- [ ] TODO em src/views/session/ChecklistPanel.tsx:3 — .md), com feito/total por seção, a lista de tarefas

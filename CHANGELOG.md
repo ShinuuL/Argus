@@ -7,6 +7,103 @@ lugares, que precisam andar juntos: `package.json`, `src-tauri/tauri.conf.json`,
 `src-mobile/tauri.conf.json` e `src-mobile/Cargo.toml`. Cada release tem uma tag `vX.Y.Z` e o instalador
 `Argus_X.Y.Z_x64-setup.exe` anexado no GitHub.
 
+## Ainda não lançado
+
+- **Comparação e validação das telas.** `scripts/comparar-telas.mjs` compara as nove fotos com um
+  baseline congelado em `docs/telas/base/`, calcula SSIM e grava imagens de diferença; o relatório
+  fica em `docs/telas/comparacao.md`. `scripts/validar-galeria.mjs` percorre os 27 cenários e exige
+  área correta, galeria instalada, o conteúdo declarado em `esperar` e console sem erro — antes,
+  a galeria só provava que a foto saiu. Rodado: 27/27 cenários passaram e nenhuma das nove telas
+  mudou de verdade contra o baseline (SSIM médio 0,9980; o resto é ruído de relógio e player).
+  Marcas `data-ponte` na barra de áreas e no estado vazio para o roteiro não depender de texto.
+- **Pergunta com opções ilegível não vira JSON na tela.** O bloco `argus-ask` é lido com
+  `JSON.parse`; quando o agente erra o JSON (uma chave faltando basta), o bloco voltava inteiro
+  pelo caminho do markdown — mil caracteres de JSON cru, sem pergunta nenhuma e sem dizer que
+  havia uma. Agora o bloco sai do texto de qualquer jeito e o lugar dele recebe uma linha:
+  "o agente mandou uma pergunta com opções que não deu para ler".
+- **Galeria de estados: Conversas e Dispositivos.** Eram as duas únicas áreas sem cenário, então
+  só tinham sido vistas vazias. Entraram cinco: conversa com histórico (pedido, raciocínio,
+  ferramenta que passou, ferramenta que falhou, aviso, resposta e a linha de uso), conversa sem
+  pasta raiz, a pergunta com opções ilegível, três aparelhos conectados (um por Wi-Fi, um sem
+  autorização) e o sidecar parado. Um cenário pode abrir uma aba de conversa (`sessao` em
+  `cenarios.ts`): sem isso a área "chat" só sabia mostrar a conversa nova e vazia.
+- **Nome do item não some mais atrás do recado**, nas listas laterais de 200 px. Um `meta` longo
+  ("autorize a depuração no celular") quebrava em duas linhas e espremia o rótulo até zero: a
+  linha ficava só com o aviso, sem dizer de qual aparelho era. O `meta` passou a ter corte com
+  reticências, e na lista de aparelhos o estado vai curto ("não autorizado"), com o recado
+  inteiro no `title`.
+- **Melhorar pedido** (✨ ou Ctrl+I na caixa): reescreve o rascunho antes de ele ir ao agente —
+  objetivo, o que muda, onde, o que não mexer e como saber que ficou pronto —, e o que estiver
+  ambíguo vira uma lista "Em aberto" em vez de palpite. O texto volta para a **caixa**, com
+  "Desfazer": nada é enviado sem você ver. Em Configurações › Agentes › Melhorar pedido dá para
+  deixar desligado, só no botão (padrão) ou em todo envio. Roda um `claude -p` no modelo barato,
+  fora da pasta do projeto e sem nenhuma ferramenta, então texto colado de fora não vira ação.
+  As preferências do `Preferencias.md` entram na reescrita.
+- **Briefing (entrevista) de projeto novo**: na primeira conversa de um projeto, a tela oferece a
+  entrevista — o agente lê o que já existe, pergunta em blocos de quatro, não altera nada e no fim
+  grava o `BRIEFING.md` com escopo, fora do escopo, restrições, critério de pronto e o que ficou em
+  aberto. `/briefing` chama a qualquer momento.
+- **Mural de arquivos**: o Argus anota sozinho em que arquivo cada agente e subagente está
+  mexendo (ele já vê as ferramentas passarem) e conta isso aos outros no começo do turno
+  seguinte — é assim que duas sessões na mesma pasta ficam sabendo uma da outra antes do
+  diff, e não depois. Painel "Arquivos em uso" na aba Agentes, com destaque para o arquivo
+  que tem mais de uma sessão dentro. É recado, não tranca: ninguém é impedido de escrever.
+- **Ponte de validação** (`ARGUS_PONTE`): servidor de teste em `127.0.0.1` que deixa um
+  script operar a janela de dentro, já que o WebView2 ignora clique e tecla sintéticos do
+  Windows. `node scripts/ui.mjs clicar "Métricas"`, e `npm run teste:telas` passa pelas dez
+  áreas conferindo que cada uma abre e que o console fica limpo. `node scripts/telas-print.mjs`
+  navega e fotografa as nove áreas em `docs/telas/`, que é o que faltava para uma crítica de
+  design ter evidência em vez de palpite.
+- **Telas mais parecidas umas com as outras**, a partir da crítica dos nove prints: um só desenho de
+  estado vazio (ícone, o que a tela faz e **o botão que resolve** — Git e Servidores diagnosticavam
+  sem oferecer "Abrir pasta raiz"); tabela sem linha não desenha mais o cabeçalho de colunas sobre o
+  nada; o texto secundário deixou de ter cor de link nos quatro temas; cabeçalho de área igual em
+  todas, com o título pequeno porque a trilha do topo já diz onde você está; barra de estado com os
+  acessórios numa bandeja à direita, sem número de processo; e botão desligado que ainda se lê.
+  O texto do Terminal parou de mandar clicar num "+" que não existe.
+- **Quatro telas, uma a uma.** *Conversas*: o cabeçalho da sessão não repete mais o nome da conversa
+  (que já está na aba e na trilha) nem o "+" da barra de abas — o botão agora diz o que tem de
+  próprio, "Conversas anteriores", com busca; e sem projeto nenhum a caixa deixou de mandar escolher
+  um projeto enquanto o centro mandava abrir a pasta. *Dispositivos*: as abas Logcat, Apps, Arquivos
+  e Rede existiam só para mandar você olhar a moldura ao lado — com isso "Logcat" e "Arquivos"
+  apareciam duas vezes na mesma tela. Saíram; o painel mostra o aparelho e a configuração, e a
+  moldura passou a dizer que é o painel do Screen-Mirror, com "abrir fora". *Métricas*: o cartão da
+  janela do plano mostra o número de verdade (ele dizia que o Argus não sabia ler, o que deixou de
+  ser verdade na 0.1.3), e o gráfico ocupa o cartão inteiro com uma escala que não desperdiça um
+  terço da altura. *Configurações*: "Autowork" virou "Trabalho automático" e saiu de Extras — não é
+  parente do mascote nem do tocador de música.
+- **Responder a um trecho**: marcar um pedaço da conversa faz aparecer um "Responder" junto da
+  seleção; clicar leva o trecho para a caixa como citação, com o cursor na linha de baixo. Perguntar
+  sobre *aquele* parágrafo deixa de ser copiar, colar e marcar o `>` na mão.
+- **Galeria de estados** (desenvolvimento): um cenário declara o que o backend responde a cada
+  comando — valor, demora ou erro — e as telas de verdade aparecem vazias, carregando, com falha
+  ou cheias, em quatro temas e em janela estreita. A interceptação é no `invoke` do Tauri, então
+  nenhuma tela precisa saber que a galeria existe: o que é fotografado é o código que vai para o
+  usuário. `node scripts/galeria.mjs`. Só entra pela ponte, só vive enquanto a janela estiver
+  aberta e não grava nada. A troca passou do `__TAURI_INTERNALS__` (que o Tauri 2 injeta
+  lacrado, e por isso a galeria caía calada) para o `invoke` de `src/api/commands.ts`.
+
+## 0.1.3 (2026-11-19)
+
+Suporte às ferramentas da CLI do Claude, menos consumo e listas pessoais.
+
+- Ferramentas MCP: servidores da CLI com estado, adicionar, remover e entrar (OAuth num
+  terminal); plugins com ativar/desativar. "Atualizar CLI" em Provedores.
+- Conversa: cartão de pergunta com abas e "Outra"; "Aprovar plano" no fim do Planejar;
+  raciocínio ao vivo; avisos da CLI (nova tentativa na API, hook com falha); buscas na web com
+  links; ramificar conversa; esforço, teto de custo por turno e modelo reserva no menu de opções.
+- Painel Agentes: "Minhas tarefas" (o agente vê a lista e marca o que concluir), lembretes com
+  notificação do Windows e andamento dos subagentes; "Parar" em processos em segundo plano.
+  Aba Servidores no inspetor.
+- Bolinha de uso do plano (janela de 5 horas e semanal, vindas da CLI).
+- Ctrl+K funciona com o foco no espelhamento do celular; a paleta lista as abas abertas.
+- Consumo: compactação automática a partir de 150 mil tokens e depois de pausa maior que a vida
+  do cache; aviso de contexto grande na conversa; Métricas com acerto do cache, custo por tipo de
+  token, conversas mais caras e turnos que regravaram o cache; preço de escrita do cache de 1 h.
+- O agente é avisado de que o fim do turno encerra os comandos em segundo plano e sobe servidores
+  duradouros como processo independente.
+- Autocompletar sem os comandos de barra que só funcionam no terminal da CLI.
+
 ## 0.1.2 (2026-11-19)
 
 Uso como o Claude Code no VS Code: ver [docs/USO_COMO_CLAUDE_CODE.md](docs/USO_COMO_CLAUDE_CODE.md).
