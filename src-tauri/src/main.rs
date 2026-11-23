@@ -6,6 +6,8 @@
 
 mod commands;
 mod events;
+mod palette_key;
+mod ponte;
 mod state;
 
 use commands::*;
@@ -48,6 +50,12 @@ fn main() {
                     let _ = w.minimize();
                 }
             }
+            // Ctrl+K também com o foco num iframe (espelhamento do celular).
+            if let Some(w) = app.get_webview_window("main") {
+                palette_key::hook(&w);
+            }
+            // Ponte de validação (ARGUS_PONTE): deixa um script operar a janela.
+            ponte::start(&handle);
             // ARGUS_ROOT: abre a pasta raiz automaticamente (útil para testes).
             if let Some(dir) = std::env::var_os("ARGUS_ROOT").map(std::path::PathBuf::from).filter(|d| d.is_dir()) {
                 if let Err(e) = workspace::open_root(&handle, dir) {
@@ -93,9 +101,27 @@ fn main() {
             agents::permissions_set,
             agents::permission_mode_set,
             agents::autocompact_get,
+            agents::task_idle_secs,
             agents::autocompact_set,
             agents::permissions_allow_denied,
             agents::task_set_model,
+            agents::rate_limits,
+            agents::mural_list,
+            agents::notify_user,
+            agents::mcp_list,
+            agents::plugins_list,
+            agents::plugin_set,
+            agents::mcp_add,
+            agents::mcp_remove,
+            agents::reminders_get,
+            agents::reminders_set,
+            agents::task_fork,
+            agents::task_effort,
+            agents::task_limits,
+            agents::task_set_limits,
+            agents::task_set_effort,
+            agents::task_todos,
+            agents::task_set_todos,
             agents::task_set_access,
             agents::task_checkpoints,
             agents::task_restore_checkpoint,
@@ -123,6 +149,11 @@ fn main() {
             extra_chat::chat_attachment_read,
             extra_chat::chat_attachments_cleanup,
             extra_chat::chat_agent_capabilities,
+            extra_chat::chat_polish_prompt,
+            extra_chat::polish_mode_get,
+            extra_chat::polish_mode_set,
+            extra_chat::chat_briefing_prompt,
+            extra_chat::chat_briefing_missing,
             // auto-work
             autowork::autowork_get_settings,
             autowork::autowork_set_settings,
@@ -218,6 +249,9 @@ fn main() {
             memory::memory_open_obsidian,
             system::system_confirm,
             system::app_info,
+            // ponte de validação
+            ponte::ponte_ligada,
+            ponte::ponte_resposta,
         ])
         .build(tauri::generate_context!())
         .expect("falha ao iniciar o Argus")

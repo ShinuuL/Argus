@@ -57,6 +57,76 @@ function Nativo([scriptblock]$bloco) {
     try { & $bloco } finally { $ErrorActionPreference = $antes }
 }
 
+<#
+.SYNOPSIS
+  Repõe o bloco de assinatura de release no build.gradle.kts gerado.
+.DESCRIPTION
+  A pasta gen\android é recriada pelo `tauri android init` e não vai para o
+  repositório, então o bloco de assinatura some junto com ela. Sem o bloco, o
+  release compila SEM ASSINATURA mesmo com o key.properties no lugar — e aí o
+  Android recusa instalar. Por isso o script repõe o bloco em vez de confiar em
+  quem editou o arquivo à mão.
+#>
+function GarantirAssinatura($gradle) {
+    if (-not (Test-Path $gradle)) { throw "build.gradle.kts não encontrado em $gradle." }
+    $texto = Get-Content $gradle -Raw
+    if ($texto -match 'signingConfigs') {
+        Aviso 'O bloco de assinatura já está no build.gradle.kts.'
+        return
+    }
+
+    $leitura = @'
+// Assinatura de release, reposta pelo gerar-apk.ps1 (ver key.properties.exemplo).
+val keyProperties = Properties().apply {
+    val propFile = rootProject.file("key.properties")
+    if (propFile.exists()) {
+        propFile.inputStream().use { load(it) }
+    }
+}
+
+android {
+'@
+    $configs = @'
+    signingConfigs {
+        create("release") {
+            keyProperties.getProperty("storeFile")?.let {
+                storeFile = file(it)
+                storePassword = keyProperties.getProperty("storePassword")
+                keyAlias = keyProperties.getProperty("keyAlias")
+                keyPassword = keyProperties.getProperty("password")
+            }
+        }
+    }
+    buildTypes {
+'@
+    $usar = @'
+        getByName("release") {
+            if (keyProperties.getProperty("storeFile") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+'@
+
+    $novo = $texto
+    foreach ($par in @(
+            @{ de = '(?m)^android \{'; para = $leitura; alvo = 'o bloco android {' },
+            @{ de = '(?m)^    buildTypes \{'; para = $configs; alvo = 'o bloco buildTypes {' },
+            @{ de = '(?m)^        getByName\("release"\) \{'; para = $usar; alvo = 'o bloco getByName("release") {' })) {
+        $antes = $novo
+        $novo = $novo -replace $par.de, $par.para
+        if ($novo -eq $antes) {
+            throw "Não achei $($par.alvo) em $gradle para pôr a assinatura. Veja ""Publicar"" no README e acrescente à mão."
+        }
+    }
+    # O `Properties()` da leitura precisa do import; o Tauri já o gera, mas a
+    # pasta é regenerável e o modelo dele pode mudar.
+    if ($novo -notmatch 'import java\.util\.Properties') {
+        $novo = "import java.util.Properties`r`n" + $novo
+    }
+
+    Set-Content -Path $gradle -Value $novo -Encoding utf8
+    Aviso 'Bloco de assinatura reposto no build.gradle.kts.'
+}
+
 # ---------------------------------------------------------------- requisitos
 
 Passo 'Conferindo os requisitos'
@@ -139,6 +209,7 @@ try {
     $debug = -not ($assinado -or $Release)
     if ($assinado) {
         Passo 'Assinatura de release encontrada (gen\android\key.properties)'
+        GarantirAssinatura (Join-Path $gen 'app\build.gradle.kts')
     }
     elseif ($Release) {
         Passo 'Release pedido sem assinatura configurada'

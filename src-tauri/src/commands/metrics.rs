@@ -5,7 +5,8 @@
 use super::{blocking, err};
 use crate::state::AppCtx;
 use argus_core::db::{now, ProjectUsage, TimeRange, UsageRow};
-use argus_core::metrics::{self, CostLine, Pricing};
+use argus_core::metrics::{self, CostLine, Insights, Pricing};
+use std::collections::BTreeMap;
 use chrono::{Local, TimeZone};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -29,6 +30,8 @@ pub struct Report {
     pub days: Vec<DayLine>,
     /// false = histórico desligado (sem banco): o uso não é registrado.
     pub has_db: bool,
+    /// Acerto do cache, custo por tipo de token, ranking por conversa e regravações.
+    pub insights: Insights,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize)]
@@ -77,6 +80,7 @@ pub fn build_report<Tz: TimeZone>(rows: &[UsageRow], days: i64, has_db: bool, pr
         models: sort(metrics::by_model(rows, pricing)),
         days: day_axis,
         has_db,
+        insights: Insights::default(),
     }
 }
 
@@ -93,7 +97,25 @@ pub async fn metrics_report(ctx: State<'_, AppCtx>, days: i64) -> Result<Report,
         };
         let pricing = load_pricing();
         Ok(match orch.db() {
-            Some(db) => build_report(&db.usage_rows(range).unwrap_or_default(), days, true, &pricing, t, &Local),
+            Some(db) => {
+                let rows = db.usage_rows(range).unwrap_or_default();
+                let mut r = build_report(&rows, days, true, &pricing, t, &Local);
+                // Título e último contexto medido de cada conversa que ainda existe.
+                let tasks = db.list_tasks().unwrap_or_default();
+                let ctx: BTreeMap<i64, u64> = tasks
+                    .iter()
+                    .filter_map(|x| {
+                        let c: argus_core::agents::context::ContextUsage = serde_json::from_str(x.context.as_deref()?).ok()?;
+                        Some((x.id, c.total()))
+                    })
+                    .collect();
+                let titles: BTreeMap<i64, &str> = tasks.iter().map(|x| (x.id, x.prompt.as_str())).collect();
+                r.insights = metrics::insights(&rows, &pricing, &ctx);
+                for l in &mut r.insights.tasks {
+                    l.title = titles.get(&l.task_id).map(|s| s.to_string()).unwrap_or_default();
+                }
+                r
+            }
             None => build_report(&[], days, false, &pricing, t, &Local),
         })
     })

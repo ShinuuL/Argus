@@ -6,6 +6,7 @@
 //! arquivos de agente (`.claude/agents/*.md`, `.opencode/agents/*.md`) e a
 //! pasta de anexos do próprio Argus.
 use super::{blocking, err};
+use crate::state::AppCtx;
 use base64::Engine;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -500,6 +501,154 @@ pub async fn chat_agent_capabilities(
         Ok(caps)
     })
     .await
+}
+
+// ------------------------------------------------------- melhorar pedido
+
+use argus_core::polish::{self, PolishContext, PolishMode};
+
+/// Chave da preferência no banco.
+const POLISH_KEY: &str = "polish_mode";
+/// Teto de espera da reescrita: passou disso, o usuário manda o texto original.
+const POLISH_TIMEOUT: Duration = Duration::from_secs(60);
+/// Ferramentas negadas na reescrita. Ela não lê arquivo nem roda comando: é só
+/// texto entrando e texto saindo, então texto colado de fora não vira ação.
+/// Quanto do `Preferencias.md` entra na reescrita (o resto não muda o resultado
+/// e só encarece).
+const POLISH_PREFS_CHARS: usize = 1500;
+const POLISH_DENY: &str ="Bash,PowerShell,Read,Write,Edit,MultiEdit,NotebookEdit,Glob,Grep,WebFetch,WebSearch,Task,TodoWrite";
+
+/// Quando o "Melhorar pedido" entra em ação (padrão: só no botão).
+#[tauri::command]
+pub async fn polish_mode_get(ctx: tauri::State<'_, AppCtx>) -> Result<PolishMode, String> {
+    let orch = ctx.orch.clone();
+    blocking(move || {
+        Ok(orch
+            .db()
+            .and_then(|db| db.get_setting(POLISH_KEY).ok().flatten())
+            .and_then(|v| PolishMode::parse(&v))
+            .unwrap_or_default())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn polish_mode_set(ctx: tauri::State<'_, AppCtx>, mode: PolishMode) -> Result<(), String> {
+    let orch = ctx.orch.clone();
+    blocking(move || {
+        if let Some(db) = orch.db() {
+            db.set_setting(POLISH_KEY, Some(mode.as_str())).map_err(err)?;
+        }
+        Ok(())
+    })
+    .await
+}
+
+/// Reescreve o rascunho da caixa e devolve o texto melhorado.
+///
+/// Roda um `claude -p` curto, no modelo mais barato, **fora da pasta do
+/// projeto** e **sem nenhuma ferramenta**: a chamada não lê arquivo, não roda
+/// comando e não grava sessão. O resultado volta para a caixa — nada é enviado
+/// ao agente sem o usuário ver.
+#[tauri::command]
+pub async fn chat_polish_prompt(
+    draft: String,
+    context: Option<PolishContext>,
+    model: Option<String>,
+) -> Result<String, String> {
+    polish::should_polish(&draft).map_err(|s| s.message().to_string())?;
+    let mut ctx = context.unwrap_or_default();
+    // As preferências do usuário (idioma, tom, regras) vêm da memória, não da
+    // tela: assim a reescrita respeita o mesmo que os agentes respeitam.
+    if ctx.prefs.is_none() {
+        ctx.prefs = argus_core::memory::root()
+            .and_then(|r| argus_core::memory::read_prefs(&r).ok().flatten())
+            .map(|p| p.chars().take(POLISH_PREFS_CHARS).collect());
+    }
+    let model = model
+        .filter(|m| !m.trim().is_empty() && !m.starts_with('-') && !m.contains(char::is_whitespace))
+        .unwrap_or_else(|| polish::DEFAULT_MODEL.to_string());
+    blocking(move || {
+        let raw = run_polish(&polish::build_request(&draft, &ctx), &model)?;
+        polish::parse_answer(&raw)
+    })
+    .await
+}
+
+/// Roteiro da entrevista de briefing (vai para a caixa, o usuário confere e
+/// envia). `project` é só o nome, usado no texto.
+#[tauri::command]
+pub async fn chat_briefing_prompt(project: Option<String>) -> Result<String, String> {
+    let name = project.filter(|p| !p.trim().is_empty()).unwrap_or_else(|| "este projeto".into());
+    Ok(polish::briefing_prompt(&name))
+}
+
+/// O projeto ainda não tem briefing gravado? (usado para oferecer a entrevista
+/// na primeira conversa de um projeto novo).
+#[tauri::command]
+pub async fn chat_briefing_missing(project: PathBuf) -> Result<bool, String> {
+    blocking(move || Ok(project.is_dir() && !project.join(polish::BRIEFING_FILE).exists())).await
+}
+
+fn run_polish(request: &str, model: &str) -> Result<String, String> {
+    use std::io::{Read, Write};
+    use std::process::{Command, Stdio};
+
+    let exe = argus_core::agents::orchestrator::resolve_program("claude");
+    let mut cmd = Command::new(exe);
+    cmd.args([
+        "-p",
+        "--model",
+        model,
+        "--output-format",
+        "text",
+        "--no-session-persistence",
+        "--disallowedTools",
+        POLISH_DENY,
+        "--append-system-prompt",
+        &polish::system_prompt(),
+    ])
+    // Longe do projeto: nenhum CLAUDE.md nem arquivo do repositório entra aqui.
+    .current_dir(std::env::temp_dir())
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Melhorar pedido precisa da CLI claude instalada: {e}"))?;
+    if let Some(stdin) = child.stdin.take().as_mut() {
+        let _ = stdin.write_all(request.as_bytes());
+        let _ = stdin.flush();
+    } // o drop fecha a entrada: a CLI responde e termina
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut stdout = child.stdout.take();
+    let mut stderr = child.stderr.take();
+    std::thread::spawn(move || {
+        let mut out = String::new();
+        if let Some(s) = stdout.as_mut() {
+            let _ = s.read_to_string(&mut out);
+        }
+        let mut errs = String::new();
+        if let Some(s) = stderr.as_mut() {
+            let _ = s.read_to_string(&mut errs);
+        }
+        let _ = tx.send((out, errs));
+    });
+    let got = rx.recv_timeout(POLISH_TIMEOUT);
+    let _ = child.kill();
+    let _ = child.wait();
+    let (out, errs) = got.map_err(|_| "A reescrita demorou demais; o pedido vai como está.".to_string())?;
+    if out.trim().is_empty() {
+        let detail = errs.lines().find(|l| !l.trim().is_empty()).unwrap_or("sem resposta");
+        return Err(format!("Não deu para melhorar o pedido: {detail}"));
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

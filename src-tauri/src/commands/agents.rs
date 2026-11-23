@@ -163,6 +163,13 @@ pub async fn autocompact_get(ctx: State<'_, AppCtx>) -> Result<u64, String> {
     blocking(move || Ok(orch.autocompact_limit())).await
 }
 
+/// Segundos desde a última atividade gravada da conversa (None = sem histórico).
+#[tauri::command]
+pub async fn task_idle_secs(ctx: State<'_, AppCtx>, id: u64) -> Result<Option<i64>, String> {
+    let orch = ctx.orch.clone();
+    blocking(move || Ok(orch.idle_secs(id))).await
+}
+
 /// Grava o limite de compactação (`tokens` ausente volta ao padrão).
 #[tauri::command]
 pub async fn autocompact_set(ctx: State<'_, AppCtx>, tokens: Option<u64>) -> Result<(), String> {
@@ -277,6 +284,133 @@ pub async fn task_create(
 #[tauri::command]
 pub async fn task_set_model(ctx: State<'_, AppCtx>, id: TaskId, model: Option<String>) -> Result<(), String> {
     ctx.orch.set_model(id, model.as_deref()).map_err(err)
+}
+
+/// Mural de arquivos: quem está mexendo em quê agora (ver `argus_core::mural`).
+///
+/// A tela também recebe cada anotação ao vivo no evento `orch`; este comando é
+/// o retrato inicial, para quem abre o painel no meio de um turno.
+#[tauri::command]
+pub async fn mural_list() -> Result<Vec<argus_core::mural::Claim>, String> {
+    Ok(argus_core::mural::global().list(argus_core::mural::agora()))
+}
+
+/// Últimos limites de uso do plano informados pela CLI (um `RateLimit` por janela).
+///
+/// Lê todos os provedores: quem grava usa `ratelimit.<provedor>.<janela>`, e
+/// fixar "claude" aqui deixava de fora qualquer outra CLI. Janela cujo horário
+/// de reinício já passou não volta: o valor guardado é de um ciclo vencido e
+/// mostrá-lo seria inventar um número.
+#[tauri::command]
+pub async fn rate_limits(ctx: State<'_, AppCtx>) -> Result<Vec<serde_json::Value>, String> {
+    let Some(db) = ctx.orch.db() else { return Ok(Vec::new()) };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    // A seleção mora no core, ao lado de quem grava: o formato já se separou
+    // duas vezes quando leitura e escrita ficaram em arquivos diferentes.
+    Ok(argus_core::agents::orchestrator::live_rate_limits(db.settings_by_prefix("ratelimit.").map_err(err)?, now))
+}
+
+/// Servidores MCP da CLI do Claude (confere a saúde de cada um; leva alguns segundos).
+#[tauri::command]
+pub async fn mcp_list() -> Result<Vec<argus_core::mcp::McpServer>, String> {
+    tauri::async_runtime::spawn_blocking(argus_core::mcp::list).await.map_err(|e| e.to_string())?
+}
+
+/// Adiciona um servidor MCP (`claude mcp add`).
+#[tauri::command]
+pub async fn mcp_add(name: String, transport: String, target: String, args: Vec<String>, scope: String, env: Vec<String>) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || argus_core::mcp::add(&name, &transport, &target, &args, &scope, &env))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Remove um servidor MCP (`claude mcp remove`).
+#[tauri::command]
+pub async fn mcp_remove(name: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || argus_core::mcp::remove(&name)).await.map_err(|e| e.to_string())?
+}
+
+/// Plugins instalados na CLI do Claude.
+#[tauri::command]
+pub async fn plugins_list() -> Result<Vec<argus_core::mcp::Plugin>, String> {
+    tauri::async_runtime::spawn_blocking(argus_core::mcp::plugins).await.map_err(|e| e.to_string())?
+}
+
+/// Ativa ou desativa um plugin (`claude plugin enable/disable`).
+#[tauri::command]
+pub async fn plugin_set(id: String, enabled: bool) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || argus_core::mcp::set_plugin(&id, enabled)).await.map_err(|e| e.to_string())?
+}
+
+/// Notificação do Windows (lembretes).
+#[tauri::command]
+pub async fn notify_user(title: String, body: String) -> Result<(), String> {
+    let title: String = title.chars().take(120).collect();
+    let body: String = body.chars().take(300).collect();
+    std::thread::spawn(move || crate::commands::schedules::notify(&title, &body));
+    Ok(())
+}
+
+/// Lembretes do usuário (JSON livre do front, guardado em `settings`).
+#[tauri::command]
+pub async fn reminders_get(ctx: State<'_, AppCtx>) -> Result<String, String> {
+    let Some(db) = ctx.orch.db() else { return Ok("[]".into()) };
+    Ok(db.get_setting("reminders").map_err(err)?.unwrap_or_else(|| "[]".into()))
+}
+
+/// Grava a lista de lembretes (JSON de um array; até 64 KB).
+#[tauri::command]
+pub async fn reminders_set(ctx: State<'_, AppCtx>, data: String) -> Result<(), String> {
+    if data.len() > 64 * 1024 {
+        return Err("Lembretes demais.".into());
+    }
+    serde_json::from_str::<Vec<serde_json::Value>>(&data).map_err(|e| format!("lembretes inválidos: {e}"))?;
+    let Some(db) = ctx.orch.db() else { return Err("Sem banco de dados.".into()) };
+    db.set_setting("reminders", Some(&data)).map_err(err)
+}
+
+/// Ramifica a conversa (tarefa nova com o mesmo histórico; ver `Orchestrator::fork`).
+#[tauri::command]
+pub async fn task_fork(ctx: State<'_, AppCtx>, id: TaskId) -> Result<TaskId, String> {
+    ctx.orch.fork(id).map_err(err)
+}
+
+/// Teto de custo por turno e modelo reserva da conversa.
+#[tauri::command]
+pub async fn task_limits(ctx: State<'_, AppCtx>, id: TaskId) -> Result<argus_core::agents::todos::Limits, String> {
+    Ok(ctx.orch.limits(id))
+}
+
+#[tauri::command]
+pub async fn task_set_limits(ctx: State<'_, AppCtx>, id: TaskId, limits: argus_core::agents::todos::Limits) -> Result<(), String> {
+    ctx.orch.set_limits(id, limits).map_err(err)
+}
+
+/// Nível de esforço da conversa (None = padrão da CLI).
+#[tauri::command]
+pub async fn task_effort(ctx: State<'_, AppCtx>, id: TaskId) -> Result<Option<String>, String> {
+    Ok(ctx.orch.effort(id))
+}
+
+/// Troca o esforço ("low" a "max"; ausente = padrão da CLI); vale no próximo turno.
+#[tauri::command]
+pub async fn task_set_effort(ctx: State<'_, AppCtx>, id: TaskId, effort: Option<String>) -> Result<(), String> {
+    ctx.orch.set_effort(id, effort.as_deref()).map_err(err)
+}
+
+/// Lista de tarefas do usuário na conversa.
+#[tauri::command]
+pub async fn task_todos(ctx: State<'_, AppCtx>, id: TaskId) -> Result<Vec<argus_core::agents::todos::Todo>, String> {
+    Ok(ctx.orch.todos(id))
+}
+
+/// Grava a lista inteira e devolve como ficou (sem itens vazios).
+#[tauri::command]
+pub async fn task_set_todos(ctx: State<'_, AppCtx>, id: TaskId, todos: Vec<argus_core::agents::todos::Todo>) -> Result<Vec<argus_core::agents::todos::Todo>, String> {
+    ctx.orch.set_todos(id, todos).map_err(err)
 }
 
 /// Troca o modo de acesso da conversa ("plan", "normal" ou "bypass"); vale a

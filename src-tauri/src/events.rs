@@ -48,6 +48,8 @@ pub enum OrchMsg<'a> {
     AutoWork(&'a AutoWorkEvent),
     /// A tarefa foi excluída.
     Removed { task: TaskId },
+    /// Alguém mexeu num arquivo (mural de arquivos).
+    Mural { claim: &'a argus_core::mural::Claim, conflicts: &'a [argus_core::mural::Claim] },
     /// Variante do orquestrador ainda sem espelho aqui: vai no formato do remoto.
     #[allow(dead_code)]
     Other(serde_json::Value),
@@ -61,6 +63,7 @@ pub fn orch_msg(ev: &OrchestratorEvent) -> OrchMsg<'_> {
         OrchestratorEvent::Stderr { task, line } => OrchMsg::Stderr { task: *task, line },
         OrchestratorEvent::AutoWork(e) => OrchMsg::AutoWork(e),
         OrchestratorEvent::Removed { task } => OrchMsg::Removed { task: *task },
+        OrchestratorEvent::Mural { claim, conflicts } => OrchMsg::Mural { claim, conflicts },
         other => OrchMsg::Other(argus_core::remote::event_json(other)),
     }
 }

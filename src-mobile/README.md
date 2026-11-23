@@ -63,12 +63,18 @@ distribuir. Para sair assinado em **release**:
 2. Copie `key.properties.exemplo` para `gen/android/key.properties` e preencha
    com o caminho do `.jks` e as senhas. **Não versione** nenhum dos dois.
 
-3. Em `gen/android/app/build.gradle.kts`, use o keystore na variante de release
-   (o `tauri android init` já deixa o bloco preparado; se não deixar, acrescente
-   o `signingConfigs` lendo o `key.properties` e aponte `buildTypes.release`
-   para ele).
+3. Rode `.\gerar-apk.ps1` de novo: ele avisa quando acha o `key.properties` e
+   repõe sozinho o bloco de assinatura em `gen/android/app/build.gradle.kts`
+   (`signingConfigs` lendo o `key.properties` + `buildTypes.release` apontando
+   para ele). Isso é reposto a cada execução porque `gen/android` é regenerável
+   e fica fora do repositório — sem o bloco, o release compila **sem assinatura**
+   mesmo com o `key.properties` no lugar.
 
-4. Rode `.\gerar-apk.ps1` de novo: ele avisa quando acha o `key.properties`.
+Conferir a assinatura do APK gerado:
+
+```powershell
+& "$env:ANDROID_HOME\build-tools\37.0.0\apksigner.bat" verify --print-certs "<caminho do .apk>"
+```
 
 Distribuição:
 
