@@ -7,3 +7,4 @@ pub mod loop_guard;
 pub mod opencode;
 pub mod orchestrator;
 pub mod provider;
+pub mod todos;

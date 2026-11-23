@@ -135,7 +135,11 @@ pub struct Task {
 /// Planejar: a escrita está negada e no `-p` não existe a ferramenta de sair do
 /// modo plano; o agente termina com o plano em texto (a interface oferece executar).
 pub const PLAN_NOTE: &str = "Modo Planejar: não altere nenhum arquivo e não tente escrever, editar nem chamar ferramenta de sair do modo plano. Leia o necessário e termine a resposta com o plano em passos curtos; o usuário decide executar.";
-pub const SHELL_NOTE: &str = "Para rodar git em outra pasta use git -C pasta comando, sem encadear cd com git: a CLI nega essa combinação.";
+/// A segunda frase economiza contexto: Bash e Read eram as ferramentas que mais
+/// inchavam a conversa. Texto fixo, como o resto do aviso (cache).
+pub const SHELL_NOTE: &str = "Para rodar git em outra pasta use git -C pasta comando, sem encadear cd com git: a CLI nega essa combinação. \
+Limite a saída dos comandos (head, tail, --quiet, git status -s, git log --oneline -n 20) e leia arquivos grandes por trechos (offset e limit) em vez de inteiros: tudo o que volta fica no contexto e encarece cada passo seguinte. \
+Comandos em segundo plano (run_in_background) são encerrados quando o turno termina: servidor que precisa continuar no ar depois da resposta deve ser iniciado como processo independente (no Windows, PowerShell Start-Process com -WindowStyle Hidden), e diga ao usuário o PID e como parar.";
 pub const ASK_NOTE: &str = "Quando precisar que o usuário escolha entre opções antes de continuar, termine a resposta com um bloco de código de linguagem argus-ask contendo um objeto JSON com a chave questions: uma lista de perguntas, cada uma com header (rótulo curto), question (a pergunta completa), multiSelect (true ou false) e options (de 2 a 4, cada uma com label e description). Pare logo depois do bloco: a interface mostra as opções e a escolha volta como a próxima mensagem. Pergunta aberta vai em texto normal.";
 
 /// Aviso de sistema completo: isolamento (se for o caso), preferências e memória
@@ -175,13 +179,96 @@ pub enum OrchestratorEvent {
     AutoWork(crate::autowork::AutoWorkEvent),
     /// A tarefa foi excluída (ver `Orchestrator::delete`): some das listas.
     Removed { task: TaskId },
+    /// Alguém mexeu num arquivo (ver [`crate::mural`]). `conflicts` são as
+    /// anotações de outras tarefas no mesmo arquivo — vazio no caso comum.
+    Mural { claim: crate::mural::Claim, conflicts: Vec<crate::mural::Claim> },
 }
 
 /// Chave e padrão do limite de compactação automática (ver `autocompact_limit`).
 const AUTOCOMPACT_KEY: &str = "autocompact_tokens";
-/// 200 mil tokens: acima disso cada chamada de ferramenta relê um histórico
-/// que um resumo substitui bem (a sessão #9 chegou a ~600 mil no modelo de 1M).
-pub const AUTOCOMPACT_DEFAULT: u64 = 200_000;
+/// 150 mil tokens: acima disso cada chamada de ferramenta relê um histórico
+/// que um resumo substitui bem (a sessão #9 chegou a ~1 M no modelo de 1M e
+/// sozinha custou 62% do gasto medido).
+pub const AUTOCOMPACT_DEFAULT: u64 = 150_000;
+/// Vida do cache de prompt usada pelo claude (cache de 1 hora): depois de uma
+/// pausa maior que isso o próximo pedido regrava o contexto inteiro como escrita
+/// de cache (2x o preço da entrada), então compactar antes sai mais barato.
+pub const CACHE_TTL_SECS: i64 = 60 * 60;
+/// Contexto mínimo para compactar depois de uma pausa maior que `CACHE_TTL_SECS`:
+/// abaixo disso regravar o contexto custa menos que o resumo.
+pub const IDLE_COMPACT_MIN: u64 = 60_000;
+
+/// Por que compactar antes do turno.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompactReason {
+    /// O contexto passou do limite configurado.
+    Size,
+    /// A conversa ficou parada mais que a vida do cache e o contexto é grande:
+    /// o próximo turno regravaria tudo de qualquer jeito.
+    Idle,
+}
+
+impl CompactReason {
+    /// Nome curto que vai para a tela no [`AgentEvent::Compacting`].
+    pub fn id(self) -> &'static str {
+        match self {
+            CompactReason::Size => "size",
+            CompactReason::Idle => "idle",
+        }
+    }
+}
+
+/// Chave de preferência onde fica o último limite de uso de uma janela.
+///
+/// Escrita e leitura moram juntas de propósito: já aconteceu duas vezes de o
+/// formato gravado e o esperado pela interface se separarem em silêncio (o
+/// invólucro `{"RateLimit": …}` e, depois, a chave fixa `ratelimit.claude.*`).
+pub fn rate_limit_key(provider: &str, window: &str) -> String {
+    format!("ratelimit.{provider}.{window}")
+}
+
+/// Limites que ainda valem, a partir das preferências lidas com o prefixo
+/// `ratelimit.`. `now` em segundos desde 1970.
+///
+/// Descarta o que não dá para mostrar com honestidade: valor ilegível, sem
+/// janela, ou de um ciclo cujo horário de reinício já passou (o número é de um
+/// período vencido). Desembrulha o formato antigo, que guardava o evento
+/// inteiro. Devolve o conteúdo, que é o que a interface consome.
+pub fn live_rate_limits<I>(rows: I, now: u64) -> Vec<serde_json::Value>
+where
+    I: IntoIterator<Item = (String, String)>,
+{
+    let mut out = Vec::new();
+    for (_, s) in rows {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) else { continue };
+        let v = v.get("RateLimit").cloned().unwrap_or(v);
+        if v.get("window").and_then(|w| w.as_str()).is_none() {
+            continue;
+        }
+        if v.get("resets_at").and_then(|r| r.as_u64()).is_some_and(|r| r <= now) {
+            continue;
+        }
+        out.push(v);
+    }
+    out
+}
+
+/// Decide a compactação antes do turno. `context` = tokens do último pedido;
+/// `limit` = limite configurado (0 desliga os dois gatilhos); `idle_secs` =
+/// segundos desde a última atividade da conversa.
+pub fn compact_reason(context: Option<u64>, limit: u64, idle_secs: Option<i64>) -> Option<CompactReason> {
+    let used = context?;
+    if limit == 0 {
+        return None;
+    }
+    if used >= limit {
+        return Some(CompactReason::Size);
+    }
+    if used >= IDLE_COMPACT_MIN.min(limit) && idle_secs.is_some_and(|s| s > CACHE_TTL_SECS) {
+        return Some(CompactReason::Idle);
+    }
+    None
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum OrchestratorError {
@@ -554,6 +641,8 @@ impl Orchestrator {
         let prov = self.provider(&t.provider)?;
         // O histórico até aqui (sem a mensagem nova) é a matéria do resumo.
         let before = if t.handoff { self.history(id) } else { Vec::new() };
+        // Pausa desde a última atividade, medida antes de gravar a mensagem nova.
+        let idle = self.idle_secs(id);
         self.record(id, &t, 0, AgentEvent::User(message.into()));
         let cancel = self.new_cancel(id);
         self.set_state(id, TaskState::Queued);
@@ -563,7 +652,7 @@ impl Orchestrator {
         tokio::spawn(async move {
             let Some(_permit) = this.acquire(id, &cancel).await else { return };
             this.set_state(id, TaskState::Running);
-            let mut prompt = message;
+            let mut prompt = this.with_todos(id, &message);
             if t.handoff {
                 let ctx = this.handoff_context(&t, &before, &workdir).await;
                 if !ctx.is_empty() {
@@ -572,10 +661,18 @@ impl Orchestrator {
                 }
             }
             let opts = this.turn_options(&t);
-            // Conversa grande demais: compacta antes, para o turno (e cada ferramenta
-            // dele) não reler o histórico inteiro. Só o claude tem `/compact` no `-p`.
+            // Conversa grande demais (ou parada além da vida do cache): compacta antes,
+            // para o turno (e cada ferramenta dele) não reler/regravar o histórico
+            // inteiro. Só o claude tem `/compact` no `-p`.
             if let (Some(sid), false) = (session.as_deref(), t.handoff) {
-                if prov.id() == "claude" && this.needs_compact(id) {
+                if let (Some(why), "claude") = (this.needs_compact(id, idle), prov.id()) {
+                    // A compactação é um turno inteiro e pode demorar minutos sem
+                    // imprimir nada. Sem este aviso a tela fica igual a uma CLI
+                    // travada: "Trabalhando" parado, e nada dizendo por quê.
+                    let _ = this.inner.tx.send(OrchestratorEvent::Agent {
+                        task: id,
+                        event: AgentEvent::Compacting { reason: why.id().to_string() },
+                    });
                     if let Ok((TaskState::Cancelled, _)) = this.run_turn(&t, prov.clone(), "/compact", Some(sid), &workdir, &opts, &cancel).await {
                         this.finish(id, &cancel, TaskState::Cancelled);
                         return;
@@ -709,11 +806,17 @@ impl Orchestrator {
         Ok(())
     }
 
-    /// O contexto do último pedido da tarefa passou do limite?
-    fn needs_compact(&self, id: TaskId) -> bool {
-        let limit = self.autocompact_limit();
-        let used = self.inner.tasks.lock().unwrap().get(&id).and_then(|t| t.context.as_ref().map(|c| c.input_tokens + c.cache_read + c.cache_write));
-        limit > 0 && used.is_some_and(|u| u >= limit)
+    /// Segundos desde a última atividade gravada da conversa (None sem banco/eventos).
+    pub fn idle_secs(&self, id: TaskId) -> Option<i64> {
+        let last = self.inner.db.as_ref()?.last_event_at(id as i64).ok().flatten()?;
+        Some((crate::db::now() - last).max(0))
+    }
+
+    /// Compactar antes do turno? `idle` deve ser medido antes de gravar a
+    /// mensagem nova (senão a pausa sempre parece zero).
+    fn needs_compact(&self, id: TaskId, idle: Option<i64>) -> Option<CompactReason> {
+        let used = self.inner.tasks.lock().unwrap().get(&id).and_then(|t| t.context.as_ref().map(|c| c.total()));
+        compact_reason(used, self.autocompact_limit(), idle)
     }
 
     /// Modelo e aviso de ambiente do próximo turno de `t`.
@@ -726,7 +829,132 @@ impl Orchestrator {
                 if t.access == crate::permissions::AccessMode::Plan { format!("{PLAN_NOTE} {note}") } else { note }
             }),
             access: t.access,
+            effort: self.effort(t.id),
+            max_budget_usd: self.limits(t.id).max_budget_usd,
+            fallback_model: self.limits(t.id).fallback_model,
+            fork: self.inner.db.as_ref().is_some_and(|db| db.get_setting(&super::todos::fork_key(t.id)).ok().flatten().is_some()),
         }
+    }
+
+    /// Ramifica a conversa: tarefa nova com o mesmo histórico e a mesma sessão,
+    /// que no primeiro turno abre uma sessão própria (`--fork-session`). A
+    /// original segue intacta. Só em "Direto na pasta" (uma cópia isolada
+    /// dividida faria aplicar/descartar de uma afetar a outra) e no claude.
+    pub fn fork(&self, id: TaskId) -> Result<TaskId, OrchestratorError> {
+        let t = self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
+        if t.state.is_active() {
+            return Err(OrchestratorError::Busy);
+        }
+        if t.provider != "claude" {
+            return Err(OrchestratorError::InvalidModel("ramificar só funciona com o Claude".into()));
+        }
+        if t.mode != WorkMode::Direct {
+            return Err(OrchestratorError::InvalidModel("ramificar ainda só funciona em conversas Direto na pasta".into()));
+        }
+        let session = t.session_id.clone().ok_or(OrchestratorError::NoSession)?;
+        let new_id = self.inner.next_id.fetch_add(1, Ordering::SeqCst);
+        let prompt = format!("{} (ramo de #{id})", t.prompt);
+        let fork = Task {
+            id: new_id,
+            prompt: prompt.clone(),
+            state: TaskState::Completed,
+            handoff: false,
+            ..t.clone()
+        };
+        if let Some(db) = &self.inner.db {
+            db.insert_task(Some(new_id as i64), &fork.project.to_string_lossy(), &fork.provider, &prompt, &TaskState::Completed.to_db())?;
+            db.set_task_mode(new_id as i64, fork.mode.as_str())?;
+            db.set_task_access(new_id as i64, fork.access.as_str())?;
+            db.set_task_model(new_id as i64, fork.model.as_deref())?;
+            db.set_task_session(new_id as i64, &session)?;
+            if let Some(w) = &fork.workdir {
+                db.set_task_workdir(new_id as i64, &w.to_string_lossy())?;
+            }
+            for ev in self.history(id) {
+                let _ = db.insert_event_sub(new_id as i64, ev.kind(), &json(&ev), ev.subagent_id());
+            }
+            for key in [super::todos::effort_key, super::todos::limits_key, super::todos::todos_key] {
+                if let Ok(Some(v)) = db.get_setting(&key(id)) {
+                    let _ = db.set_setting(&key(new_id), Some(&v));
+                }
+            }
+            db.set_setting(&super::todos::fork_key(new_id), Some("1"))?;
+        }
+        self.inner.tasks.lock().unwrap().insert(new_id, fork);
+        self.emit_state(new_id, TaskState::Completed);
+        Ok(new_id)
+    }
+
+    /// Teto de custo e modelo reserva da conversa.
+    pub fn limits(&self, id: TaskId) -> super::todos::Limits {
+        let Some(db) = self.inner.db.as_ref() else { return Default::default() };
+        db.get_setting(&super::todos::limits_key(id)).ok().flatten().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+    }
+
+    /// Grava os limites (valem a partir do próximo turno).
+    pub fn set_limits(&self, id: TaskId, l: super::todos::Limits) -> Result<(), OrchestratorError> {
+        self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
+        if let Some(b) = l.max_budget_usd.filter(|b| !(b.is_finite() && *b > 0.0 && *b <= 1000.0)) {
+            return Err(OrchestratorError::InvalidModel(format!("teto de custo {b}")));
+        }
+        let fallback = l.fallback_model.map(|m| m.trim().to_string()).filter(|m| !m.is_empty());
+        if let Some(m) = fallback.as_deref().filter(|m| !valid_model_name(m)) {
+            return Err(OrchestratorError::InvalidModel(m.to_string()));
+        }
+        let l = super::todos::Limits { max_budget_usd: l.max_budget_usd, fallback_model: fallback };
+        if let Some(db) = &self.inner.db {
+            let v = if l == Default::default() { None } else { Some(serde_json::to_string(&l).unwrap_or_default()) };
+            db.set_setting(&super::todos::limits_key(id), v.as_deref())?;
+        }
+        Ok(())
+    }
+
+    /// Nível de esforço da conversa (None = padrão da CLI).
+    pub fn effort(&self, id: TaskId) -> Option<String> {
+        let db = self.inner.db.as_ref()?;
+        db.get_setting(&super::todos::effort_key(id)).ok().flatten().filter(|e| super::todos::valid_effort(e))
+    }
+
+    /// Troca o esforço; vale a partir do próximo turno. `None` = padrão da CLI.
+    pub fn set_effort(&self, id: TaskId, effort: Option<&str>) -> Result<(), OrchestratorError> {
+        self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
+        let effort = effort.map(str::trim).filter(|e| !e.is_empty());
+        if let Some(e) = effort.filter(|e| !super::todos::valid_effort(e)) {
+            return Err(OrchestratorError::InvalidModel(format!("esforço {e}")));
+        }
+        if let Some(db) = &self.inner.db {
+            db.set_setting(&super::todos::effort_key(id), effort)?;
+        }
+        Ok(())
+    }
+
+    /// Lista de tarefas do usuário na conversa.
+    pub fn todos(&self, id: TaskId) -> Vec<super::todos::Todo> {
+        let Some(db) = self.inner.db.as_ref() else { return Vec::new() };
+        db.get_setting(&super::todos::todos_key(id))
+            .ok()
+            .flatten()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    /// Grava a lista (já limpa) e devolve como ficou.
+    pub fn set_todos(&self, id: TaskId, list: Vec<super::todos::Todo>) -> Result<Vec<super::todos::Todo>, OrchestratorError> {
+        self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
+        let list = super::todos::normalize(list);
+        if let Some(db) = &self.inner.db {
+            let v = if list.is_empty() { None } else { Some(serde_json::to_string(&list).unwrap_or_default()) };
+            db.set_setting(&super::todos::todos_key(id), v.as_deref())?;
+        }
+        Ok(list)
+    }
+
+    /// Pedido com a lista de tarefas na frente (o histórico guarda só o pedido).
+    fn with_todos(&self, id: TaskId, prompt: &str) -> String {
+        let block = super::todos::prompt_block(&self.todos(id));
+        if block.is_empty() { prompt.to_string() } else { format!("{block}
+
+{prompt}") }
     }
 
     /// Resumo da conversa para o provedor que assume a tarefa (ver `handoff`).
@@ -785,6 +1013,8 @@ impl Orchestrator {
                 m.remove(&id);
             }
         }
+        // Agente parado não segura arquivo: o mural só fala do que roda agora.
+        crate::mural::global().clear_task(id as i64);
         self.set_state(id, st);
     }
 
@@ -802,12 +1032,20 @@ impl Orchestrator {
         }
         self.set_state(id, TaskState::Running);
         let opts = self.turn_options(task);
-        Ok(self.run_turn(task, prov, &task.prompt, None, &workdir, &opts, cancel).await?.0)
+        let prompt = self.with_todos(id, &task.prompt);
+        Ok(self.run_turn(task, prov, &prompt, None, &workdir, &opts, cancel).await?.0)
     }
 
     /// Grava (se houver banco) e transmite um evento do agente. `turn` identifica
     /// o turno nas linhas de consumo (um turno com dois modelos grava duas linhas).
     fn record(&self, id: TaskId, task: &Task, turn: i64, ev: AgentEvent) {
+        // Mural: toda ferramenta de arquivo que passa aqui vira anotação, sem
+        // pedir nada à CLI. É o que alimenta o aviso do próximo turno.
+        if let AgentEvent::ToolUse { name, input } = ev.inner() {
+            if let Some((claim, conflicts)) = crate::mural::global().note(id as i64, ev.subagent_id(), name, input, crate::mural::agora()) {
+                let _ = self.inner.tx.send(OrchestratorEvent::Mural { claim, conflicts });
+            }
+        }
         match &ev {
             AgentEvent::Session(s) => {
                 let changed = {
@@ -825,7 +1063,29 @@ impl Orchestrator {
                 }
                 if let Some(db) = &self.inner.db {
                     let _ = db.set_task_session(id as i64, s);
+                    // Ramo: a sessão própria chegou; os próximos turnos retomam ela, sem ramificar de novo.
+                    let _ = db.set_setting(&super::todos::fork_key(id), None);
                 }
+            }
+            AgentEvent::RateLimit { window, utilization, resets_at, status } => {
+                // Vale para a conta, não para a conversa: guarda o último de cada janela.
+                // Guarda só o conteúdo, não o invólucro `{"RateLimit": …}`: é
+                // neste formato que a interface lê os limites de volta.
+                if let Some(db) = &self.inner.db {
+                    let info = serde_json::json!({
+                        "window": window,
+                        "utilization": utilization,
+                        "resets_at": resets_at,
+                        "status": status,
+                    });
+                    let _ = db.set_setting(&rate_limit_key(&task.provider, window), Some(&info.to_string()));
+                }
+                let _ = self.inner.tx.send(OrchestratorEvent::Agent { task: id, event: ev });
+                return;
+            }
+            AgentEvent::ThinkingDelta(_) | AgentEvent::SubagentProgress { .. } => {
+                let _ = self.inner.tx.send(OrchestratorEvent::Agent { task: id, event: ev });
+                return;
             }
             AgentEvent::TextDelta(_) => {
                 // Texto parcial: só ao vivo, o `Text` completo é que fica no histórico.
@@ -845,6 +1105,31 @@ impl Orchestrator {
                 }
                 let _ = self.inner.tx.send(OrchestratorEvent::Agent { task: id, event: AgentEvent::Context(c) });
                 return;
+            }
+            // O agente principal marcou itens da lista do usuário como feitos.
+            AgentEvent::Text(text) => {
+                let nums = super::todos::marks(text);
+                if !nums.is_empty() {
+                    let mut list = self.todos(id);
+                    if super::todos::apply_marks(&mut list, &nums) {
+                        let _ = self.set_todos(id, list);
+                    }
+                }
+            }
+            // Compactou: o contexto passa a ser o resumo. Sem isso o valor antigo
+            // (acima do limite) ficaria até o próximo pedido ao modelo e um turno
+            // que falhasse antes dele compactaria de novo à toa.
+            AgentEvent::Compacted { post_tokens, .. } if *post_tokens > 0 => {
+                let c = {
+                    let mut tasks = self.inner.tasks.lock().unwrap();
+                    tasks.get_mut(&id).and_then(|t| t.context.as_mut()).map(|c| {
+                        *c = crate::agents::context::ContextUsage { input_tokens: *post_tokens, model: c.model.clone(), window: c.window, ..Default::default() };
+                        c.clone()
+                    })
+                };
+                if let (Some(c), Some(db)) = (c, &self.inner.db) {
+                    let _ = db.set_task_context(id as i64, &serde_json::to_string(&c).unwrap_or_default());
+                }
             }
             AgentEvent::Usage(u) => {
                 if let Some(db) = &self.inner.db {
@@ -896,6 +1181,18 @@ impl Orchestrator {
         let wd = workdir.to_path_buf();
         let _ = tokio::task::spawn_blocking(move || crate::checkpoints::snapshot(&wd, id, n)).await;
         prov.begin_turn(session);
+        // Recado do mural antes do pedido: é por aqui que um agente fica sabendo
+        // que outro está no mesmo arquivo. Fora de turno de comando (`/compact`),
+        // que não é conversa, e só quando há alguém mais no campo.
+        let com_mural;
+        let aviso = if prompt.starts_with('/') { None } else { crate::mural::global().aviso(id as i64, crate::mural::agora()) };
+        let prompt = match aviso {
+            Some(aviso) => {
+                com_mural = format!("{aviso}\n\n{prompt}");
+                com_mural.as_str()
+            }
+            None => prompt,
+        };
         let spec = prov.task_command(prompt, workdir, session, opts);
         // Comandos de shell liberados: o padrão (git de leitura, inspeção), os níveis
         // de git do projeto neste modo e a lista "Comandos permitidos" do projeto.
@@ -915,6 +1212,12 @@ impl Orchestrator {
         let spec = crate::attachments::apply_add_dirs(spec, &dirs);
         // Celulares Android: MCP do Screen-Mirror, se configurado e ligado.
         let spec = crate::devices::apply_agent_mcp(spec, workdir);
+        // Log bruto deste turno, sempre ligado. stdout (eventos) e stderr (logs da
+        // CLI) vão para o mesmo arquivo, fora da conversa: é o que permite
+        // investigar os defeitos do opencode sem repetir a execução.
+        let log = crate::agentlog::TurnLog::new(&task.provider, id, turn);
+        log.line("meta", &format!("provider={} task={} turn={} cwd={}", task.provider, id, turn, workdir.display()));
+        log.line("cmd", &format!("{} {}", spec.program, spec.args.join(" ")));
         let mut cmd = build_command(&spec, Some(workdir));
         #[cfg(unix)]
         cmd.process_group(0); // permite matar a árvore inteira no cancelamento
@@ -954,10 +1257,13 @@ impl Orchestrator {
         // Loop (mesma ferramenta 3x seguidas): para o turno pelo core.
         let looped = Arc::new(Notify::new());
         let looped_out = looped.clone();
+        let log_out = log.clone();
+        let log_err = log.clone();
         let out_task = tokio::spawn(async move {
             let mut guard = super::loop_guard::RepeatGuard::new();
             let mut lines = BufReader::new(stdout).lines();
             while let Ok(Some(l)) = lines.next_line().await {
+                log_out.line("out", &l);
                 let evs = prov.parse_line(&l);
                 let evs = {
                     let mut tr = tracker_out.lock().unwrap_or_else(|e| e.into_inner());
@@ -979,6 +1285,12 @@ impl Orchestrator {
         let err_task = tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(l)) = lines.next_line().await {
+                log_err.line("err", &l);
+                // `--print-logs` enche o stderr de linhas `timestamp=... level=...`.
+                // Elas já estão no arquivo do turno; não viram mensagem no chat.
+                if crate::agentlog::is_cli_log(&l) {
+                    continue;
+                }
                 if let Some(db) = &this.inner.db {
                     let _ = db.insert_event(id as i64, "Stderr", &json(&AgentEvent::Raw(l.clone())));
                 }
@@ -1851,6 +2163,17 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fork_is_refused_outside_claude() {
+        let dir = tempfile::tempdir().unwrap();
+        let o = Orchestrator::with_db(vec![Arc::new(Fake(script_args(&["SESSION:abc", "ola"])))], 1, Some(Db::open(dir.path().join("f.db")).unwrap()));
+        assert!(matches!(o.fork(42), Err(OrchestratorError::UnknownTask(42))));
+        let id = o.submit(dir.path(), "fake", "primeiro").unwrap();
+        wait_final(&o, id).await;
+        let err = o.fork(id).unwrap_err().to_string();
+        assert!(err.contains("Claude"), "{err}");
+    }
+
+    #[tokio::test]
     async fn reply_without_session_fails() {
         let dir = tempfile::tempdir().unwrap();
         let o = Orchestrator::new(vec![Arc::new(Fake(echo_args("ola")))], 1);
@@ -2130,6 +2453,73 @@ mod tests {
     /// A memória entra entre o aviso de isolamento e o de perguntas, sem aspas nem
     /// quebras, e o texto é o mesmo a cada turno.
     #[test]
+    fn compact_by_size() {
+        // Sem contexto conhecido não compacta; no limite, sim; 0 desliga.
+        assert_eq!(compact_reason(None, AUTOCOMPACT_DEFAULT, Some(99_999)), None);
+        assert_eq!(compact_reason(Some(149_999), AUTOCOMPACT_DEFAULT, Some(10)), None);
+        assert_eq!(compact_reason(Some(150_000), AUTOCOMPACT_DEFAULT, None), Some(CompactReason::Size));
+        assert_eq!(compact_reason(Some(1_000_000), 0, Some(99_999)), None);
+        assert_eq!(AUTOCOMPACT_DEFAULT, 150_000);
+        // O motivo vai para a tela no `Compacting`: nomes fixos.
+        assert_eq!(CompactReason::Size.id(), "size");
+        assert_eq!(CompactReason::Idle.id(), "idle");
+    }
+
+    #[test]
+    fn compact_after_cache_expired() {
+        let l = AUTOCOMPACT_DEFAULT;
+        // Parada além da vida do cache com contexto grande: compacta.
+        assert_eq!(compact_reason(Some(80_000), l, Some(CACHE_TTL_SECS + 1)), Some(CompactReason::Idle));
+        // Cache ainda vivo, contexto pequeno, ou pausa desconhecida: não.
+        assert_eq!(compact_reason(Some(80_000), l, Some(CACHE_TTL_SECS)), None);
+        assert_eq!(compact_reason(Some(59_999), l, Some(CACHE_TTL_SECS * 5)), None);
+        assert_eq!(compact_reason(Some(80_000), l, None), None);
+    }
+
+    /// O que o popover de limites recebe: só janela informada e ciclo vivo, no
+    /// formato de conteúdo (sem o invólucro do evento).
+    #[test]
+    fn live_rate_limits_drops_what_cannot_be_shown() {
+        assert_eq!(rate_limit_key("claude", "five_hour"), "ratelimit.claude.five_hour");
+        let row = |k: &str, v: serde_json::Value| (k.to_string(), v.to_string());
+        let rows = vec![
+            // Formato atual.
+            row("ratelimit.claude.five_hour", serde_json::json!({ "window": "five_hour", "utilization": 0.4, "resets_at": 2_000, "status": "allowed" })),
+            // Formato antigo: o evento inteiro.
+            row("ratelimit.opencode.seven_day", serde_json::json!({ "RateLimit": { "window": "seven_day", "utilization": 0.1, "resets_at": null, "status": "allowed" } })),
+            // Ciclo já virado: o número é de um período vencido.
+            row("ratelimit.claude.seven_day", serde_json::json!({ "window": "seven_day", "utilization": 0.9, "resets_at": 500, "status": "allowed" })),
+            // Sem janela e ilegível: não dá para mostrar.
+            row("ratelimit.claude.vazio", serde_json::json!({ "utilization": 0.5 })),
+            ("ratelimit.claude.lixo".into(), "{nao e json".into()),
+        ];
+        let out = live_rate_limits(rows, 1_000);
+        let janelas: Vec<&str> = out.iter().filter_map(|v| v["window"].as_str()).collect();
+        assert_eq!(janelas, ["five_hour", "seven_day"]);
+        // Desembrulhado: a interface lê `window` direto, não `RateLimit.window`.
+        assert!(out.iter().all(|v| v.get("RateLimit").is_none()));
+        assert_eq!(out[1]["utilization"], 0.1);
+    }
+
+    /// A pausa é medida pelo último evento gravado, e um `Compacted` troca o
+    /// contexto guardado pelo tamanho do resumo.
+    #[tokio::test]
+    async fn idle_and_compacted_update_context() {
+        let dir = tempfile::tempdir().unwrap();
+        let o = Orchestrator::with_db(vec![Arc::new(Fake(echo_args("ola")))], 1, Some(Db::open(&dir.path().join("a.db")).unwrap()));
+        let id = o.submit(dir.path(), "fake", "oi").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        assert!(o.idle_secs(id).is_some_and(|s| (0..5).contains(&s)));
+        assert_eq!(o.idle_secs(9999), None);
+        let t = o.task(id).unwrap();
+        o.record(id, &t, 0, AgentEvent::Context(crate::agents::context::ContextUsage { cache_read: 400_000, ..Default::default() }));
+        assert_eq!(o.needs_compact(id, None), Some(CompactReason::Size));
+        o.record(id, &t, 0, AgentEvent::Compacted { pre_tokens: 400_000, post_tokens: 9_000, trigger: "manual".into() });
+        assert_eq!(o.task(id).unwrap().context.map(|c| c.total()), Some(9_000));
+        assert_eq!(o.needs_compact(id, Some(CACHE_TTL_SECS * 2)), None);
+    }
+
+    #[test]
     fn note_includes_memory() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
@@ -2144,6 +2534,8 @@ mod tests {
         assert!(!iso.contains('\n') && !iso.contains('"'));
         assert_eq!(compose_note(WorkMode::Isolated, &proj, Some(&mem)), iso, "estável entre turnos");
         assert_eq!(compose_note(WorkMode::Direct, &proj, None), format!("{ASK_NOTE} {SHELL_NOTE}"));
+        // Orientação de economia de contexto (texto fixo: o aviso é o mesmo a cada turno).
+        assert!(SHELL_NOTE.contains("git status -s") && SHELL_NOTE.contains("offset e limit"));
     }
 
     /// O modo de trabalho é da tarefa: no mesmo orquestrador, uma roda no worktree

@@ -11,6 +11,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
+/// Multiplicador da escrita de cache de 1 hora sobre o preço da entrada.
+pub const CACHE_WRITE_1H: f64 = 2.0;
+/// Turno com regravação de cache: escrita acima disto (tokens)...
+pub const REWRITE_MIN_TOKENS: u64 = 50_000;
+/// ...ou acima desta fração do volume de entrada do turno (com ao menos
+/// `REWRITE_RATIO_FLOOR` tokens gravados, para não marcar turnos pequenos).
+pub const REWRITE_RATIO: f64 = 0.30;
+const REWRITE_RATIO_FLOOR: u64 = 10_000;
+
 /// Preço de um modelo (USD por 1M tokens).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ModelPrice {
@@ -21,9 +30,11 @@ pub struct ModelPrice {
 }
 
 impl ModelPrice {
-    /// Cache read = 0,1x e cache write = 1,25x do input (cache de 5 min).
+    /// Cache read = 0,1x e cache write = 2x do input. O claude grava o cache com
+    /// vida de 1 hora, cobrado a 2x (o de 5 min seria 1,25x): o custo informado
+    /// pela CLI bate com 2x, então a estimativa pela tabela usa o mesmo.
     pub const fn standard(input: f64, output: f64) -> Self {
-        Self { input, output, cache_read: input * 0.1, cache_write: input * 1.25 }
+        Self { input, output, cache_read: input * 0.1, cache_write: input * CACHE_WRITE_1H }
     }
     /// Preço com cache lido explícito e sem escrita em cache (OpenAI, Gemini).
     pub const fn cached(input: f64, output: f64, cache_read: f64) -> Self {
@@ -147,6 +158,18 @@ impl Pricing {
             / 1_000_000.0
     }
 
+    /// Custo pela tabela separado por tipo de token.
+    pub fn split(&self, u: &TokenUsage) -> CostSplit {
+        let p = self.price_for(u.model.as_deref());
+        let m = |n: u64, price: f64| n as f64 * price / 1_000_000.0;
+        CostSplit {
+            input: m(u.input_tokens, p.input),
+            cache_write: m(u.cache_write, p.cache_write),
+            cache_read: m(u.cache_read, p.cache_read),
+            output: m(u.output_tokens, p.output),
+        }
+    }
+
     /// Custo equivalente em API (USD).
     pub fn cost(&self, u: &TokenUsage) -> f64 {
         match u.cost_usd {
@@ -252,6 +275,161 @@ pub fn last_days_in<Tz: TimeZone>(ts: i64, n: u64, tz: &Tz) -> Vec<NaiveDate> {
     (0..n).rev().filter_map(|i| today.checked_sub_days(Days::new(i))).collect()
 }
 
+/// Custo estimado pela tabela, por tipo de token (USD).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct CostSplit {
+    pub input: f64,
+    pub cache_write: f64,
+    pub cache_read: f64,
+    pub output: f64,
+}
+
+impl CostSplit {
+    pub fn total(&self) -> f64 {
+        self.input + self.cache_write + self.cache_read + self.output
+    }
+    fn add(&mut self, o: CostSplit) {
+        self.input += o.input;
+        self.cache_write += o.cache_write;
+        self.cache_read += o.cache_read;
+        self.output += o.output;
+    }
+}
+
+/// Taxa de acerto do cache: `cache_read / (cache_read + cache_write + input)`.
+/// 0 sem entrada nenhuma.
+pub fn cache_hit_rate(l: &CostLine) -> f64 {
+    let den = l.cache_read + l.cache_write + l.input_tokens;
+    if den == 0 { 0.0 } else { l.cache_read as f64 / den as f64 }
+}
+
+/// Uma conversa no ranking de custo.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TaskLine {
+    pub task_id: i64,
+    pub project: String,
+    /// Título (prompt inicial); vazio se a conversa foi excluída. Preenchido por quem chama.
+    pub title: String,
+    pub cost: f64,
+    pub turns: u64,
+    pub cost_per_turn: f64,
+    /// Maior contexto conhecido (tokens): o maior entre a maior escrita de cache
+    /// de um turno (numa regravação, o contexto inteiro) e o último contexto medido.
+    pub max_context: u64,
+    pub cache_hit_rate: f64,
+}
+
+/// Ranking por conversa, do custo maior ao menor. `known_context` = último
+/// contexto medido de cada tarefa (o banco guarda só o último).
+pub fn by_task(rows: &[UsageRow], p: &Pricing, known_context: &BTreeMap<i64, u64>) -> Vec<TaskLine> {
+    let lines = aggregate(rows, p, |r| r.task_id.to_string());
+    let mut max_write: BTreeMap<i64, u64> = BTreeMap::new();
+    let mut project: BTreeMap<i64, String> = BTreeMap::new();
+    for t in turns(rows) {
+        let e = max_write.entry(t.task_id).or_default();
+        *e = (*e).max(t.cache_write);
+    }
+    for r in rows {
+        project.entry(r.task_id).or_insert_with(|| r.project.clone());
+    }
+    let mut out: Vec<TaskLine> = lines
+        .into_iter()
+        .filter_map(|l| {
+            let id: i64 = l.key.parse().ok()?;
+            Some(TaskLine {
+                task_id: id,
+                project: project.get(&id).cloned().unwrap_or_default(),
+                title: String::new(),
+                cost: l.api_cost_usd,
+                turns: l.turns,
+                cost_per_turn: if l.turns > 0 { l.api_cost_usd / l.turns as f64 } else { 0.0 },
+                max_context: max_write.get(&id).copied().unwrap_or(0).max(known_context.get(&id).copied().unwrap_or(0)),
+                cache_hit_rate: cache_hit_rate(&l),
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| b.cost.total_cmp(&a.cost));
+    out
+}
+
+/// Um turno (as linhas de todos os modelos dele somadas).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TurnLine {
+    pub task_id: i64,
+    pub created_at: i64,
+    pub input_tokens: u64,
+    pub cache_read: u64,
+    pub cache_write: u64,
+    /// Custo estimado da escrita de cache deste turno (USD, tabela).
+    pub write_cost: f64,
+}
+
+impl TurnLine {
+    /// Volume de entrada do turno (somado em todos os pedidos dele).
+    pub fn volume(&self) -> u64 {
+        self.input_tokens + self.cache_read + self.cache_write
+    }
+    /// O turno regravou o contexto (cache expirado ou invalidado)?
+    pub fn is_rewrite(&self) -> bool {
+        self.cache_write > REWRITE_MIN_TOKENS
+            || (self.cache_write >= REWRITE_RATIO_FLOOR && self.cache_write as f64 > REWRITE_RATIO * self.volume() as f64)
+    }
+}
+
+fn turns_priced(rows: &[UsageRow], p: Option<&Pricing>) -> Vec<TurnLine> {
+    let mut m: BTreeMap<(i64, bool, i64), TurnLine> = BTreeMap::new();
+    for r in rows {
+        let t = m.entry(r.turn_key()).or_insert_with(|| TurnLine { task_id: r.task_id, created_at: r.created_at, ..Default::default() });
+        t.created_at = t.created_at.max(r.created_at);
+        t.input_tokens += r.usage.input_tokens;
+        t.cache_read += r.usage.cache_read;
+        t.cache_write += r.usage.cache_write;
+        if let Some(p) = p {
+            t.write_cost += p.split(&r.usage).cache_write;
+        }
+    }
+    m.into_values().collect()
+}
+
+fn turns(rows: &[UsageRow]) -> Vec<TurnLine> {
+    turns_priced(rows, None)
+}
+
+/// Indicadores de desperdício e de onde o dinheiro vai.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Insights {
+    pub cache_hit_rate: f64,
+    /// Custo pela tabela por tipo de token (pode diferir do total quando a CLI informa o custo).
+    pub split: CostSplit,
+    /// Conversas do custo maior ao menor (até 10).
+    pub tasks: Vec<TaskLine>,
+    /// Turnos com regravação de cache.
+    pub rewrite_turns: u64,
+    pub rewrite_write_cost: f64,
+    /// As regravações mais caras (até 10).
+    pub rewrites: Vec<TurnLine>,
+}
+
+pub fn insights(rows: &[UsageRow], p: &Pricing, known_context: &BTreeMap<i64, u64>) -> Insights {
+    let total = aggregate(rows, p, |_| String::new()).pop().unwrap_or_default();
+    let mut split = CostSplit::default();
+    for r in rows {
+        split.add(p.split(&r.usage));
+    }
+    let mut rw: Vec<TurnLine> = turns_priced(rows, Some(p)).into_iter().filter(TurnLine::is_rewrite).collect();
+    rw.sort_by(|a, b| b.write_cost.total_cmp(&a.write_cost));
+    let mut tasks = by_task(rows, p, known_context);
+    tasks.truncate(10);
+    Insights {
+        cache_hit_rate: cache_hit_rate(&total),
+        split,
+        tasks,
+        rewrite_turns: rw.len() as u64,
+        rewrite_write_cost: rw.iter().map(|t| t.write_cost).sum::<f64>() + 0.0,
+        rewrites: rw.into_iter().take(10).collect(),
+    }
+}
+
 /// Segundos Unix -> "AAAA-MM-DD" (UTC).
 pub fn day_string(ts: i64) -> String {
     let days = ts.div_euclid(86_400);
@@ -314,9 +492,9 @@ mod tests {
         // 1M de input + 1M de output em sonnet = 3 + 15.
         let u = usage(Some("claude-sonnet-4-5"), 1_000_000, 1_000_000, 0, 0, None);
         assert!((p.cost(&u) - 18.0).abs() < 1e-9);
-        // Cache: read 0,1x e write 1,25x.
+        // Cache: read 0,1x e write 2x (cache de 1 hora).
         let u = usage(Some("haiku"), 0, 0, 1_000_000, 1_000_000, Some(0.0));
-        assert!((p.cost(&u) - (0.1 + 1.25)).abs() < 1e-9);
+        assert!((p.cost(&u) - (0.1 + 2.0)).abs() < 1e-9);
         // Custo informado > 0 tem precedência.
         let u = usage(Some("haiku"), 10, 10, 0, 0, Some(0.07));
         assert_eq!(p.cost(&u), 0.07);
@@ -424,6 +602,50 @@ mod tests {
         assert_eq!(by_day_in(&rows, &p, &brt).len(), 1);
         assert_eq!(by_day_in(&rows, &p, &brt)[0].turns, 2);
         assert_eq!(by_day(&rows, &p).len(), 2);
+    }
+
+    fn turn_row(task: i64, turn: i64, u: TokenUsage) -> UsageRow {
+        UsageRow { task_id: task, project: format!("/p{task}"), provider: "claude".into(), usage: u, created_at: turn, turn: Some(turn) }
+    }
+
+    #[test]
+    fn split_and_hit_rate() {
+        let p = Pricing::default();
+        // opus: entrada 5, saída 25, leitura 0,5, escrita 10 (por 1M).
+        let s = p.split(&usage(Some("claude-opus-5"), 1_000_000, 1_000_000, 1_000_000, 1_000_000, None));
+        assert_eq!((s.input, s.output, s.cache_read, s.cache_write), (5.0, 25.0, 0.5, 10.0));
+        assert!((s.total() - 40.5).abs() < 1e-9);
+        let l = CostLine { input_tokens: 10, cache_read: 80, cache_write: 10, ..Default::default() };
+        assert!((cache_hit_rate(&l) - 0.8).abs() < 1e-9);
+        assert_eq!(cache_hit_rate(&CostLine::default()), 0.0);
+    }
+
+    #[test]
+    fn ranking_and_rewrites() {
+        let p = Pricing::default();
+        let u = |i, cr, cw| usage(Some("claude-opus-5"), i, 100, cr, cw, None);
+        let rows = vec![
+            // Tarefa 1: turno normal (escrita pequena) e uma regravação de 300 mil.
+            turn_row(1, 10, u(10, 500_000, 5_000)),
+            turn_row(1, 20, u(10, 20_000, 300_000)),
+            // Tarefa 2: turno pequeno com 40% de escrita (regrava pela fração).
+            turn_row(2, 30, u(0, 30_000, 20_000)),
+            // Escrita de 5 mil em turno pequeno: abaixo do piso, não conta.
+            turn_row(2, 40, u(0, 5_000, 5_000)),
+        ];
+        let ranked = by_task(&rows, &p, &BTreeMap::from([(2, 70_000)]));
+        assert_eq!(ranked.iter().map(|t| t.task_id).collect::<Vec<_>>(), [1, 2]);
+        assert_eq!((ranked[0].turns, ranked[0].max_context, ranked[0].project.as_str()), (2, 300_000, "/p1"));
+        assert!((ranked[0].cost_per_turn - ranked[0].cost / 2.0).abs() < 1e-12);
+        assert_eq!(ranked[1].max_context, 70_000);
+        let ins = insights(&rows, &p, &BTreeMap::new());
+        assert_eq!(ins.rewrite_turns, 2);
+        assert_eq!(ins.rewrites[0].cache_write, 300_000);
+        assert!((ins.rewrite_write_cost - (300_000.0 + 20_000.0) * 10.0 / 1e6).abs() < 1e-9);
+        assert!((ins.split.total() - rows.iter().map(|r| p.table_cost(&r.usage)).sum::<f64>()).abs() < 1e-9);
+        let read: u64 = 555_000;
+        let all: u64 = 20 + read + 330_000;
+        assert!((ins.cache_hit_rate - read as f64 / all as f64).abs() < 1e-9);
     }
 
     #[test]

@@ -396,6 +396,15 @@ impl Db {
         self.c().query_row("SELECT value FROM settings WHERE key=?1", [key], |r| r.get(0)).optional()
     }
 
+    /// Preferências cujo nome começa por `prefix` (chave e valor), em ordem de chave.
+    pub fn settings_by_prefix(&self, prefix: &str) -> rusqlite::Result<Vec<(String, String)>> {
+        let c = self.c();
+        let mut st = c.prepare("SELECT key, value FROM settings WHERE key LIKE ?1 ESCAPE '\\' ORDER BY key")?;
+        let like = format!("{}%", prefix.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+        let rows = st.query_map([like], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect()
+    }
+
     /// Grava a preferência; `None` apaga.
     pub fn set_setting(&self, key: &str, value: Option<&str>) -> rusqlite::Result<()> {
         match value {
@@ -469,6 +478,12 @@ impl Db {
             params![task_id, kind, payload, now(), subagent],
         )?;
         Ok(c.last_insert_rowid())
+    }
+
+    /// Momento (segundos Unix) do último evento gravado da tarefa: a última vez
+    /// que a conversa falou com o modelo (ou recebeu mensagem). None = sem eventos.
+    pub fn last_event_at(&self, task_id: i64) -> rusqlite::Result<Option<i64>> {
+        self.c().query_row("SELECT MAX(created_at) FROM events WHERE task_id=?1", params![task_id], |r| r.get(0))
     }
 
     /// Todos os eventos da tarefa (agente principal e subagentes), em ordem.
@@ -670,6 +685,26 @@ fn task_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskRecord> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_by_prefix_filters_and_escapes() {
+        let db = Db::open_in_memory().unwrap();
+        db.set_setting("ratelimit.claude.seven_day", Some("a")).unwrap();
+        db.set_setting("ratelimit.opencode.five_hour", Some("b")).unwrap();
+        db.set_setting("tema", Some("escuro")).unwrap();
+        let got = db.settings_by_prefix("ratelimit.").unwrap();
+        assert_eq!(
+            got,
+            vec![
+                ("ratelimit.claude.seven_day".to_string(), "a".to_string()),
+                ("ratelimit.opencode.five_hour".to_string(), "b".to_string()),
+            ]
+        );
+        // `_` e `%` são curingas no LIKE: aqui têm de valer como letra.
+        db.set_setting("a_b", Some("x")).unwrap();
+        db.set_setting("axb", Some("y")).unwrap();
+        assert_eq!(db.settings_by_prefix("a_b").unwrap(), vec![("a_b".to_string(), "x".to_string())]);
+    }
 
     #[test]
     fn build_history_keeps_last_n() {

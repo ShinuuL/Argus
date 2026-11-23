@@ -1934,8 +1934,14 @@ VIEWS.chat = (r, top, view, foot) => {
       const info = stateInfo(t.state);
       bar.h1.textContent = sessionTitle(t.prompt, 70);
       // Provedor e modelo atuais (mudam quando o agente é trocado no computador).
+      // O nome do projeto corta quando falta largura; o selo de contexto, não:
+      // é ele que avisa que a janela está enchendo.
       bar.sub.replaceChildren(
-        projectName(t.project) + " · " + providerName(t.provider) + " · " + (t.model || "modelo padrão") + (t.mode === "Direct" ? " · direto na pasta" : "") + " · #" + t.id,
+        h(
+          "span",
+          { class: "bar-sub-main" },
+          projectName(t.project) + " · " + providerName(t.provider) + " · " + (t.model || "modelo padrão") + (t.mode === "Direct" ? " · direto na pasta" : "") + " · #" + t.id,
+        ),
         ...contextInfo(t.context),
       );
       bar.sub.hidden = false;
@@ -2024,7 +2030,7 @@ VIEWS.subs = (r, top, view) => {
   view.append(box);
   function update() {
     const t = taskById(id);
-    bar.sub.textContent = t ? sessionTitle(t.prompt, 60) : "Sessão #" + id;
+    bar.sub.replaceChildren(h("span", { class: "bar-sub-main" }, t ? sessionTitle(t.prompt, 60) : "Sessão #" + id));
     bar.sub.hidden = false;
     if (chat.id !== id || (!chat.loaded && !chat.error)) {
       box.replaceChildren(loadingBox("Carregando os subagentes…"));
@@ -2101,7 +2107,7 @@ VIEWS.subchat = (r, top, view, foot) => {
     }
     const st = subagentStatus(node, active);
     bar.h1.textContent = node.description || node.subagent_type || "Subagente";
-    bar.sub.textContent = (node.subagent_type ? node.subagent_type + " · " : "") + "somente leitura";
+    bar.sub.replaceChildren(h("span", { class: "bar-sub-main" }, (node.subagent_type ? node.subagent_type + " · " : "") + "somente leitura"));
     bar.sub.hidden = false;
     pill.hidden = false;
     pill.className = "pill " + st.tone;

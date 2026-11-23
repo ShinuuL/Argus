@@ -81,9 +81,19 @@ pub enum AgentEvent {
     /// A conversa foi compactada (resumo no lugar do histórico): tamanho do
     /// contexto antes e depois, e se foi pedida (`manual`) ou feita pela CLI (`auto`).
     Compacted { pre_tokens: u64, post_tokens: u64, trigger: String },
+    /// O Argus vai compactar a conversa antes de mandar a mensagem. `reason` é
+    /// `size` (passou do limite) ou `idle` (parada além da vida do cache).
+    ///
+    /// Só ao vivo, não vai ao histórico: serve para a tela dizer por que a CLI
+    /// vai ficar muda por alguns minutos antes de começar a responder. O fim
+    /// vem no [`AgentEvent::Compacted`].
+    Compacting { reason: String },
     /// Pedaço de texto ainda sendo gerado (claude com `--include-partial-messages`).
     /// Só vai ao vivo para a tela: não é gravado, e o `Text` completo vem depois.
     TextDelta(String),
+    /// Pedaço do raciocínio ainda sendo gerado (`thinking_delta`). Como o
+    /// `TextDelta`: só ao vivo, o `Thinking` completo vem depois.
+    ThinkingDelta(String),
     /// Raciocínio do modelo (bloco `thinking`), mostrado recolhido no chat.
     Thinking(String),
     ToolUse { name: String, input: serde_json::Value },
@@ -121,13 +131,25 @@ pub enum AgentEvent {
     /// Ocupação da janela de contexto: tokens do último pedido do agente
     /// principal ao modelo. Não vai para o histórico: o último valor fica na tarefa.
     Context(crate::agents::context::ContextUsage),
+    /// Limite de uso do plano informado pela CLI (claude: `rate_limit_event`):
+    /// janela (`five_hour`, `seven_day`...), fração usada (0 a 1), quando
+    /// reinicia (segundos desde 1970) e o estado (`allowed`, `allowed_warning`,
+    /// `rejected`). Não vai para o histórico: o último valor de cada janela fica
+    /// nas configurações.
+    /// Aviso da CLI que vale mostrar: nova tentativa na API, hook que falhou,
+    /// notificação. `level`: "info", "warn" ou "err".
+    Notice { level: String, text: String },
+    /// Andamento de um subagente (claude `task_progress`): o que ele está
+    /// fazendo agora e os números até aqui. Só ao vivo, não vai ao histórico.
+    SubagentProgress { id: String, activity: String, tokens: Option<u64>, tool_uses: Option<u64>, duration_ms: Option<u64> },
+    RateLimit { window: String, utilization: Option<f64>, resets_at: Option<u64>, status: String },
 }
 
 /// Máximo de caracteres guardados da saída de uma ferramenta (`ToolResult`).
 pub const TOOL_OUTPUT_MAX: usize = 4000;
 
 /// Opções de um turno, escolhidas por tarefa.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct TurnOptions {
     /// Modelo pedido à CLI (claude: `--model`; opencode: `-m`). None = padrão da CLI.
     pub model: Option<String>,
@@ -136,6 +158,14 @@ pub struct TurnOptions {
     pub system_note: Option<String>,
     /// Modo de acesso da conversa (Planejar / normal / Bypass).
     pub access: crate::permissions::AccessMode,
+    /// Nível de esforço (claude: `--effort`). None = padrão da CLI.
+    pub effort: Option<String>,
+    /// Teto de custo do turno em US$ (claude: `--max-budget-usd`).
+    pub max_budget_usd: Option<f64>,
+    /// Modelo reserva quando o principal está sobrecarregado (claude: `--fallback-model`).
+    pub fallback_model: Option<String>,
+    /// Retoma a sessão numa cópia nova (claude: `--fork-session`): a original fica como estava.
+    pub fork: bool,
 }
 
 /// Um modelo que a CLI aceita.
@@ -308,6 +338,11 @@ impl AgentEvent {
             AgentEvent::Text(_) => "Text",
             AgentEvent::TextDelta(_) => "TextDelta",
             AgentEvent::Compacted { .. } => "Compacted",
+            AgentEvent::Compacting { .. } => "Compacting",
+            AgentEvent::RateLimit { .. } => "RateLimit",
+            AgentEvent::ThinkingDelta(_) => "ThinkingDelta",
+            AgentEvent::Notice { .. } => "Notice",
+            AgentEvent::SubagentProgress { .. } => "SubagentProgress",
             AgentEvent::ToolUse { .. } => "ToolUse",
             AgentEvent::Thinking(_) => "Thinking",
             AgentEvent::ToolResult { .. } => "ToolResult",

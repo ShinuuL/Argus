@@ -69,7 +69,7 @@ fn hidden_notice(line: &str) -> bool {
 fn is_hidden_event(ev: &crate::agents::provider::AgentEvent) -> bool {
     use crate::agents::provider::AgentEvent;
     // Texto parcial fica só na janela: o celular recebe o bloco completo (`Text`).
-    matches!(ev.inner(), AgentEvent::TextDelta(_)) || matches!(ev.inner(), AgentEvent::Raw(l) if hidden_notice(l))
+    matches!(ev.inner(), AgentEvent::TextDelta(_) | AgentEvent::ThinkingDelta(_) | AgentEvent::RateLimit { .. } | AgentEvent::SubagentProgress { .. }) || matches!(ev.inner(), AgentEvent::Raw(l) if hidden_notice(l))
 }
 
 /// Dados para exibir ao usuário depois de iniciar o servidor.
@@ -648,6 +648,7 @@ pub fn event_json(ev: &OrchestratorEvent) -> Value {
         OrchestratorEvent::Stderr { task, line } => json!({ "type": "stderr", "task": task, "line": line }),
         OrchestratorEvent::AutoWork(e) => json!({ "type": "autowork", "task": e.task, "autowork": e }),
         OrchestratorEvent::Removed { task } => json!({ "type": "removed", "task": task }),
+        OrchestratorEvent::Mural { claim, conflicts } => json!({ "type": "mural", "task": claim.task, "claim": claim, "conflicts": conflicts }),
     }
 }
 
@@ -1080,6 +1081,81 @@ mod tests {
         srv.stop();
     }
 
+    /// O caminho do QR inteiro: ler o código, parear e navegar com o cookie.
+    ///
+    /// O teste acima confere que a resposta do `/pair` *diz* `SameSite=Lax`; aqui
+    /// o cookie devolvido é reaproveitado numa navegação seguinte, que é onde
+    /// dava "Não autorizado" quando ele era `Strict` (o navegador do celular não
+    /// manda cookie `Strict` quando o link vem da câmera ou de outro aplicativo).
+    #[tokio::test]
+    async fn qr_cookie_authorizes_next_navigation() {
+        let srv = RemoteServer::new();
+        let port = srv.start(Orchestrator::new(vec![], 1), 0, Exposure::Lan).await.unwrap().port;
+        let token = srv.token.read().unwrap().clone();
+
+        let paired = http(port, get(&format!("/pair?token={token}"), "")).await;
+        let set = paired
+            .lines()
+            .find(|l| l.to_ascii_lowercase().starts_with("set-cookie:"))
+            .map(|l| l.split_once(':').unwrap().1.trim().to_string())
+            .expect("o pareamento tem de devolver um cookie");
+
+        // `Lax` é o que faz a navegação vinda da câmera levar o cookie.
+        assert!(set.contains("SameSite=Lax"), "{set}");
+        assert!(!set.contains("SameSite=Strict"), "{set}");
+        // Sem `HttpOnly` o token ficaria ao alcance de qualquer script da página.
+        assert!(set.contains("HttpOnly") && set.contains("Path=/"), "{set}");
+
+        // O navegador reenvia só `nome=valor`, sem os atributos.
+        let pair = set.split(';').next().unwrap().trim().to_string();
+        let cookie = format!("Cookie: {pair}\r\n");
+        assert!(pair.starts_with(&format!("{COOKIE}=")), "{pair}");
+
+        // A tela inicial, o script e a fonte passam a abrir só com o cookie.
+        for path in ["/", "/app.js", "/style.css", "/geist.woff2", "/api/tasks"] {
+            let r = http(port, get(path, &cookie)).await;
+            assert!(r.starts_with("HTTP/1.1 200"), "{path} com cookie: {}", r.lines().next().unwrap_or(""));
+        }
+        // E continuam fechadas sem ele.
+        for path in ["/", "/app.js", "/geist.woff2", "/api/tasks"] {
+            let r = http(port, get(path, "")).await;
+            assert!(r.starts_with("HTTP/1.1 401"), "{path} sem cookie: {}", r.lines().next().unwrap_or(""));
+        }
+        // Cookie com outro valor não vale (o token é conferido, não só a presença).
+        let r = http(port, get("/", &format!("Cookie: {COOKIE}=outro\r\n"))).await;
+        assert!(r.starts_with("HTTP/1.1 401"), "{r}");
+
+        // Revogar derruba o cookie já entregue.
+        srv.regenerate_token().unwrap();
+        let r = http(port, get("/", &cookie)).await;
+        assert!(r.starts_with("HTTP/1.1 401"), "cookie antigo depois de revogar: {r}");
+        srv.stop();
+    }
+
+    /// A Geist vai embutida e é servida pelo próprio servidor: a web app não
+    /// pode depender de CDN (a CSP só permite `'self'`).
+    #[tokio::test]
+    async fn geist_is_served_locally_and_referenced_by_css() {
+        let srv = RemoteServer::new();
+        let port = srv.start(Orchestrator::new(vec![], 1), 0, Exposure::Lan).await.unwrap().port;
+        let auth = format!("Authorization: Bearer {}\r\n", srv.token.read().unwrap());
+
+        let r = http(port, get("/geist.woff2", &auth)).await;
+        assert!(r.starts_with("HTTP/1.1 200"), "{}", r.lines().next().unwrap_or(""));
+        assert!(r.to_ascii_lowercase().contains("content-type: font/woff2"), "tipo errado");
+        assert!(r.to_ascii_lowercase().contains("nosniff"), "sem nosniff");
+
+        // Assinatura de um woff2 de verdade ("wOF2"), e não um arquivo vazio.
+        assert_eq!(&GEIST_WOFF2[..4], b"wOF2", "o arquivo embutido não é um woff2");
+        assert!(GEIST_WOFF2.len() > 10_000, "woff2 pequeno demais: {} bytes", GEIST_WOFF2.len());
+
+        // A folha de estilo declara a fonte e aponta para a rota local.
+        assert!(STYLE_CSS.contains("@font-face"), "sem @font-face");
+        assert!(STYLE_CSS.contains("url(\"/geist.woff2\")"), "a CSS não aponta para /geist.woff2");
+        assert!(!STYLE_CSS.contains("https://"), "a CSS busca algo de fora");
+        srv.stop();
+    }
+
     #[tokio::test]
     async fn projects_providers_pricing_servers_and_theme() {
         let root = tempfile::tempdir().unwrap();
@@ -1177,6 +1253,140 @@ mod tests {
         let r = http(port, post("/api/permissions/allow", &auth, &body)).await;
         assert!(r.starts_with("HTTP/1.1 400"), "{r}");
         srv.stop();
+    }
+
+    /// Web app num celular de verdade: sobe o servidor com uma conversa que já
+    /// tem troca de agente, comando negado e uso de contexto, e fica no ar para o
+    /// aparelho abrir. O que só um navegador prova — o cookie `SameSite=Lax` vindo
+    /// de outro aplicativo (a câmera do QR) e o desenho da tela — não cabe nos
+    /// testes acima.
+    ///
+    /// Escuta só em 127.0.0.1 de propósito: o celular chega por `adb reverse`, sem
+    /// Firewall e sem Tailscale.
+    ///
+    /// ```text
+    /// cargo test -p argus-core remote::tests::live_mobile_web_app -- --ignored --nocapture
+    /// adb reverse tcp:8765 tcp:8765
+    /// ```
+    #[tokio::test]
+    #[ignore]
+    async fn live_mobile_web_app() {
+        use crate::agents::provider::{AgentEvent, AgentProvider, CommandSpec, LoginStatus, TokenUsage, TurnOptions};
+        use std::path::{Path, PathBuf};
+
+        /// Provedor que lê um roteiro do disco e devolve os eventos que a tela precisa.
+        struct Roteiro(PathBuf);
+        impl AgentProvider for Roteiro {
+            fn id(&self) -> &str {
+                "roteiro"
+            }
+            fn display_name(&self) -> &str {
+                "Roteiro"
+            }
+            fn detect(&self) -> Option<PathBuf> {
+                None
+            }
+            fn login_status(&self) -> LoginStatus {
+                LoginStatus::Unknown
+            }
+            fn login_command(&self) -> CommandSpec {
+                CommandSpec::new("cmd")
+            }
+            fn task_command(&self, _p: &str, cwd: &Path, _s: Option<&str>, _o: &TurnOptions) -> CommandSpec {
+                let f = self.0.to_string_lossy().into_owned();
+                let c = if cfg!(windows) {
+                    CommandSpec::new("cmd").arg("/c").arg("type").arg(f.replace('/', "\\"))
+                } else {
+                    CommandSpec::new("cat").arg(f)
+                };
+                c.cwd(cwd)
+            }
+            fn parse_line(&self, l: &str) -> Vec<AgentEvent> {
+                let l = l.trim();
+                if let Some(r) = l.strip_prefix("TROCA ") {
+                    let (de, para) = r.split_once(' ').unwrap_or(("claude", "opencode"));
+                    return vec![AgentEvent::ProviderSwitch { from: de.into(), to: para.into() }];
+                }
+                if let Some(r) = l.strip_prefix("NEGADO ") {
+                    let (tool, command) = r.split_once('|').unwrap_or((r, ""));
+                    return vec![AgentEvent::Denied { tool: tool.into(), command: command.into() }];
+                }
+                if l == "CONTEXTO" {
+                    return vec![AgentEvent::Context(crate::agents::context::ContextUsage {
+                        input_tokens: 162_000,
+                        cache_read: 12_000,
+                        cache_write: 0,
+                        output_tokens: 1_200,
+                        model: Some("claude-sonnet-4-5".into()),
+                        window: None,
+                    })];
+                }
+                if l == "USO" {
+                    return vec![AgentEvent::Usage(TokenUsage {
+                        input_tokens: 162_000,
+                        output_tokens: 1_200,
+                        cache_read: 12_000,
+                        model: Some("claude-sonnet-4-5".into()),
+                        ..Default::default()
+                    })];
+                }
+                if l.is_empty() { vec![] } else { vec![AgentEvent::Text(l.to_string())] }
+            }
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let roteiro = dir.path().join("roteiro.txt");
+        std::fs::write(
+            &roteiro,
+            "Primeira resposta, ainda no claude.\r\n\
+             TROCA claude opencode\r\n\
+             Agora quem responde e o opencode.\r\n\
+             NEGADO PowerShell|git status\r\n\
+             Fim do roteiro.\r\n\
+             CONTEXTO\r\n\
+             USO\r\n",
+        )
+        .unwrap();
+
+        let projeto = dir.path().join("projeto");
+        std::fs::create_dir(&projeto).unwrap();
+        let prov: Arc<dyn crate::agents::provider::AgentProvider> = Arc::new(Roteiro(roteiro));
+        // Com banco: sem ele o histórico volta vazio e a tela não teria o que mostrar.
+        let orch = Orchestrator::with_db(vec![prov], 1, Some(crate::db::Db::open(&dir.path().join("h.db")).unwrap()));
+        let id = orch.submit(projeto.clone(), "roteiro", "conferindo a web app no celular").unwrap();
+
+        // Espera o turno terminar para a conversa já abrir pronta no aparelho.
+        for _ in 0..200 {
+            if orch.task(id).map(|t| !t.state.is_active()).unwrap_or(false) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        let eventos: Vec<_> = orch.history(id).into_iter().map(|e| e.kind().to_string()).collect();
+        println!("eventos da conversa: {eventos:?}");
+
+        let token = new_token();
+        let (stopped_tx, stopped) = watch::channel(false);
+        let st = AppState {
+            orch,
+            aw: Arc::new(RwLock::new(None)),
+            token: Arc::new(RwLock::new(token.clone())),
+            projects: Arc::new(RwLock::new(vec![projeto])),
+            stopped,
+            notices: broadcast::channel(16).0,
+        };
+        let listener = bind_nearest(8765, true).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let app = router(st);
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+
+        println!("\nadb reverse tcp:{port} tcp:{port}");
+        println!("pareamento: http://127.0.0.1:{port}/pair?token={token}\n");
+        let minutos = std::env::var("ARGUS_MINUTOS").ok().and_then(|s| s.parse().ok()).unwrap_or(15u64);
+        tokio::time::sleep(std::time::Duration::from_secs(minutos * 60)).await;
+        let _ = stopped_tx.send(true);
     }
 
     #[test]

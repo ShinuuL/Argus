@@ -27,10 +27,14 @@ pub struct CliFlags {
     /// `--permission-mode bypassPermissions`; sem ele o Bypass usa
     /// `--dangerously-skip-permissions`.
     pub bypass: bool,
+    /// `--effort <level>` (nível de esforço da sessão).
+    pub effort: bool,
+    /// `--max-budget-usd` e `--fallback-model`.
+    pub limits: bool,
 }
 
 impl CliFlags {
-    pub const ALL: CliFlags = CliFlags { exclude_dynamic: true, partial_messages: true, plan: true, bypass: true };
+    pub const ALL: CliFlags = CliFlags { exclude_dynamic: true, partial_messages: true, plan: true, bypass: true, effort: true, limits: true };
 
     /// Lê do texto do `claude --help`.
     pub fn from_help(help: &str) -> Self {
@@ -39,6 +43,8 @@ impl CliFlags {
             partial_messages: help.contains("--include-partial-messages"),
             plan: help.contains("\"plan\""),
             bypass: help.contains("bypassPermissions"),
+            effort: help.contains("--effort"),
+            limits: help.contains("--max-budget-usd") && help.contains("--fallback-model"),
         }
     }
 }
@@ -100,10 +106,26 @@ impl AgentProvider for ClaudeProvider {
         let mut c = CommandSpec::new("claude").arg("-p");
         if let Some(s) = session {
             c = c.arg("--resume").arg(s);
+            if opts.fork {
+                c = c.arg("--fork-session");
+            }
         }
         // O modelo vale por processo: acompanha também o `--resume`.
         if let Some(m) = opts.model.as_deref().filter(|m| valid_model_name(m)) {
             c = c.arg("--model").arg(m);
+        }
+        let flags = self.flags();
+        // O esforço vale por processo, como o modelo.
+        if let Some(e) = opts.effort.as_deref().filter(|e| flags.effort && crate::agents::todos::valid_effort(e)) {
+            c = c.arg("--effort").arg(e);
+        }
+        if flags.limits {
+            if let Some(b) = opts.max_budget_usd.filter(|b| b.is_finite() && *b > 0.0) {
+                c = c.arg("--max-budget-usd").arg(format!("{b:.2}"));
+            }
+            if let Some(m) = opts.fallback_model.as_deref().filter(|m| valid_model_name(m)) {
+                c = c.arg("--fallback-model").arg(m);
+            }
         }
         // O aviso de ambiente também vale por processo (todo turno o repete).
         if let Some(n) = opts.system_note.as_deref().filter(|n| !n.is_empty()) {
@@ -113,7 +135,6 @@ impl AgentProvider for ClaudeProvider {
         // é negada. `acceptEdits` libera só edições (Bash continua bloqueado).
         // No modo de permissão "Auto", `permissions::apply` troca para `auto`.
         // As pastas de anexos entram depois, com `--add-dir` (`attachments::apply_add_dirs`).
-        let flags = self.flags();
         // As seções do prompt de sistema que mudam a cada turno (git status, cwd,
         // memória) vão para a primeira mensagem. Sem isto, o git status muda quando
         // o agente edita um arquivo, o prompt de sistema muda junto e o cache da
@@ -856,6 +877,22 @@ impl StreamParser {
                         vec![]
                     }
                 }
+                // Andamento de um subagente aberto (conferido no 2.1.220).
+                (Some("task_progress"), _) => {
+                    let id = s(&v, "tool_use_id");
+                    if id.is_empty() || !self.open.contains_key(id) {
+                        return vec![];
+                    }
+                    let u = v.get("usage");
+                    let n = |k: &str| u.and_then(|u| u.get(k)).and_then(Value::as_u64);
+                    vec![AgentEvent::SubagentProgress {
+                        id: id.to_string(),
+                        activity: s(&v, "description").to_string(),
+                        tokens: n("total_tokens"),
+                        tool_uses: n("tool_uses"),
+                        duration_ms: n("duration_ms"),
+                    }]
+                }
                 // Fim de uma compactação (pedida pelo Argus ou automática da CLI).
                 (Some("compact_boundary"), _) => {
                     let m = v.get("compact_metadata");
@@ -866,21 +903,95 @@ impl StreamParser {
                         trigger: m.and_then(|m| m.get("trigger")).and_then(Value::as_str).unwrap_or("auto").to_string(),
                     }]
                 }
-                // task_started/task_progress/task_updated e hooks: sem evento de UI.
+                // Hook: só o que falhou (saída 0 e "success" não interessam).
+                (Some("hook_response"), _) => {
+                    let code = v.get("exit_code").and_then(Value::as_i64).unwrap_or(0);
+                    let outcome = v.get("outcome").and_then(Value::as_str).unwrap_or("success");
+                    if code == 0 && outcome == "success" {
+                        return vec![];
+                    }
+                    let name = v.get("hook_name").and_then(Value::as_str).unwrap_or("hook");
+                    let detail = ["stderr", "output", "stdout"]
+                        .iter()
+                        .find_map(|k| v.get(*k).and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()))
+                        .unwrap_or("");
+                    let detail: String = detail.chars().take(400).collect();
+                    let mut text = format!("Hook {name} falhou (código {code})");
+                    if !detail.is_empty() {
+                        text.push_str(": ");
+                        text.push_str(&detail);
+                    }
+                    vec![AgentEvent::Notice { level: "warn".into(), text }]
+                }
+                (Some("notification"), _) => match v.get("text").and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty()) {
+                    // O "ctrl+o" do texto é do terminal interativo, não daqui.
+                    Some(t) => vec![AgentEvent::Notice {
+                        level: if v.get("key").and_then(Value::as_str).is_some_and(|k| k.contains("error")) { "warn".into() } else { "info".into() },
+                        text: t.split(" · ctrl+").next().unwrap_or(t).to_string(),
+                    }],
+                    None => vec![],
+                },
+                // Nova tentativa na API (formato tolerante: os campos que vierem).
+                (Some("api_retry"), _) => {
+                    let num = |k: &str| v.get(k).and_then(Value::as_u64);
+                    let mut text = String::from("A API falhou; tentando de novo");
+                    if let Some(a) = num("attempt") {
+                        text.push_str(&format!(" ({a}"));
+                        if let Some(m) = num("max_retries") {
+                            text.push_str(&format!(" de {m}"));
+                        }
+                        text.push(')');
+                    }
+                    if let Some(ms) = num("retry_delay_ms") {
+                        text.push_str(&format!(" em {:.0} s", ms as f64 / 1000.0));
+                    }
+                    let err = v.get("error_status").and_then(|e| e.as_u64().map(|n| n.to_string()).or_else(|| e.as_str().map(str::to_string)));
+                    let msg = v.get("error").and_then(|e| e.as_str().map(str::to_string).or_else(|| e.get("message").and_then(Value::as_str).map(str::to_string)));
+                    match (err, msg) {
+                        (Some(s), Some(m)) => text.push_str(&format!(": {s} {m}")),
+                        (Some(s), None) => text.push_str(&format!(": {s}")),
+                        (None, Some(m)) => text.push_str(&format!(": {m}")),
+                        _ => {}
+                    }
+                    vec![AgentEvent::Notice { level: "warn".into(), text }]
+                }
+                // task_started/task_progress/task_updated, status e hooks ok: sem evento de UI.
                 _ => vec![],
             },
             // Texto parcial do agente principal (os subagentes trazem `parent_tool_use_id`).
             Some("stream_event") => {
                 let main = v.get("parent_tool_use_id").map_or(true, Value::is_null);
                 let ev = v.get("event");
-                let is_text = ev.and_then(|e| e.get("type")).and_then(Value::as_str) == Some("content_block_delta")
-                    && ev.and_then(|e| e.pointer("/delta/type")).and_then(Value::as_str) == Some("text_delta");
-                match ev.and_then(|e| e.pointer("/delta/text")).and_then(Value::as_str) {
-                    Some(t) if main && is_text && !t.is_empty() => vec![AgentEvent::TextDelta(t.to_string())],
+                let delta = ev.and_then(|e| e.get("type")).and_then(Value::as_str) == Some("content_block_delta");
+                let kind = ev.and_then(|e| e.pointer("/delta/type")).and_then(Value::as_str);
+                if !main || !delta {
+                    return vec![];
+                }
+                match kind {
+                    Some("text_delta") => match ev.and_then(|e| e.pointer("/delta/text")).and_then(Value::as_str) {
+                        Some(t) if !t.is_empty() => vec![AgentEvent::TextDelta(t.to_string())],
+                        _ => vec![],
+                    },
+                    // Raciocínio ao vivo (vem em `delta.thinking`).
+                    Some("thinking_delta") => match ev.and_then(|e| e.pointer("/delta/thinking")).and_then(Value::as_str) {
+                        Some(t) if !t.is_empty() => vec![AgentEvent::ThinkingDelta(t.to_string())],
+                        _ => vec![],
+                    },
                     _ => vec![],
                 }
             }
-            // rate_limit_event: sem evento de UI.
+            // Limite do plano (conferido no 2.1.220: `rate_limit_info` com
+            // `rateLimitType`, `utilization`, `resetsAt` e `status`).
+            Some("rate_limit_event") => {
+                let Some(i) = v.get("rate_limit_info") else { return vec![] };
+                let Some(window) = i.get("rateLimitType").and_then(Value::as_str) else { return vec![] };
+                vec![AgentEvent::RateLimit {
+                    window: window.to_string(),
+                    utilization: i.get("utilization").and_then(Value::as_f64),
+                    resets_at: i.get("resetsAt").and_then(Value::as_u64),
+                    status: i.get("status").and_then(Value::as_str).unwrap_or("").to_string(),
+                }]
+            }
             Some(_) => vec![],
             None => vec![AgentEvent::Raw(line.to_string())],
         }
@@ -919,6 +1030,25 @@ mod tests {
             vec![AgentEvent::ToolResult { ok: false, output: "falhou".into() }]
         );
         assert!(p.parse_line(r#"{"type":"rate_limit_event"}"#).is_empty());
+        // Linhas reais (2.1.220): hook ok some, notificação vira aviso.
+        assert!(p.parse_line(r#"{"type":"system","subtype":"hook_response","hook_name":"SessionStart:startup","output":"","stdout":"","stderr":"","exit_code":0,"outcome":"success"}"#).is_empty());
+        assert_eq!(
+            p.parse_line(r#"{"type":"system","subtype":"notification","key":"stop-hook-error","text":"Stop hook error occurred · ctrl+o to see","priority":"immediate"}"#),
+            vec![AgentEvent::Notice { level: "warn".into(), text: "Stop hook error occurred".into() }]
+        );
+        let bad = p.parse_line(r#"{"type":"system","subtype":"hook_response","hook_name":"Stop","stderr":"boom","exit_code":2,"outcome":"error"}"#);
+        assert_eq!(bad, vec![AgentEvent::Notice { level: "warn".into(), text: "Hook Stop falhou (código 2): boom".into() }]);
+        let retry = p.parse_line(r#"{"type":"system","subtype":"api_retry","attempt":2,"max_retries":10,"retry_delay_ms":4000,"error_status":529}"#);
+        assert_eq!(retry, vec![AgentEvent::Notice { level: "warn".into(), text: "A API falhou; tentando de novo (2 de 10) em 4 s: 529".into() }]);
+        assert!(p.parse_line(r#"{"type":"system","subtype":"status","status":"requesting"}"#).is_empty());
+        let th = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"vejamos"}},"parent_tool_use_id":null,"session_id":"s"}"#;
+        assert_eq!(p.parse_line(th), vec![AgentEvent::ThinkingDelta("vejamos".into())]);
+        // Linha real (claude 2.1.220).
+        let rl = r#"{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","resetsAt":1795525200,"rateLimitType":"seven_day","utilization":0.62,"isUsingOverage":false},"session_id":"s"}"#;
+        assert_eq!(
+            p.parse_line(rl),
+            vec![AgentEvent::RateLimit { window: "seven_day".into(), utilization: Some(0.62), resets_at: Some(1795525200), status: "allowed_warning".into() }]
+        );
         assert_eq!(p.parse_line("texto solto"), vec![AgentEvent::Raw("texto solto".into())]);
         assert!(p.parse_line("  ").is_empty());
     }
@@ -1038,10 +1168,32 @@ mod tests {
     }
 
     #[test]
+    fn fork_flag_only_with_resume() {
+        let p = ClaudeProvider::with_flags(CliFlags::ALL);
+        let opts = TurnOptions { fork: true, ..Default::default() };
+        let a = p.task_command("oi", Path::new("."), Some("s1"), &opts).args.join(" ");
+        assert!(a.contains("--resume s1 --fork-session"), "{a}");
+        let a = p.task_command("oi", Path::new("."), None, &opts).args.join(" ");
+        assert!(!a.contains("--fork-session"), "{a}");
+    }
+
+    #[test]
+    fn budget_and_fallback_flags() {
+        let opts = TurnOptions { max_budget_usd: Some(2.5), fallback_model: Some("sonnet".into()), effort: Some("high".into()), ..Default::default() };
+        let c = ClaudeProvider::with_flags(CliFlags::ALL).task_command("oi", Path::new("."), None, &opts);
+        let a = c.args.join(" ");
+        assert!(a.contains("--max-budget-usd 2.50") && a.contains("--fallback-model sonnet") && a.contains("--effort high"), "{a}");
+        // Valores inválidos ficam de fora.
+        let bad = TurnOptions { max_budget_usd: Some(-1.0), fallback_model: Some("x; rm".into()), effort: Some("ultra".into()), ..Default::default() };
+        let a = ClaudeProvider::with_flags(CliFlags::ALL).task_command("oi", Path::new("."), None, &bad).args.join(" ");
+        assert!(!a.contains("--max-budget-usd") && !a.contains("--fallback-model") && !a.contains("--effort"), "{a}");
+    }
+
+    #[test]
     fn old_cli_gets_no_new_flags() {
         let old = CliFlags::from_help("--model <model>
 --verbose");
-        assert_eq!(old, CliFlags { exclude_dynamic: false, partial_messages: false, plan: false, bypass: false });
+        assert_eq!(old, CliFlags { exclude_dynamic: false, partial_messages: false, plan: false, bypass: false, effort: false, limits: false });
         let c = ClaudeProvider::with_flags(old).task_command("oi", Path::new("."), None, &TurnOptions::default());
         assert!(!c.args.iter().any(|a| a == "--include-partial-messages" || a == "--exclude-dynamic-system-prompt-sections"));
     }
@@ -1054,7 +1206,7 @@ mod tests {
         let sub = main.replace("\"parent_tool_use_id\":null", "\"parent_tool_use_id\":\"toolu_1\"");
         assert!(p.parse_line(&sub).is_empty());
         let thinking = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hm"}},"parent_tool_use_id":null}"#;
-        assert!(p.parse_line(thinking).is_empty());
+        assert_eq!(p.parse_line(thinking), vec![AgentEvent::ThinkingDelta("hm".into())]);
         let start = r#"{"type":"stream_event","event":{"type":"message_start","message":{}},"parent_tool_use_id":null}"#;
         assert!(p.parse_line(start).is_empty());
     }
@@ -1193,7 +1345,13 @@ mod tests {
     #[test]
     fn real_subagent_stream() {
         let p = ClaudeProvider::new();
-        let all: Vec<AgentEvent> = FIXTURE.lines().flat_map(|l| p.parse_line(l)).filter(|e| !matches!(e, AgentEvent::Context(_))).collect();
+        let raw: Vec<AgentEvent> = FIXTURE.lines().flat_map(|l| p.parse_line(l)).collect();
+        // O andamento do subagente chega com a atividade de agora.
+        assert!(raw.iter().any(|e| matches!(e, AgentEvent::SubagentProgress { id, activity, .. } if id == SUB && activity == "Finding **/*")));
+        let all: Vec<AgentEvent> = raw
+            .into_iter()
+            .filter(|e| !matches!(e, AgentEvent::Context(_) | AgentEvent::RateLimit { .. } | AgentEvent::SubagentProgress { .. }))
+            .collect();
         // A saída do Glob de dentro do subagente vem marcada com o id dele.
         assert!(all.iter().any(|e| matches!(e, AgentEvent::Scoped { subagent, event } if subagent == SUB && matches!(&**event, AgentEvent::ToolResult { ok: true, .. }))));
         let evs: Vec<AgentEvent> = all.into_iter().filter(|e| e.kind() != "ToolResult").collect();

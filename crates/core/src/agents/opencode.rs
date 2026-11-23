@@ -58,7 +58,17 @@ impl AgentProvider for OpencodeProvider {
         // Sem argumento de mensagem, `opencode run` lê o prompt da entrada padrão.
         // A pasta da sessão é a do processo; a CLI confia na variável `PWD` quando ela
         // existe, por isso `build_command` a acerta junto com o diretório.
-        let mut c = CommandSpec::new("opencode").arg("run").arg("--standalone").arg("--format").arg("json");
+        // `--print-logs` funciona com `--standalone` (o servidor é privado deste
+        // processo): os logs da CLI saem no stderr e o Argus os grava no log do
+        // turno. É a evidência que falta para os defeitos em aberto do opencode.
+        let mut c = CommandSpec::new("opencode")
+            .arg("run")
+            .arg("--standalone")
+            .arg("--format")
+            .arg("json")
+            .arg("--print-logs")
+            .arg("--log-level")
+            .arg("debug");
         if let Some(m) = opts.model.as_deref().filter(|m| valid_model_name(m)) {
             c = c.arg("-m").arg(m);
         }
@@ -305,6 +315,13 @@ pub fn parse_json_event(line: &str, model: Option<&str>) -> Vec<AgentEvent> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn task_command_prints_logs_to_the_turn_file() {
+        let c = OpencodeProvider::new().task_command("oi", Path::new("."), None, &TurnOptions::default());
+        assert!(c.args.iter().any(|a| a == "--print-logs"), "{:?}", c.args);
+        assert!(c.args.windows(2).any(|w| w[0] == "--log-level" && w[1] == "debug"), "{:?}", c.args);
+    }
+
     // Linhas reais (encurtadas) de `opencode run --format json`.
     const START: &str = r#"{"type":"step_start","timestamp":1,"sessionID":"ses_e288325f7ffe","part":{"id":"prt_1","sessionID":"ses_e288325f7ffe","messageID":"msg_1","type":"step-start"}}"#;
     const TOOL: &str = r#"{"type":"tool_use","timestamp":2,"sessionID":"ses_e288325f7ffe","part":{"type":"tool","id":"call_3","tool":"patch","state":{"status":"completed","input":{"patchText":"*** Begin Patch"},"output":"Success."}}}"#;
@@ -386,7 +403,7 @@ mod tests {
         assert_eq!(p.default_model().as_deref(), Some("openai/gpt"));
         let opts = TurnOptions { model: Some("google/gemini".into()), system_note: Some("cópia isolada".into()), ..Default::default() };
         let c = p.task_command("a \"b\" %PATH%\nc", Path::new("."), Some("ses_1"), &opts);
-        assert_eq!(c.args, ["run", "--standalone", "--format", "json", "-m", "google/gemini", "--session", "ses_1"]);
+        assert_eq!(c.args, ["run", "--standalone", "--format", "json", "--print-logs", "--log-level", "debug", "-m", "google/gemini", "--session", "ses_1"]);
         assert_eq!(c.cwd.as_deref(), Some(Path::new(".")));
         // Sessão existente: o aviso de ambiente já foi dado no primeiro pedido.
         assert_eq!(c.stdin.as_deref(), Some("a \"b\" %PATH%\nc"));
@@ -394,12 +411,12 @@ mod tests {
         assert_eq!(c.stdin.as_deref(), Some("[Aviso do ambiente] cópia isolada\n\noi"));
         // Sem modelo na tarefa, vale o padrão da CLI (nenhum `-m`); nome inválido é ignorado.
         let c = p.task_command("oi", Path::new("."), None, &TurnOptions::default());
-        assert_eq!(c.args, ["run", "--standalone", "--format", "json"]);
+        assert_eq!(c.args, ["run", "--standalone", "--format", "json", "--print-logs", "--log-level", "debug"]);
         let bad = TurnOptions { model: Some("--auto".into()), ..Default::default() };
-        assert_eq!(p.task_command("oi", Path::new("."), None, &bad).args, ["run", "--standalone", "--format", "json"]);
+        assert_eq!(p.task_command("oi", Path::new("."), None, &bad).args, ["run", "--standalone", "--format", "json", "--print-logs", "--log-level", "debug"]);
         use crate::permissions::AccessMode;
         let c = p.task_command("oi", Path::new("."), None, &TurnOptions { access: AccessMode::Plan, ..Default::default() });
-        assert_eq!(c.args, ["run", "--standalone", "--format", "json", "--agent", "plan"]);
+        assert_eq!(c.args, ["run", "--standalone", "--format", "json", "--print-logs", "--log-level", "debug", "--agent", "plan"]);
         assert!(c.env.is_empty());
         let c = p.task_command("oi", Path::new("."), None, &TurnOptions { access: AccessMode::Bypass, ..Default::default() });
         assert_eq!(c.env, [("OPENCODE_CONFIG_CONTENT".to_string(), crate::permissions::OPENCODE_BYPASS_CONFIG.to_string())]);
