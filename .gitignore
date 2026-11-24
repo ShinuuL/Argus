@@ -4,3 +4,7 @@
 
 # Build compartilhado dos agentes em worktree
 /target-agents/
+
+# Artefatos temporários de validação (logs, prints e scripts descartáveis)
+/.playwright-mcp/
+/.tmp-anexos/
