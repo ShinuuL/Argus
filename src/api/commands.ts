@@ -17,6 +17,7 @@ import { ensurePtyListeners, forgetPty } from "./events";
 const invoke = invokeDaGaleria(invokeReal);
 import type {
   RateLimitInfo,
+  UsageWindowInfo,
   MuralClaim,
   AccessMode,
   AgentEvent,
@@ -231,6 +232,15 @@ export interface Reminder {
  * mas aqui já chega desembrulhado.
  */
 export const rateLimits = (): Promise<RateLimitInfo[]> => invoke<RateLimitInfo[]>("rate_limits");
+
+/** Janelas de 5h ativas calculadas pelo plugin `usage-window` do OpenCode. */
+export const usageWindows = (): Promise<UsageWindowInfo[]> => invoke<UsageWindowInfo[]>("usage_windows");
+/** Limite manual de tokens e/ou requisições. `null` remove o valor manual. */
+export const usageWindowSetLimit = (key: string, tokens: number | null, requests: number | null): Promise<void> =>
+  invoke("usage_window_set_limit", { key, tokens, requests });
+/** Apaga as amostras e o limite manual de uma janela do plugin. */
+export const usageWindowResetSamples = (key: string): Promise<void> => invoke("usage_window_reset_samples", { key });
+
 /**
  * Mural de arquivos: quem está mexendo em quê agora.
  *
@@ -272,6 +282,9 @@ export const taskLimits = (id: TaskId): Promise<Limits> => invoke("task_limits",
 export const taskSetLimits = (id: TaskId, limits: Limits): Promise<void> => invoke("task_set_limits", { id, limits });
 /** Ramifica a conversa; devolve o id da tarefa nova. */
 export const taskFork = (id: TaskId): Promise<TaskId> => invoke("task_fork", { id });
+/** Arquiva/desarquiva várias sessões de uma vez; devolve quantas mudaram. */
+export const tasksArchive = (ids: TaskId[], archived: boolean): Promise<number> =>
+  invoke("tasks_archive", { ids, archived });
 export const taskEffort = (id: TaskId): Promise<Effort | null> => invoke("task_effort", { id });
 export const taskSetEffort = (id: TaskId, effort: Effort | null): Promise<void> => invoke("task_set_effort", { id, effort });
 export const taskTodos = (id: TaskId): Promise<Todo[]> => invoke("task_todos", { id });

@@ -95,6 +95,8 @@ const tarefa = (id: number, prompt: string, state: Task["state"], project: strin
   mode: "Direct",
   handoff: false,
   access: "normal",
+  archived: false,
+  fork_of: null,
 });
 
 const TAREFAS: Task[] = [

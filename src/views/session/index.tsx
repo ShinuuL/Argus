@@ -870,6 +870,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
   const agentChanged = (effort ? 1 : 0) + (limits.max_budget_usd != null ? 1 : 0) + (limits.fallback_model ? 1 : 0);
   const agentSummary = [effort && `esforço ${effort}`, limits.max_budget_usd != null && `teto US$ ${limits.max_budget_usd}`, limits.fallback_model && `reserva ${limits.fallback_model}`].filter(Boolean).join(", ");
 
+  // Sub-barra da pílula: projeto à esquerda, agente/modo/uso à direita.
   const pills = (
     <>
       {taskId == null && (
@@ -884,6 +885,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
           onChange={(v) => useWorkbench.getState().setChatProject(tabId, v || null)}
         />
       )}
+      <span className="chat-pills-gap" />
       {taskId == null ? (
         <AgentModelPill
           providers={providerChoices.length ? providerChoices : [{ id: providerId, name: providerName(providerId) }]}
@@ -928,17 +930,6 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
           />
         )
       )}
-      <span className="chat-pills-gap" />
-      {task && <AgentState task={task} label />}
-      <StalledPill
-        lastEventAt={lastEventAt}
-        active={busy}
-        compacting={compacting}
-        onStop={taskId != null && !cancelling ? cancel : undefined}
-      />
-      {task?.context && <ContextMeter ctx={task.context} />}
-      <UsagePill />
-      <UsageRing />
       <ComposerOptions
         extra={(task?.provider ?? providerId) === "claude" ? agentFields : undefined}
         extraChanged={agentChanged}
@@ -953,6 +944,28 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
         access={task?.access ?? accessChoice}
         onAccess={closed ? undefined : (a) => void changeAccess(a)}
       />
+      <UsageRing />
+    </>
+  );
+
+  // Estado do agente e linha "trabalhando": acima da pílula, nunca dentro dela.
+  const working = (
+    <>
+      <div className="cv-status">
+        {task && <AgentState task={task} label />}
+        <StalledPill
+          lastEventAt={lastEventAt}
+          active={busy}
+          compacting={compacting}
+          onStop={taskId != null && !cancelling ? cancel : undefined}
+        />
+        {task?.context && <ContextMeter ctx={task.context} />}
+      </div>
+      {!current && busy && (
+        <WorkingLine
+          activity={task?.state === "Queued" ? "na fila: esperando outra conversa terminar para começar…" : liveActivity(entries, project)}
+        />
+      )}
     </>
   );
 
@@ -1007,6 +1020,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
               <Icon name="tree" size={15} />
             </button>
           )}
+          {taskId != null && <UsagePill />}
           {totals.turns > 0 && (
             <span
               className="cv-total"
@@ -1065,6 +1079,8 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
             follow={draft.length}
             liveItem={!current && busy && draft ? <DraftText text={draft} /> : !current && busy && thinking ? <LiveThinking text={thinking} /> : null}
             after={
+              /* Com subagente ativo não há Composer na tela: a linha fica aqui.
+                 Na conversa normal ela foi movida para cima da pílula. */
               current ? (
                 current.done ? (
                   <div className="ses-sub-block">
@@ -1079,12 +1095,6 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                 ) : (
                   <div className="cv-note">O turno parou antes de o subagente terminar.</div>
                 )
-              ) : busy ? (
-                <WorkingLine
-                  activity={
-                    task?.state === "Queued" ? "na fila: esperando outra conversa terminar para começar…" : liveActivity(entries, project)
-                  }
-                />
               ) : null
             }
           />
@@ -1192,6 +1202,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                 onStop={taskId != null && !cancelling ? cancel : undefined}
                 onCommand={onCommand}
                 toolbar={pills}
+                working={working}
                 recall={recall}
                 autoFocus={active}
               />

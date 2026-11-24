@@ -331,6 +331,10 @@ export interface Task {
   context?: ContextUsage | null;
   /** Modo de acesso da conversa (Planejar / normal / Bypass). */
   access?: AccessMode;
+  /** Sessão arquivada: some da lista de sessões até mostrar as arquivadas. */
+  archived?: boolean;
+  /** Id da tarefa da qual esta é um ramo (fork); null/ausente nas originais. */
+  fork_of?: number | null;
 }
 
 /** Modo de acesso por conversa: "plan" só lê e propõe; "bypass" roda sem pedir aprovação. */
@@ -936,6 +940,40 @@ export interface RateLimitInfo {
   resets_at: number | null;
   /** "allowed", "allowed_warning" ou "rejected". */
   status: string;
+}
+
+/**
+ * Janela ativa calculada pelo plugin `usage-window` do OpenCode.
+ *
+ * Os números vêm do `state.json` do plugin: tokens = input + output +
+ * reasoning (cacheRead fica fora), limite manual ou mediana das amostras de
+ * rate limit, e o maior entre tokens e requisições manda no percentual.
+ */
+export interface UsageWindowInfo {
+  /** Chave exata do plugin, usada nos ajustes (ex.: `opencode/big-pickle`). */
+  key: string;
+  provider: string;
+  model: string;
+  is_free: boolean;
+  /** Início da janela, em ms desde 1970. */
+  started_at_ms: number;
+  /** Fim da janela, em ms desde 1970. */
+  resets_at_ms: number;
+  tokens: number;
+  input: number;
+  output: number;
+  reasoning: number;
+  cache_read: number;
+  requests: number;
+  /** `null` quando ainda não há calibração. */
+  limit_tokens: number | null;
+  limit_requests: number | null;
+  /** `null` quando ainda não há calibração. */
+  percent: number | null;
+  /** `manual`, `samples` ou `none`. */
+  calibration: "manual" | "samples" | "none";
+  samples: number;
+  limit_hit_at_ms: number | null;
 }
 
 /** Andamento de um subagente (só ao vivo). */

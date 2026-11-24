@@ -2,6 +2,8 @@ import { BypassBadge } from "@/views/session/pills";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent, type PointerEvent } from "react";
 import { languageFor, onProjectChanged, samePath, type Path, type Task } from "@/api";
 import { Icon, type IconName } from "@/shell/icons";
+import { areaIcon } from "@/shell/NavRail";
+import { AREA_VIEWS } from "@/areas/registry";
 import {
   activeTab,
   MAX_GROUPS,
@@ -89,6 +91,10 @@ function TabIcon({ kind, task }: { kind: TabKind; task: Task | undefined }) {
       return <Icon name="diff" size={14} className="wb-ic-svg" />;
     case "mirror":
       return <Icon name="phone" size={14} className="wb-ic-svg" />;
+    case "area": {
+      const A = areaIcon(kind.area);
+      return A ? <A size={14} className="wb-ic-svg" aria-hidden="true" /> : <Icon name="grid" size={14} className="wb-ic-svg" />;
+    }
     case "page":
       return <Icon name={PAGE_ICONS[kind.page] ?? "gear"} size={14} className="wb-ic-svg" />;
   }
@@ -276,6 +282,16 @@ function TabBody({ tab, active }: { tab: WbTab; active: boolean }) {
       return <DiffTab taskId={kind.task} />;
     case "mirror":
       return <MirrorTab />;
+    case "area": {
+      // A mesma tela em tela cheia, agora dentro do grupo de abas. O registry
+      // evita uma segunda lista de componentes e mantém as duas visões iguais.
+      const View = AREA_VIEWS[kind.area];
+      return View ? (
+        <div className="wb-area-tab">
+          <View />
+        </div>
+      ) : null;
+    }
     case "file":
       return null;
   }

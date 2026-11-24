@@ -18,6 +18,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 /// `%APPDATA%/argus/logs` (ou a pasta temporária, se não houver APPDATA).
 /// O nome da pasta de dados respeita `ARGUS_PROFILE`, como os anexos.
@@ -173,10 +174,40 @@ impl TurnLog {
             let _ = f.flush();
         }
     }
+
+    /// Grava uma medição de latência (`prepare_ms`, `mcp_ms`, `spawn_ms`,
+    /// `first_event_ms`, `result_ms`) na mesma ordem das linhas do turno.
+    pub fn latency(&self, phase: &str, ms: u128) {
+        self.line("lat", &format!("{phase}_ms={ms}"));
+    }
 }
 
 fn now() -> String {
     chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
+}
+
+/// Relógio de um turno. `Instant` não é serializável: os tempos viram linhas
+/// `lat` no arquivo do turno, nunca entram na conversa nem no banco.
+#[derive(Debug, Clone, Copy)]
+pub struct TurnTimer {
+    start: Instant,
+}
+
+impl TurnTimer {
+    pub fn new() -> Self {
+        Self { start: Instant::now() }
+    }
+
+    /// Milissegundos desde o começo do turno.
+    pub fn elapsed_ms(&self) -> u128 {
+        self.start.elapsed().as_millis()
+    }
+}
+
+impl Default for TurnTimer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -221,6 +252,27 @@ mod tests {
         assert_eq!(content.lines().count(), 2);
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn latency_lines_record_phase_and_milliseconds() {
+        let dir = std::env::temp_dir().join(format!("argus-lat-{}", std::process::id()));
+        let path = dir.join("turno.log");
+        let _ = std::fs::remove_file(&path);
+        let log = TurnLog::with_path(path.clone());
+        log.latency("mcp", 3);
+        log.latency("spawn", 17);
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("lat mcp_ms=3"), "{content}");
+        assert!(content.contains("lat spawn_ms=17"), "{content}");
+        assert_eq!(content.lines().count(), 2);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn timer_starts_near_zero() {
+        assert!(TurnTimer::new().elapsed_ms() < 1_000);
     }
 
     #[test]

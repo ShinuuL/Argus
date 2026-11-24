@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { api, errorMessage, type Path, type TaskId } from "@/api";
+import { Popover } from "@/shell/Popover";
 import { Icon } from "@/shell/icons";
 import { AttachmentChips } from "./AttachmentChips";
 import {
@@ -109,8 +110,10 @@ export interface ComposerProps {
   disabled?: boolean;
   placeholder?: string;
   autoFocus?: boolean;
-  /** Pílulas na barra de baixo (projeto, provedor, auto-work...), depois dos botões de anexar, "/" e "@". */
+  /** Controles da sub-barra abaixo da pílula (modelo, modo e uso), alinhados à direita. */
   toolbar?: ReactNode;
+  /** Linha "trabalhando…", logo acima da pílula, vindas do transcript. */
+  working?: ReactNode;
   /** Pedidos já enviados nesta conversa (o mais novo por último): seta para cima na caixa vazia os recupera. */
   recall?: string[];
 }
@@ -118,6 +121,16 @@ export interface ComposerProps {
 interface Notice {
   tone: "info" | "err";
   text: string;
+}
+
+/** Microfone da pílula: só visual, sem Web Speech API nesta rodada. */
+function MicIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+    </svg>
+  );
 }
 
 type Suggest =
@@ -134,7 +147,7 @@ const MAX_HEIGHT = 200;
  * grande) e fila de mensagens enquanto o agente trabalha.
  */
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { taskId, draftId, onSend, busy = false, workdir, provider, onStop, onCommand, disabled = false, placeholder, autoFocus, toolbar, recall },
+  { taskId, draftId, onSend, busy = false, workdir, provider, onStop, onCommand, disabled = false, placeholder, autoFocus, toolbar, working, recall },
   ref,
 ) {
   const key = chatKey(taskId, draftId);
@@ -152,9 +165,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   /** Rascunho de antes da reescrita, enquanto o "Desfazer" estiver à vista. */
   const [beforePolish, setBeforePolish] = useState<string | null>(null);
   const [mode, setMode] = useState<PolishMode>("button");
+  const [multiline, setMultiline] = useState(false);
+  const [plusOpen, setPlusOpen] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
 
   const input = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  const plus = useRef<HTMLButtonElement>(null);
   const searchId = useRef(0);
   const searchTimer = useRef<number | undefined>(undefined);
   const capsAsked = useRef<string | null>(null);
@@ -168,6 +185,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   useEffect(() => {
     chatAttachmentsCleanup();
   }, []);
+
+  // Não deixa a lista da fila aberta quando o badge desaparece.
+  useEffect(() => {
+    if (!queue.length || (!busy && !paused)) setQueueOpen(false);
+  }, [queue.length, busy, paused]);
 
   useEffect(() => {
     let alive = true;
@@ -184,7 +206,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const el = input.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`;
+    const height = Math.min(el.scrollHeight, MAX_HEIGHT);
+    el.style.height = `${height}px`;
+    // O CSS não conta linhas: o JS avisa quando a pílula vira cartão.
+    setMultiline(text.includes("\n") || height > 34);
   }, [text]);
 
   useEffect(() => {
@@ -635,9 +660,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     ? "Enter põe na fila · Ctrl+Enter para o turno e envia agora"
     : `Enter envia · Shift+Enter quebra a linha · ↑ recupera o último pedido${mode !== "off" ? " · Ctrl+I melhora o pedido" : ""}`;
 
+  /** Fecha o menu "+" e devolve o foco ao texto ou ao próprio botão. */
+  const closePlus = (focusText: boolean) => {
+    setPlusOpen(false);
+    if (focusText) input.current?.focus();
+    else plus.current?.focus();
+  };
+
   return (
     <DropZone className="chat-composer" onFiles={addFiles} disabled={disabled}>
-      <QueueStrip items={queue} paused={paused} onEdit={editQueued} onRemove={removeQueued} onResume={resumeQueue} />
       {notice && (
         <div className={`chat-notice ${notice.tone}`}>
           <pre>{notice.text}</pre>
@@ -652,7 +683,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         </div>
       )}
       <AttachmentChips attachments={attachments} onRemove={removeAttachment} onRestoreText={restoreText} />
-      <div className="chat-box">
+      {working}
+      <QueueStrip
+        items={queue}
+        paused={paused}
+        busy={busy}
+        expanded={queueOpen}
+        onExpandedChange={setQueueOpen}
+        onEdit={editQueued}
+        onRemove={removeQueued}
+        onResume={resumeQueue}
+      />
+      <div className="chat-box" data-multiline={multiline ? "true" : undefined}>
         {suggest && (
           <SuggestPopover
             items={suggest.items}
@@ -672,34 +714,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             }
           />
         )}
-        <textarea
-          ref={input}
-          className="chat-input"
-          rows={1}
-          value={text}
-          disabled={disabled}
-          placeholder={placeholder ?? (busy ? "Escreva a próxima mensagem (entra na fila)…" : "Escreva para o agente…")}
-          onChange={(e) => {
-            setText(e.target.value);
-            refreshSuggest(e.target.value, e.target.selectionStart ?? e.target.value.length);
-          }}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-          onDragOver={(e) => {
-            if (Array.from(e.dataTransfer.types).includes("application/x-argus-path")) e.preventDefault();
-          }}
-          onDrop={(e) => {
-            // Arquivo arrastado da árvore do painel direito: vira uma menção.
-            const rel = e.dataTransfer.getData("application/x-argus-path");
-            if (!rel) return;
-            e.preventDefault();
-            const current = useChat.getState().drafts[key] ?? "";
-            setText(`${current}${current && !/\s$/.test(current) ? " " : ""}@${rel} `);
-            input.current?.focus();
-          }}
-          onBlur={() => window.setTimeout(closeSuggest, 150)}
-        />
-        <div className="chat-bar">
+        <div className="chat-row">
           <input
             ref={picker}
             type="file"
@@ -711,79 +726,155 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             }}
           />
           <button
+            ref={plus}
             type="button"
-            className="chat-ibtn"
-            title="Anexar arquivos"
-            aria-label="Anexar arquivos"
+            className="chat-plus"
+            title="Anexar · contexto @ · prompt / · fila"
+            aria-label="Mais ações"
+            aria-expanded={plusOpen}
             disabled={disabled}
-            onClick={() => picker.current?.click()}
+            onClick={() => setPlusOpen(!plusOpen)}
           >
-            <Icon name="clip" size={15} />
+            <Icon name="plus" size={17} />
           </button>
-          <button
-            type="button"
-            className="chat-ibtn"
-            title="Comandos de barra (/)"
-            aria-label="Comandos de barra"
+          <Popover
+            anchor={plus}
+            open={plusOpen}
+            onClose={(focus) => {
+              setPlusOpen(false);
+              if (focus) plus.current?.focus();
+            }}
+            ariaLabel="Mais ações"
+            width={272}
+          >
+            <div className="pop-sec">
+              <div className="pop-title">Composer</div>
+              <div className="pop-list">
+                <button
+                  type="button"
+                  className="sel-opt pop-opt"
+                  onClick={() => {
+                    setPlusOpen(false);
+                    picker.current?.click();
+                  }}
+                >
+                  <Icon name="clip" size={15} />
+                  <span className="sel-opt-label">Anexar arquivo ou imagem</span>
+                </button>
+                <button
+                  type="button"
+                  className="sel-opt pop-opt"
+                  disabled={disabled}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    closePlus(true);
+                    startToken("@");
+                  }}
+                >
+                  <Icon name="at" size={15} />
+                  <span className="sel-opt-label">Adicionar contexto (@)</span>
+                </button>
+                <button
+                  type="button"
+                  className="sel-opt pop-opt"
+                  disabled={disabled}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    closePlus(true);
+                    startToken("/");
+                  }}
+                >
+                  <Icon name="slash" size={15} />
+                  <span className="sel-opt-label">Usar prompt ou skill (/)</span>
+                </button>
+                {mode !== "off" && (
+                  <button
+                    type="button"
+                    className={`sel-opt pop-opt${polishing ? " is-busy" : ""}`}
+                    disabled={disabled || polishing || !text.trim()}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      closePlus(true);
+                      void polish();
+                    }}
+                  >
+                    <Icon name={polishing ? "spinner" : "sparkles"} size={15} />
+                    <span className="sel-opt-label">{polishing ? "Melhorando o pedido…" : "Melhorar pedido (Ctrl+I)"}</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="sel-opt pop-opt"
+                  onClick={() => {
+                    setPlusOpen(false);
+                    setQueueOpen(true);
+                    if (!queue.length) setNotice({ tone: "info", text: "Nada na fila." });
+                  }}
+                >
+                  <Icon name="chat" size={15} />
+                  <span className="sel-opt-label">Ver fila de mensagens</span>
+                  {queue.length > 0 && <span className="sel-opt-hint">{queue.length}</span>}
+                </button>
+              </div>
+            </div>
+            <p className="pop-help">{hint}</p>
+          </Popover>
+          <textarea
+            ref={input}
+            className="chat-input"
+            rows={1}
+            value={text}
             disabled={disabled}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => startToken("/")}
-          >
-            <Icon name="slash" size={15} />
-          </button>
-          <button
-            type="button"
-            className="chat-ibtn"
-            title="Mencionar arquivo ou agente (@)"
-            aria-label="Mencionar arquivo ou agente"
-            disabled={disabled}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => startToken("@")}
-          >
-            <Icon name="at" size={15} />
-          </button>
-          {mode !== "off" && (
-            <button
-              type="button"
-              className={`chat-ibtn${polishing ? " is-busy" : ""}`}
-              title={
-                polishing
-                  ? "Melhorando o pedido…"
-                  : "Melhorar pedido (Ctrl+I): reescreve o rascunho aqui na caixa, sem enviar"
-              }
-              aria-label="Melhorar pedido"
-              disabled={disabled || polishing || !text.trim()}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => void polish()}
-            >
-              <Icon name={polishing ? "spinner" : "sparkles"} size={15} />
-            </button>
-          )}
-          <div className="chat-pills">{toolbar}</div>
-          {busy && canSend && (
-            <button type="button" className="chat-queue-btn" title="Pôr na fila (Enter)" onClick={() => void send(false)}>
-              Pôr na fila
-            </button>
-          )}
-          {busy && onStop ? (
-            <button type="button" className="chat-round chat-stop" title="Parar o turno" aria-label="Parar o turno" onClick={() => void onStop()}>
-              <Icon name="stop" size={14} filled />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="chat-round chat-send"
-              title={busy ? "Pôr na fila (Enter)" : "Enviar (Enter)"}
-              aria-label={busy ? "Pôr na fila" : "Enviar"}
-              disabled={!canSend}
-              onClick={() => void send(false)}
-            >
-              <Icon name="send" size={16} />
-            </button>
-          )}
+            placeholder={placeholder ?? "Digite / para comandos"}
+            onChange={(e) => {
+              setText(e.target.value);
+              refreshSuggest(e.target.value, e.target.selectionStart ?? e.target.value.length);
+            }}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            onDragOver={(e) => {
+              if (Array.from(e.dataTransfer.types).includes("application/x-argus-path")) e.preventDefault();
+            }}
+            onDrop={(e) => {
+              // Arquivo arrastado da árvore do painel direito: vira uma menção.
+              const rel = e.dataTransfer.getData("application/x-argus-path");
+              if (!rel) return;
+              e.preventDefault();
+              const current = useChat.getState().drafts[key] ?? "";
+              setText(`${current}${current && !/\s$/.test(current) ? " " : ""}@${rel} `);
+              input.current?.focus();
+            }}
+            onBlur={() => window.setTimeout(closeSuggest, 150)}
+          />
+          <div className="chat-actions">
+            {!busy && (
+              <span className="chat-mic" role="img" aria-label="Voz ainda não disponível" title="Voz ainda não disponível">
+                <MicIcon />
+              </span>
+            )}
+            {busy && onStop && (
+              <button type="button" className="chat-round chat-stop" title="Parar o turno" aria-label="Parar o turno" onClick={() => void onStop()}>
+                <Icon name="stop" size={14} filled />
+              </button>
+            )}
+            {(!busy || canSend) && (
+              <button
+                type="button"
+                className="chat-round chat-send"
+                title={busy ? "Pôr na fila (Enter)" : "Enviar (Enter)"}
+                aria-label={busy ? "Pôr na fila" : "Enviar"}
+                disabled={!canSend}
+                onClick={() => void send(false)}
+              >
+                <Icon name="send" size={16} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
-      <div className="chat-hint">{hint}</div>
+      <div className="chat-subbar">
+        <div className="chat-pills">{toolbar}</div>
+      </div>
     </DropZone>
   );
 });

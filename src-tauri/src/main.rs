@@ -34,6 +34,20 @@ fn main() {
             // MCP do Screen-Mirror nos agentes (pela variável ou pasta salva; a pasta
             // raiz entra quando for aberta).
             ctx.mirror.sync_agent_mcp(None);
+            // Pre-warm das CLIs fora do caminho do primeiro pedido: `claude
+            // --help` e `opencode models` não devem entrar na latência da
+            // primeira mensagem. Em `spawn_blocking` porque as duas chamadas
+            // são síncronas e podem levar segundos. Falha é silenciosa: o turno
+            // segue com o padrão da CLI.
+            let warm = ctx.providers.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = tokio::task::spawn_blocking(move || {
+                    for p in warm {
+                        p.warmup();
+                    }
+                })
+                .await;
+            });
             app.manage(ctx);
             // Publicação do Tailscale que uma execução anterior deixou ligada (crash).
             std::thread::spawn(argus_core::tailscale::cleanup_stale);
@@ -106,6 +120,10 @@ fn main() {
             agents::permissions_allow_denied,
             agents::task_set_model,
             agents::rate_limits,
+            // janelas de 5h calculadas pelo plugin usage-window do OpenCode
+            usage_window::usage_windows,
+            usage_window::usage_window_set_limit,
+            usage_window::usage_window_reset_samples,
             agents::mural_list,
             agents::notify_user,
             agents::mcp_list,
@@ -129,6 +147,7 @@ fn main() {
             agents::task_revert_hunk,
             agents::task_set_provider,
             agents::tasks_list,
+            agents::tasks_archive,
             agents::task_get,
             agents::task_create,
             agents::task_cancel,

@@ -13,7 +13,7 @@
 .tka-check input { accent-color: var(--accent); margin: 0; }
 
 .tka-panel { width: 360px; flex: none; border-left: 1px solid var(--border); background: var(--surface); overflow-y: auto; }
-.tka-form { display: grid; gap: 14px; padding: 16px; align-content: start; }
+.tka-form { display: grid; gap: 14px; padding: 16px; margin: 10px; align-content: start; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-xl); }
 .tka-h { margin: 0 0 2px; font-size: 13px; font-weight: 600; color: var(--text); }
 .tka-field { display: grid; gap: 5px; min-width: 0; font-size: 12px; color: var(--text-2); }
 .tka-field input, .tka-field textarea { color: var(--text); background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius); font-size: 12.5px; padding: 6px 8px; min-width: 0; }

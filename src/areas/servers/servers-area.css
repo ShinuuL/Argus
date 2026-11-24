@@ -8,7 +8,7 @@
 .srva-bar { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex: none; flex-wrap: wrap; }
 .srva-bar .ui-sp { flex: 1; }
 .srva-tabs { padding: 0; border-bottom: 0; }
-.srva-q { width: 260px; min-width: 120px; flex: 0 1 260px; height: 24px; padding: 0 9px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--surface); color: var(--text); font: inherit; font-size: 12px; }
+.srva-q { width: 260px; min-width: 120px; flex: 0 1 260px; height: 28px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text); font: inherit; font-size: 12px; }
 .srva-q:focus { outline: 1px solid var(--focus); }
 .ui-chip.srva-on { color: var(--text); background: var(--selection); }
 .srva-scroll { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }

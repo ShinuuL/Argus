@@ -1,6 +1,6 @@
 # Argus — Estado atual e próximos passos
 
-_Atualizado em 2026-11-16. Base: 2026-11-14, depois da migração da interface de Dioxus para Tauri 2, do redesenho do layout (chat no centro, temas) e de uma rodada de validação na janela com tarefas reais._
+_Atualizado em 2026-11-24. Base: 2026-11-14, depois da migração da interface de Dioxus para Tauri 2, do redesenho do layout (chat no centro, temas) e de uma rodada de validação na janela com tarefas reais._
 
 O Argus é uma IDE desktop que gerencia vários projetos de uma pasta raiz e orquestra agentes de IA (Claude Code, OpenCode, Codex e Gemini). A lógica fica em Rust (`argus-core`); a interface é React + TypeScript dentro de uma janela Tauri 2. Os agentes usam o login das próprias CLIs oficiais; a IDE nunca lê nem guarda tokens.
 
@@ -8,8 +8,8 @@ O Argus é uma IDE desktop que gerencia vários projetos de uma pasta raiz e orq
 
 A conferência na janela foi feita pelo protocolo de depuração do WebView2 (cliques e teclas enviados à página, sem usar o mouse real). Para repetir: abra o executável com `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333` e conecte em `http://127.0.0.1:9333`.
 
-- **Arrastar** (abas, arquivo da aba Arquivos): o arrasto começa de verdade na página (botão pressionado e movido dispara o `dragstart`, com o `DataTransfer` real) e é interceptado no ponto em que o navegador o entregaria ao sistema (`Input.setInterceptDrags`); os `dragenter`, `dragover` e `drop` seguintes entram por `Input.dispatchDragEvent`. Limite: o laço de arrasto do Windows não roda, então um arquivo vindo do Explorer do Windows não é coberto.
-- **Colar imagem:** evento `paste` sintético com um PNG no `DataTransfer`. Limite: a área de transferência real do sistema (Ctrl+V depois de um print) não é coberta.
+- **Arrastar** (abas, arquivo da aba Arquivos): o arrasto começa de verdade na página (botão pressionado e movido dispara o `dragstart`, com o `DataTransfer` real) e é interceptado no ponto em que o navegador o entregaria ao sistema (`Input.setInterceptDrags`); os `dragenter`, `dragover` e `drop` seguintes entram por `Input.dispatchDragEvent`. Limite do protocolo: o laço de arrasto do Windows não roda, então um arquivo vindo do Explorer do Windows não era coberto. Conferido depois pelo usuário com o Explorer real em 2026-11-24.
+- **Colar imagem:** evento `paste` sintético com um PNG no `DataTransfer`. Limite do protocolo: a área de transferência real do sistema (Ctrl+V depois de um print) não era coberta. Conferido depois pelo usuário com um print real em 2026-11-24.
 - **Caixas nativas de confirmação** (Aplicar, Descartar, "Parar e enviar"): a página fica parada até a resposta; o teste respondeu mandando a mensagem de clique ao botão "Sim" da caixa.
 
 Uso no dia a dia como o Claude Code no VS Code (equivalências e diferenças): [docs/USO_COMO_CLAUDE_CODE.md](docs/USO_COMO_CLAUDE_CODE.md).
@@ -158,12 +158,66 @@ Fila de trabalho. P1 a P3 em andamento; P4 é conferência que o usuário faz em
 - [ ] Métricas: virada do "Hoje" depois das 21h.
 - [x] OpenCode real: modelo `-free` com custo 0, uso do último passo. **Conferido em 2026-11-21** na tarefa #25 (`opencode/beam-free`): `US$ 0,00 equivalente em API` na tela e `61 entrada · 76 saída · cache 13,4 mil lido` no último passo.
 - [ ] Selo de auto-work sem "Reiniciar" em sessão aplicada/descartada.
-- [ ] Arrastar do Explorer, Ctrl+V de print, login do claude no terminal.
-- [ ] Player tocando música.
+- [x] Arrastar do Explorer, Ctrl+V de print, login do claude no terminal. **Conferido pelo usuário em 2026-11-24.**
+- [x] Player tocando música. **Conferido pelo usuário em 2026-11-24.**
 - [ ] "Iniciar com o Windows" no app instalado (reiniciar e ver abrir minimizado).
 - [x] APK assinado: keystore do usuário criado (PKCS12, RSA 4096) e `app-universal-release.apk` gerado em 2026-11-21. `apksigner verify` confirma — um assinante, esquema v2, RSA 4096. O `key.properties` e o `.jks` ficam fora do repositório. O `gerar-apk.ps1` agora repõe o bloco de assinatura no `build.gradle.kts` toda vez que acha o `key.properties`: `gen/android` é regenerável, e sem o bloco o release saía **sem assinatura** mesmo com as chaves no lugar.
 - [ ] Codex e gemini: instalar e logar as CLIs; conferir `--add-dir`/`--include-directories` na pasta `_Argus` e o Planejar/Bypass deles.
-- [ ] Toast do Windows das tarefas agendadas (o evento sai; a notificação do sistema não foi vista).
+- [x] Toast do Windows das tarefas agendadas (o evento sai; a notificação do sistema não foi vista). **Conferido pelo usuário em 2026-11-24.**
+- [x] Funnel e app nativo `dev.argus.celular`. **Conferido no aparelho em 2026-11-24:** `remote_start` com `Exposure::Funnel` em `desktop-sie986u.taile13b10.ts.net:443` → `127.0.0.1:8765`; `funnel-check.mjs` deu 200 em `/`, `/app.js`, `/style.css`, `/geist.woff2` e `/api/tasks`, com `Set-Cookie HttpOnly; SameSite=Lax`, e 401 sem cookie. O Chrome Android abriu o domínio com `Argus / ao vivo`, Geist carregada e service worker presente. No app nativo o campo de pareamento recebeu o link HTTPS, apareceu o toast `Aparelho pareado.`, o indicador `ao vivo` e, em Ajustes, `Computador: desktop-sie986u.taile13b10.ts.net` (antes `127.0.0.1:8765`). Nenhum token foi registrado.
+- [x] Remoção em larga escala da referência a Mastersys em `D:\Dev\Desenvolvimento\Projetos`, autorizada em 2026-11-24. Regra aplicada: texto visível e documentação passam a usar o nome do projeto (ou “Suporte”, quando o citado é um sistema externo); identificadores técnicos passam a usar o slug do projeto. Os detalhes e o que ficou pendente estão em “Ação em larga escala”, abaixo.
+- [x] Reconstruir os artefatos gerados que ainda guardavam o identificador antigo: `AllSeenEye\app\build\**` e `SwitchOS\hub\src-tauri\target-agent\**`. **Feito em 2026-11-24:** `gradlew clean assembleDebug --no-build-cache --rerun-tasks` no AllSeenEye (o primeiro build reaproveitou o cache e ainda deixou cinco arquivos Kotlin com a string; sem cache, ficou em zero); no SwitchOS o `target-agent` foi removido e recriado com `CARGO_TARGET_DIR` apontando para ele. Os arquivos do hub (`fingerprint`, `build/output` e `.d`) ficaram sem a string; sobrou um falso positivo num `.rmeta` de crate de terceiros.
+- [x] Gerar de novo o APK `Screen-Mirror\apks\switchos-debug.apk` com a nova identidade `br.com.switchos.app` e substituir o arquivo antigo. **Feito em 2026-11-24:** `gradlew :app:assembleDebug --no-build-cache --rerun-tasks` em `SwitchOS\android\android`, depois `Copy-Item` para `apks\`. O `aapt2 dump badging` confirma `package: name='br.com.switchos.app'`; o arquivo passou de 301 MB para 278 MB e a varredura de bytes deu zero ocorrências.
+- [ ] Conferir o impacto da troca de `applicationId`/`identifier`: celular com o app antigo instalado precisa desinstalar antes de instalar o novo (Android e Tauri tratam identificadores diferentes como apps distintos).
+- [ ] Migrar as pastas de dados pessoais que usavam o identificador antigo (`%APPDATA%\br.com.mastersys.digitama` e `%LOCALAPPDATA%\br.com.mastersys.digitama\bin` em `Digitama.md`): o nome novo é `br.com.digitama.app`; copiar os dados antes de apagar os antigos.
+- [x] Rodar os gates dos repositórios alterados (AllSeenEye, Controle de gastos, Scale, Screen-Mirror, SwitchOS e volume-mixer), além dos gates do Argus. **Feito em 2026-11-24, todos passaram.** Argus: `npm run typecheck`, `cargo test --workspace` (276 no core + 23 no desktop, 0 falhas), `cargo check -p argus-desktop` (só o aviso `sanitize_name is never used`), `npm run teste:celular` (18/18), `npm run build` e `node --check crates/core/assets/remote/app.js`. Controle de gastos: `typecheck`, `lint`, 296 testes e `build`. Screen-Mirror: `typecheck` e 11 testes. Scale: `lint`, `build` e `docker compose config`. portal-geral: `apps.json` com 5 itens e `masternote.html`. SwitchOS: `tauri.conf.json`, `games.toml`, `cargo check --manifest-path hub/src-tauri/Cargo.toml` e `./gradlew :app:compileDebugKotlin`. AllSeenEye: `./gradlew compileDebugKotlin`. volume-mixer: conferido pelos READMEs alterados.
+
+## Ação em larga escala — remoção da referência a Mastersys (2026-11-24)
+
+Pedido do usuário: remover a referência em toda a pasta raiz aberta no Argus,
+deixando só registros com os nomes dos projetos, itens indicados a ele e as
+configurações dele. A regra aplicada foi esta:
+
+| Tipo de ocorrência | Substituição |
+|---|---|
+| Texto visível e documentação de um projeto | nome do projeto (por exemplo `SwitchOS`, `Scale`, `AllSeenEye`) |
+| Sistema externo citado como “Mastersys Suporte” | `Suporte` |
+| Pacote Android / identificador Tauri | slug do projeto, mantido o prefixo (`br.com.switchos.app`, `br.com.switchos.hub`, `com.allseeeye.app`, `br.com.pdv.app`, `br.com.digitama.app`) |
+| Fixture de extrato bancário | `SISPAG PIX LANCAMENTO ...` (o valor e o teste continuam iguais) |
+| Caminho de código-fonte de referência em `PDV.md` | `C:\MASTERERP-SRC\server-weld` |
+
+Arquivos de código e documentação alterados: `AllSeenEye` (pacote Kotlin e
+`build.gradle.kts`, com o diretório movido para `com/allseeeye/app`), `Argus`
+(`docs/mockups/argus-telas.html`), `Controle de gastos` (duas fixtures),
+`Scale` (`docs/lgpd-moderacao.md` e a cópia no worktree), `Screen-Mirror`
+(README e teste de política), `SwitchOS` (PRODUCT, pendência, `games.toml`,
+`build.gradle.kts`, `tauri.conf.json`, `Cargo.toml`, dois `strings.xml` e um
+comentário Kotlin), `volume-mixer` (dois README), os docs soltos `AllSeenEye.md`,
+`Digitama.md`, `MasterDesk.md` e `PDV.md`, e `portal-geral` (`apps.json` e
+`apps/masternote.html`).
+
+Varredura final em arquivos-fonte, documentação e artefatos gerados: **zero
+ocorrências** na cadeia de build, com exceção desta seção, que registra o pedido.
+Antes da reconstrução havia 150 arquivos em `AllSeenEye\app\build`, cinco
+arquivos de texto em `SwitchOS\hub\src-tauri\target-agent` e a identidade antiga
+no manifesto interno do APK de 301 MB. Depois da reconstrução em 2026-11-24:
+`AllSeenEye\app\build` e o APK novo têm zero; no `target-agent` os arquivos do
+hub estão limpos e o único match é um `.rmeta` de crate externa. Nenhum artefato
+foi editado à mão — todos saíram de `clean` + rebuild.
+
+Uma segunda varredura, depois da reconstrução, achou 12 arquivos esquecidos nos
+worktrees antigos do Scale (`.claude\worktrees\agent-*`, `desktop-r2-voz`): eram
+o Electron removido, parados desde 23/10, com `Mastersys`, `Copyright (c)
+Mastersys` e `br.com.mastersys.scale` em `electron-builder.yml`, `package.json`,
+`main.ts` e `menu.ts`. Aplicada a mesma regra em 2026-11-24: texto virou `Scale` e
+identificador virou `br.com.scale.app`. Os 12 arquivos foram conferidos um a um e
+agora têm zero ocorrências. Nenhum desses worktrees foi recriado nem teve outro
+arquivo tocado.
+
+Também foi criado `AGENTS.md` na raiz do Argus, no formato usado pelo Claude
+(regras de escopo, gates, arquitetura, armadilhas e validação no aparelho). O
+padrão de ponteiro é `CLAUDE.md` com `@AGENTS.md`; não foi criado um `CLAUDE.md`
+porque o pedido cobria só o `AGENTS.md`.
 
 ## Como rodar
 
@@ -350,8 +404,8 @@ Legenda: **na janela** = visto funcionando na janela do Tauri; **compila** = imp
 | Dependências: detecção, confirmação antes de instalar, comando inexistente no terminal | ✓ na janela (só o pedido; nenhuma instalação foi executada) |
 | Acesso remoto pela LAN (QR + token) | ✓ na janela: liga, QR, todas as rotas e o WebSocket sem token = 401, desliga, fecha a porta e derruba quem estava conectado |
 | Web app do celular (refeita: projetos e sessões, conversa, subagentes, nova conversa, auto-work, servidores, temas) | ✓ num navegador emulando celular (390, 360 e 430 px, toque), contra o servidor real: lista, histórico da sessão #1, subagente sem caixa de resposta, `/context` enviado com a resposta chegando pelo WebSocket, reconexão, três temas, Derrubar num servidor real. ⚠ auto-work: ligar e desligar conferidos de verdade; progresso, Pausar, Retomar e Parar só com uma execução simulada na tela. ⚠ "Enviar" de Nova conversa não foi tocado (gastaria tokens). **Nunca aberta num celular de verdade** |
-| Auto-work (PENDENCIAS.md, TODO/FIXME, build/testes, travas) | ✓ na janela: um ciclo real com 2 itens, da pílula ligada até "auto concluído 2/2", com o selo, a barra de progresso e a etiqueta "auto" na barra esquerda. Pausar, Retomar, Parar, as travas e a verificação de build/testes não foram exercitados na janela |
-| Player de música (mídia do Windows + arquivos locais) | ⚠ a mídia do sistema é detectada (título e autor do que estava tocando apareceram e mudaram sozinhos na status bar); os controles e os arquivos locais não foram conferidos |
+| Auto-work (PENDENCIAS.md, TODO/FIXME, build/testes, travas) | ✓ na janela: um ciclo real com 2 itens, da pílula ligada até "auto concluído 2/2", com o selo, a barra de progresso e a etiqueta "auto" na barra esquerda. Pausar, Retomar, Parar, as travas e a verificação de build/testes conferidos pelo usuário em 2026-11-24 |
+| Player de música (mídia do Windows + arquivos locais) | ✓ na janela: a mídia do sistema é detectada (título e autor do que estava tocando apareceram e mudaram sozinhos na status bar); tocar música conferido pelo usuário em 2026-11-24. Os arquivos locais seguem sem conferência registada |
 | Pet de uso | ✓ na janela (dormindo e trabalhando, balão com os números) |
 | Servidores + painel lateral | ✓ na janela com um terminal da IDE e com uma sessão de agente: com `python -m http.server:*` em Comandos permitidos, o servidor aberto pelo claude aparece no selo da sessão, na status bar e na aba Servidores ("Sessão #N"); "Derrubar" mata o processo e fecha a porta. Limite: o `claude -p` encerra os processos em segundo plano quando o turno termina, então o servidor só vive durante o turno |
 | Conversa (aba única: conversa nova + sessão) | ✓ na janela com tarefas reais: o primeiro envio cria a tarefa na mesma aba, com stream ao vivo, Enviar virando Parar, fila, "1 agente rodando", ponto pulsando e negrito quando a novidade chega com a aba fora de foco |
@@ -379,7 +433,7 @@ Tudo em `src/views/chat`, com os comandos Rust em `src-tauri/src/commands/extra_
 | 1.1 Markdown | títulos, listas, tabelas, código com rótulo da linguagem, copiar código e copiar mensagem | ✓ na janela (título, lista, código com rótulo); os botões de copiar aparecem, o clique não foi conferido |
 | 1.2 Fila de mensagens | com o agente ocupado, Enter põe na fila; a fila sai quando o turno termina; Ctrl+Enter para o turno e envia | ✓ na janela com agente real: Enter, saída da fila e Ctrl+Enter (pergunta, para o turno e manda a mensagem) |
 | 1.3 Menções | `@arquivo` (busca no projeto) e `@agente` (arquivos de `.claude/agents` e `.opencode/agents`) | ✓ na janela |
-| 1.4 e 1.5 Anexos | clipe, arrastar e soltar, colar print, texto colado grande vira anexo; miniaturas na mensagem | ✓ na janela: clipe (.txt e .png), texto grande colado, miniatura, imagem colada (evento sintético) e lida pelo claude numa tarefa real, arquivo arrastado da aba Arquivos (vira `@caminho`). Arquivo arrastado do Explorer do Windows e Ctrl+V de um print de verdade não conferidos |
+| 1.4 e 1.5 Anexos | clipe, arrastar e soltar, colar print, texto colado grande vira anexo; miniaturas na mensagem | ✓ na janela: clipe (.txt e .png), texto grande colado, miniatura, imagem colada (evento sintético) e lida pelo claude numa tarefa real, arquivo arrastado da aba Arquivos (vira `@caminho`). Arquivo arrastado do Explorer do Windows e Ctrl+V de um print de verdade conferidos pelo usuário em 2026-11-24 |
 | 1.6 Comandos de barra | `/nova`, `/parar`, `/diff`, `/aplicar`, `/descartar`, `/sessoes`, `/modelo`, `/ajuda` e os comandos da CLI do claude | ✓ na janela: menu com os do Argus e os da CLI, `/ajuda`, `/diff`; `/modelo` abre a lista de modelos da pílula (visto); `/nova` abre uma conversa nova e `/diff` abre a aba Alterações do painel direito (não reconferidos depois do redesenho). Desde 2026-11-18, a barra abre o menu **em qualquer ponto da mensagem** (começo, depois de um espaço ou de um parêntese), como o `@`, e a escolha troca só o trecho sob o cursor; os comandos do Argus continuam executando apenas quando a barra é a primeira coisa escrita (no meio da frase, o texto vai inteiro ao agente). Não conferido na janela |
 | 1.7 Chamada de ferramenta escrita como texto | aviso com o botão "Executar de verdade" | ⚠ compila; detecção testada por script |
 | 1.8 Uso do dia | pílula "hoje: X tokens · ≈ US$ Y (equivalente em API)" | ✓ na janela (status bar; atualiza a cada turno) |
@@ -431,14 +485,14 @@ O limite que sobra é outro, e é honesto: a ponte opera a interface, não o mun
 - [x] Arrastar um arquivo da aba Arquivos para a caixa de composição (vira `@caminho`).
 - [x] Terminal com as cores do tema.
 - [x] Arrastar abas entre grupos e para a borda; colar imagem na caixa (evento sintético).
-- [ ] Arrastar um arquivo do Explorer do Windows para a conversa e Ctrl+V de um print de verdade (dependem do sistema; o protocolo de depuração não cobre).
+- [x] Arrastar um arquivo do Explorer do Windows para a conversa e Ctrl+V de um print de verdade (dependem do sistema; o protocolo de depuração não cobre). **Conferido pelo usuário em 2026-11-24.**
 - [x] Aplicar e descartar uma tarefa com alterações (claude).
 - [x] Aplicar e descartar uma sessão do OpenCode (ver o defeito do worktree preso, abaixo). **Conferido em 2026-11-21**: Aplicar na #25 e Descartar na #26, ambos sem worktree preso.
 - [x] Auto-work rodando um ciclo na interface nova.
-- [ ] Auto-work: Pausar, Retomar, Parar, travas e verificação de build/testes na janela.
-- [ ] Player tocando música (só a detecção da mídia do sistema foi vista).
+- [x] Auto-work: Pausar, Retomar, Parar, travas e verificação de build/testes na janela. **Conferido pelo usuário em 2026-11-24.**
+- [x] Player tocando música (só a detecção da mídia do sistema foi vista). **Conferido pelo usuário em 2026-11-24.**
 - [x] Login pela CLI num terminal (OpenCode; aberto e fechado sem concluir).
-- [ ] Login do claude num terminal (abre o navegador; não foi aberto).
+- [x] Login do claude num terminal (abre o navegador; não foi aberto). **Conferido pelo usuário em 2026-11-24.**
 - [x] Tarefa pelo OpenCode.
 - [x] Web app aberta num celular de verdade (2026-11-19, SM-M556B, Android 16, APK debug 0.1.2): pareamento pelo Funnel (`https://<pc>.ts.net/pair?token=…`), lista de sessões, histórico de uma sessão, aba Servidores e indicador "ao vivo". Ao desligar, `tailscale funnel status` ficou sem configuração. Corrigidos no teste: biblioteca nativa sem alinhamento de 16 KB (aviso do Android 16; `src-mobile/build.rs`), "Último computador usado" vazio aparecendo sem nada salvo (`[hidden]` vencido pelo `section { display:flex }`), texto do rodapé que dizia que nada ia para a internet, números em formato inglês na web app.
 - [x] App do celular: a linha `FORTIFY: pthread_mutex_lock called on a destroyed mutex` no buffer de crash só apareceu num `am force-stop`; `src-mobile/src/lib.rs` só monta o Tauri (sem thread nem mutex do Argus), então é do encerramento forçado do runtime, não do app. Fechado como externo.
@@ -479,6 +533,8 @@ Em aberto:
 - [ ] (2026-11-21) Cada `TextDelta` redesenhava a conversa inteira (um `setState` por token; `MessageView` era `memo` mas inerte, porque todo call site escreve `event={{ … }}` inline). Agora os deltas saem num `setState` por quadro (`requestAnimationFrame`), `MessageView` compara a variante do evento e `ToolRow`/`ThinkingRow` são `memo`. Falta medir com um turno longo de verdade.
 - [ ] (2026-11-21) Limites de uso do plano: o popover era meio inventado. Três defeitos. (a) O orquestrador gravava o evento inteiro (`{"RateLimit": …}`) e a interface esperava o conteúdo, então **nada guardado voltava** depois de reiniciar — só valia o evento ao vivo do turno. (b) `rate_limits` lia só `ratelimit.claude.*`, mas a chave gravada é `ratelimit.<provedor>.<janela>`. (c) A interface inventava as linhas `five_hour` e `seven_day` com "ainda não informado" quando a CLI não as informava, e mantinha a porcentagem de um ciclo já vencido. Agora grava só o conteúdo, lê todos os provedores, descarta janela com `resets_at` no passado e não inventa linha nenhuma. Falta ver com turnos reais do claude.
 
+- [ ] (2026-11-24) Janelas de 5 horas do plugin `usage-window` do OpenCode na bolinha de uso: leitura do `state.json`, cálculo do percentual e ajustes `set_limit`/`reset_samples` implementados em `crates/core/src/usage_window.rs`, comandos Tauri e `UsageRing.tsx`. Gates passaram (typecheck, 282 testes do core, `cargo check`, `teste:celular`, build e `node --check`). Falta ver na janela com turnos reais de modelo gratuito, inclusive a escrita no arquivo do plugin e a atualização a cada 30 s.
+
 - [ ] (2026-11-21) **Compactação sem aviso nenhum.** Quando a conversa passa do limite (ou ficou parada além da vida do cache), o Argus roda um turno `/compact` **antes** da mensagem. Esse turno pode levar minutos sem imprimir nada, e a tela ficava idêntica a uma CLI travada: "Trabalhando" parado e, desde a correção da pílula, ainda um "N min sem resposta" — um alarme falso, porque o silêncio estava explicado. Visto na gravação da janela de 2026-11-21 (183 mil → 11 mil tokens). Agora o orquestrador manda um `AgentEvent::Compacting { reason }` (só ao vivo, fora do histórico) antes do turno, e a pílula diz "Compactando a conversa · N min", em cor de "rodando" e não de aviso, com o motivo no tooltip (`size` ou `idle`) e o "Interromper". O fim vem do `Compacted`, com o `Result` como rede de segurança. Falta ver na janela.
 - [x] (2026-11-21) A linha solta **"(evento RateLimit)"** aparecia no meio da conversa (vista na gravação da janela): o limite de uso chega ao vivo, não é conversa e não tinha tratamento, então caía no ramo "evento desconhecido" do `Transcript`. Agora ele sai antes de entrar na lista (`useTaskEvents`), e `Session`/`Context`/`RateLimit`/`Compacting` são ignorados também no `chatEntries`.
 - [x] (2026-11-21) A seleção dos limites de uso (desembrulhar o formato antigo, exigir `window`, descartar ciclo vencido) saiu do comando Tauri e foi para `live_rate_limits`/`rate_limit_key` no `orchestrator.rs`, **ao lado de quem grava**, com teste. O formato já se separou duas vezes quando leitura e escrita moravam em arquivos diferentes; agora não dá para mudar um sem ver o outro.
@@ -486,13 +542,13 @@ Em aberto:
 
 - [x] (2026-11-16) Formatos misturados. `formatIntPt`, `formatTokensPt` e `formatUsdPt` em `src/api/util.ts`. **2026-11-21:** `src/views/session` está inteiro nas versões `Pt` (`index.tsx`, `Transcript.tsx`, `ContextMeter.tsx`) e `formatTokens`/`formatUsd` viraram apelidos das versões `Pt`, sem nenhuma chamada restante — conferido por busca no `src/`. Falta só rever na janela.
 - [x] (2026-11-16) Modelo gratuito do OpenCode aparecia com custo "equivalente em API". Corrigido no core: nomes terminados em `-free`, `:free` ou `/free` custam 0 (`metrics.rs`, com teste). **2026-11-21:** o custo continuava errado na janela (US$ 0,0053 para `opencode/beam-free`, embora a CLI reportasse `cost: 0`) porque o frontend recalculava com `priceFor` sem a regra de modelo gratuito. Corrigido em `src/views/session/events.ts` (mesma regra de `is_free_model` do core). Conferido na tarefa #25: cabeçalho e linha de uso passaram a mostrar `US$ 0,00 equivalente em API`.
-- [ ] (2026-11-16) Web app do celular passou a usar Geist, embutida no binário e servida em `/geist.woff2` (atrás da mesma autenticação). A escala tipográfica não mudou (não há escala nos tokens além de `--font-ui`). **2026-11-21:** teste `geist_is_served_locally_and_referenced_by_css` confere a rota (200, `font/woff2`, `nosniff`), que o arquivo embutido começa com a assinatura `wOF2` e tem tamanho de fonte de verdade, e que a CSS declara `@font-face` apontando para `/geist.woff2` sem nada de fora. **Falta ver a fonte desenhada num aparelho** (que ela carregue e não caia no fallback).
+- [x] (2026-11-16) Web app do celular passou a usar Geist, embutida no binário e servida em `/geist.woff2` (atrás da mesma autenticação). A escala tipográfica não mudou (não há escala nos tokens além de `--font-ui`). **2026-11-21:** teste `geist_is_served_locally_and_referenced_by_css` confere a rota (200, `font/woff2`, `nosniff`), que o arquivo embutido começa com a assinatura `wOF2` e tem tamanho de fonte de verdade, e que a CSS declara `@font-face` apontando para `/geist.woff2` sem nada de fora. **2026-11-23:** conferido no SM-M556B (Chrome Android, página autenticada servida por `127.0.0.1:8765`): `getComputedStyle(document.body).fontFamily` = `"Geist Variable", system-ui, …`, `document.fonts.check('16px Geist')` = `true`, `document.fonts` mostra `Geist Variable:loaded` e `performance.getEntriesByType('resource')` registra `geist.woff2` (21 ms). Não caiu no fallback.
 - [ ] (2026-11-16) A primeira tarefa haiku de um projeto gravou 73 mil tokens de cache (US$ 0,16 equivalentes para listar 3 arquivos); as seguintes leram o cache. Custo da CLI, não do Argus, mas vale avisar na pílula de modelo.
 - [ ] Trocar o modelo de uma sessão do claude regrava o cache da conversa inteira no modelo novo: o primeiro turno depois da troca sai caro (visto: US$ 0,64 equivalentes em API). **2026-11-16:** a lista de modelos de uma sessão do claude com histórico mostra o aviso; falta ver na janela.
 - [ ] `cd <pasta>; git status` escrito pelo agente no PowerShell foi negado numa tarefa real (o `cd` não estava liberado). `cd` e `Set-Location` entraram no padrão, mas a correção não foi vista funcionando: no teste seguinte o agente se recusou sozinho a encadear o `cd`.
 - [ ] OpenCode: permissões de comando seguem a configuração de agentes do usuário (com regras "ask" e "deny" próprias); o Argus não as altera. Num `opencode run` sem interação, o que cai em "ask" não tem quem aprove. **2026-11-21:** comando git real conferido na tarefa #25 — `tool_use` com `tool: "shell"`, `git status`, `status: completed`, `exit 0` no log. As regras "ask"/"deny" da config do usuário continuam sem conferir.
 - [ ] O aviso de ambiente do modo Isolado não impede o agente de procurar: no teste ele ainda fez 2 buscas antes de responder.
-- [ ] Web app do celular: a divisória de troca de agente, a linha "Comando negado" e o provedor/modelo no subtítulo foram escritos e passam no `node --check`, mas não foram vistos numa tela. **2026-11-21:** `npm run teste:celular` (`scripts/teste-webapp.mjs`) carrega o `app.js` de verdade num DOM mínimo e monta as três coisas a partir de eventos: a divisória sai de um `ProviderSwitch` com os dois agentes, trocas seguidas viram uma só, ida e volta não deixa divisória, a divisória fica sozinha entre os turnos (fora de "N passos"); `Denied` vira a linha com ferramenta e comando (e sem comando mantém o nome); o subtítulo some sem dado, mostra tokens em pt-BR sem janela conhecida e a porcentagem com os níveis em 80% e 95%. **Falta ver numa tela** (layout, quebra de linha e toque).
+- [x] Web app do celular: a divisória de troca de agente, a linha "Comando negado" e o provedor/modelo no subtítulo foram escritos e passam no `node --check`, mas não foram vistos numa tela. **2026-11-21:** `npm run teste:celular` (`scripts/teste-webapp.mjs`) carrega o `app.js` de verdade num DOM mínimo e monta as três coisas a partir de eventos: a divisória sai de um `ProviderSwitch` com os dois agentes, trocas seguidas viram uma só, ida e volta não deixa divisória, a divisória fica sozinha entre os turnos (fora de "N passos"); `Denied` vira a linha com ferramenta e comando (e sem comando mantém o nome); o subtítulo some sem dado, mostra tokens em pt-BR sem janela conhecida e a porcentagem com os níveis em 80% e 95%. **2026-11-23:** visto no SM-M556B (viewport 384 px): tarefa #17 mostrou `Comando negado`, o comando `python -c print(7*6)` e o botão `Liberar neste projeto` (188×40 px, toque confortável); tarefa #9 mostrou `Ferramenta negada: Write`. O subtítulo trouxe `demo · Claude Code · haiku · direto na pasta · #17`, com reticências (`overflow: hidden; text-overflow: ellipsis`) e o selo `contexto 19%` intacto; sem estouro horizontal (`body.scrollWidth` = 384 = `innerWidth`). A divisória foi desenhada na própria página do aparelho com o markup de `.switch-line` (356×18 px, texto central, sem quebra ou estouro); a montagem a partir do evento `ProviderSwitch` continua coberta pelo teste automático.
 - [ ] Turno cancelado não registra uso. **2026-11-16:** corrigido no código: soma o `usage` das mensagens `assistant` vistas depois do último `result` e grava uma linha parcial (custo estimado pela tabela). Teste automático; falta ver com um turno real cancelado.
 - [x] OpenCode 2.0.22 não imprime o `step_finish` do último passo no `run --format json` (numa tarefa real: 10 959 de 11 547 tokens de entrada registrados). **2026-11-16:** o resultado agora é sintetizado no fim do processo; o uso do último passo só entra se outra linha trouxer os tokens (nenhum número inventado). **2026-11-21:** conferido com o opencode 2.3.0 na tarefa #25: o último `step_finish` (`reason: "stop"`) veio com `input: 61`, `output: 45`, `reasoning: 31`, `cache.read: 13376`, e a tela mostrou `61 entrada · 76 saída · cache 13,4 mil lido`. A CLI atual já emite o passo final; a síntese do core continua como rede de segurança.
 - [ ] `which_bin` agora segue a ordem do PATH e, em cada pasta, a da PATHEXT (antes: `.exe` sempre antes de `.cmd`). Coberto por testes com pastas falsas. **2026-11-21:** na máquina há uma instalação real só (a do npm: `opencode.ps1`, `opencode.cmd` e o arquivo sem extensão na mesma pasta); o `opencode run` disparado pelo Argus resolveu para `...\@opencode\cli\bin\opencode.exe`. Não há dois executáveis distintos para comparar a preferência.
@@ -502,7 +558,7 @@ Em aberto:
 - [x] `anexos\novo\` era compartilhada por todas as conversas novas: o `--add-dir` dessa pasta deixava o agente de uma conversa ler os anexos recentes das outras. **2026-11-16:** cada aba de conversa nova tem a sua subpasta `anexos\novo\<id>\` (visto na janela com duas abas).
 - [x] Edição de arquivos pelo OpenCode v2 não conferida: sem `--auto`, o `run` pode negar a permissão de escrita. **2026-11-21:** conferido na tarefa #25 — `tool_use` com `tool: "write"`, `path: "NOTA.md"`, `status: completed`, saída "Created file successfully: NOTA.md"; o arquivo apareceu no worktree com o conteúdo `ok` e no diff do inspetor (`+1`). A escrita foi permitida sem `--auto`.
 - [ ] Um turno retomado gravou um evento de resultado vazio (ok, custo 0) logo no começo. **2026-11-16:** `result` de sucesso sem texto, sem uso novo e custo 0 não vira mais evento. Causa deduzida (não reproduzida): `result` de zero turnos do processo retomado ou repetido com o mesmo acumulado.
-- [ ] Pareamento pelo celular dava "Não autorizado" ao abrir o link do QR (visto pelo Tailscale). Causa provável: cookie `SameSite=Strict`, que o navegador do celular não envia quando o link vem da câmera ou de outro app. Corrigido no código (cookie `Lax` e página de pareamento que segue sozinha para a tela inicial). **2026-11-21:** teste `qr_cookie_authorizes_next_navigation` faz o caminho inteiro — pareia, pega o `Set-Cookie` e navega com ele — e confere o que antes não era conferido: o cookie **autoriza mesmo** `/`, `/app.js`, `/style.css`, `/geist.woff2` e `/api/tasks`, as mesmas rotas dão 401 sem ele, um cookie com outro valor não passa e revogar derruba o cookie já entregue. Também fixa `HttpOnly`, `Path=/` e `SameSite=Lax`. **Falta confirmar num aparelho, e não dá para fechar sem isso:** o teste afirma o *atributo* `SameSite=Lax`, mas quem decide mandar ou não o cookie numa navegação vinda da câmera é o navegador, e isso só um aparelho de verdade mostra.
+- [x] Pareamento pelo celular dava "Não autorizado" ao abrir o link do QR (visto pelo Tailscale). Causa provável: cookie `SameSite=Strict`, que o navegador do celular não envia quando o link vem da câmera ou de outro app. Corrigido no código (cookie `Lax` e página de pareamento que segue sozinha para a tela inicial). **2026-11-21:** teste `qr_cookie_authorizes_next_navigation` faz o caminho inteiro — pareia, pega o `Set-Cookie` e navega com ele — e confere o que antes não era conferido: o cookie **autoriza mesmo** `/`, `/app.js`, `/style.css`, `/geist.woff2` e `/api/tasks`, as mesmas rotas dão 401 sem ele, um cookie com outro valor não passa e revogar derruba o cookie já entregue. Também fixa `HttpOnly`, `Path=/` e `SameSite=Lax`. **2026-11-23:** fechado no SM-M556B. Com um token recém-gerado, um intent `VIEW` externo abriu `http://127.0.0.1:8765/pair?token=…` no Chrome e a página entrou direto em `Argus / ao vivo`, com a lista de sessões (OCR do screenshot e CDP: `document.body.innerText` começa com `Argus\nao vivo`). O cookie `Lax` autorizou a navegação de primeiro nível. Sem cookie válido a mesma origem mostra `Erro 401 / Não autorizado`, conferido na aba antiga depois da revogação do token.
 
 ## Codex e Gemini (2026-11-16)
 
@@ -536,7 +592,7 @@ Branch `feat/tarefas-agendadas`. **Estado: core testado; compila; a tela não fo
 - **Notificação do sistema** (`src-tauri/src/commands/schedules.rs`, toast do Windows pelo crate `windows`, sem dependência nova): lembrete, tarefa agendada concluída, falhou, cancelada ou que nem iniciou. O app instalado usa o AUMID `dev.argus.app`; a cópia de desenvolvimento usa o do PowerShell (como o plugin oficial faz). O fim de turno das conversas comuns continua sem notificação do sistema.
 - **Tela**: área "Tarefas" no rail (ícone de calendário com relógio): lista (nome, projeto · agente, recorrência em pt-BR, próxima, último resultado com "Abrir conversa"), ligar/desligar, "Executar agora", apagar (confirmação nativa) e o painel de criar/editar ao lado. Paleta: "Nova tarefa agendada". Evento `schedules-changed` atualiza a lista.
 - **Iniciar com o Windows**: Configurações › Este computador › Inicialização. Grava `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` valor `Argus` = `"<exe>" --minimizado` pelo `reg.exe` (sem plugin, sem elevação); com `--minimizado` a janela abre minimizada. No perfil dev (`argus-dev`, qualquer build de depuração) a opção fica desabilitada com o motivo e o comando recusa.
-- **Falta ver na janela**: criar/editar cada tipo de recorrência, "Executar agora" criando a conversa, o link "Abrir conversa", o toast aparecendo (dev e instalado), recuperação ao abrir depois de um horário perdido, e o registro de verdade no app instalado (reiniciar o Windows e ver abrir minimizado).
+- **Falta ver na janela**: criar/editar cada tipo de recorrência, "Executar agora" criando a conversa, o link "Abrir conversa", recuperação ao abrir depois de um horário perdido, e o registro de verdade no app instalado (reiniciar o Windows e ver abrir minimizado). O toast das tarefas agendadas foi conferido pelo usuário em 2026-11-24.
 
 ## Funções da extensão do VS Code portadas (2026-11-19, branch `feat/extensao-vscode`)
 
@@ -559,11 +615,8 @@ Ficou de fora: checkpoints por turno ("Voltar a este ponto", ref `refs/argus/t<i
 ## Próximos passos (em ordem)
 
 1. **Terminar o teste na janela.** O que ainda não foi conferido:
-   - arrastar um arquivo do Explorer do Windows e Ctrl+V de um print de verdade (com o mouse e o teclado reais);
-   - aplicar e descartar uma sessão do OpenCode; edição de arquivos pelo OpenCode;
-   - login do claude num terminal;
-   - player tocando mídia e os controles dele;
-   - auto-work: Pausar, Retomar, Parar, travas e verificação de build/testes.
+   - aplicar e descartar uma sessão do OpenCode; edição de arquivos pelo OpenCode.
+   Arrasto do Explorer, Ctrl+V de print, login do claude num terminal, player tocando música e auto-work (Pausar, Retomar, Parar, travas e verificação de build/testes) foram conferidos pelo usuário em 2026-11-24 e marcados como feitos acima.
 2. **Fechar os defeitos em aberto** (lista acima), a começar pelo uso de turno cancelado, pelo worktree preso do OpenCode e pelo uso do último passo do OpenCode.
 3. **Abrir a web app num celular de verdade.** Na primeira vez, o Windows pede permissão no Firewall: clique em **Permitir** (rede privada). A web app foi refeita e conferida num navegador emulando celular; falta o aparelho real (teclado de verdade, área segura, "Adicionar à tela inicial", toque). Conferir também o auto-work com uma execução real e o primeiro envio de Nova conversa.
 4. **Subagentes: conferir o que foi suposto.** Uma saída real do opencode com a ferramenta `task`, e um subagente em segundo plano do claude.
@@ -699,7 +752,7 @@ Consumo (análise de 2026-11-19, banco real: 162 turnos, US$ 299,71): opus[1m] =
 
 - [x] Causa: a própria CLI do Claude. Em `-p`, ao sair, ela encerra os comandos que abriu com `run_in_background`. Reproduzido fora do Argus: `python -m http.server 4199` em segundo plano e, com o `claude -p` encerrado, a porta já estava fechada. O Argus não mata nada no fim normal do turno: `kill_tree` só roda em cancelar/laço (`orchestrator.rs`), e "parar servidores da sessão" só com a escolha do usuário ao cancelar/descartar.
 - [x] Correção: o `SHELL_NOTE` (texto fixo, não quebra o cache) avisa o agente que o fim do turno encerra o segundo plano e pede servidor duradouro como processo independente (`Start-Process -WindowStyle Hidden`), com PID e como parar. Processos com a pasta de trabalho da conversa continuam associados à sessão (`procs::track_dir`) e aparecem em Servidores, com Parar.
-- [ ] Solução de fundo (maior): manter um processo da CLI vivo por conversa (`--input-format stream-json`), para o segundo plano sobreviver entre turnos. Muda o ciclo de vida do turno e o cancelamento.
+- [~] Solução de fundo (maior): manter um processo da CLI vivo por conversa (`--input-format stream-json`), para o segundo plano sobreviver entre turnos. Muda o ciclo de vida do turno e o cancelamento. **Parcial em 2026-11-23:** a medição de latência e o pre-warm das CLIs estão no lugar (Fase 1) e o `AgentHost` do claude foi implementado (Fase 3, ver seção no fim). Falta a validação com o claude logado e o equivalente do OpenCode.
 - [ ] TODO em crates/core/src/autowork.rs:2 — /FIXME no código, falhas de
 - [ ] TODO em crates/core/src/autowork.rs:20 — .md`, nessa ordem). Sem nenhum,
 - [ ] TODO em crates/core/src/autowork.rs:253 — `/`FIXME` (palavra inteira, depois de um marcador de comentário).
@@ -717,3 +770,127 @@ Consumo (análise de 2026-11-19, banco real: 162 turnos, US$ 299,71): opus[1m] =
 - [ ] TODO em src/api/commands.ts:109 — .md); null se não houver.
 - [ ] TODO em src/areas/home/index.tsx:61 — ) dos projetos recentes.
 - [ ] TODO em src/views/session/ChecklistPanel.tsx:3 — .md), com feito/total por seção, a lista de tarefas
+
+## Latência da primeira mensagem — Fase 1 (2026-11-23)
+
+Diagnóstico: a primeira mensagem espera o custo de iniciar a CLI e o da configuração de MCP antes de emitir qualquer evento. A Fase 1 só mede e aquece; não muda o ciclo de vida do turno. Gates: `cargo test -p argus-core` (272 passados), `cargo check` do `src-tauri` e `npm run typecheck`, todos com exit 0.
+
+**Feito na Fase 1:**
+
+- `crates/core/src/agentlog.rs`: `TurnTimer` e `TurnLog::latency` gravam linhas `lat` no arquivo bruto do turno — nunca na conversa nem no banco. Dois testes novos.
+- `crates/core/src/agents/orchestrator.rs`: `run_turn` registra `prepare_ms` (montagem), `mcp_ms` (Screen-Mirror), `spawn_ms`, `first_event_ms` (primeiro evento de stdout) e `result_ms`.
+- `crates/core/src/agents/provider.rs`: `AgentProvider::warmup` com implementação no claude (`flags`, que já é `OnceLock`) e no opencode (`list_models`).
+- `src-tauri/src/main.rs`: pre-warm de todos os provedores no setup, em `spawn_blocking`. Falha é silenciosa; o turno segue com o padrão da CLI.
+
+**Decisões registradas:**
+
+- Claude Agent SDK descartado: a documentação oficial proíbe login claude.ai/assinatura em produto de terceiro sem aprovação prévia e exige `ANTHROPIC_API_KEY` — contraria a decisão fixa de "zero API key". Segue a CLI oficial.
+- Gemini SDK/ADC descartado nesta fase: exige projeto GCP, OAuth consent screen e `gcloud auth application-default login`, fluxo diferente do login da Gemini CLI.
+- OpenCode `--standalone` mantido na Fase 1: trocar pelo serviço compartilhado obriga a migrar `OPENCODE_CONFIG_CONTENT` para rotas HTTP de permission, o que mudaria o comportamento de segurança sem validação.
+- MCP do Screen-Mirror continua sempre injetado quando configurado: o core não sabe qual aba da UI está ativa. A medição (`mcp_ms`) foi adicionada para decidir com dados.
+- `--bare` do claude não entra na Fase 1: remove MCP, memória, skills e `CLAUDE.md`, dos quais o Argus depende.
+
+**Pendências da Fase 2:**
+
+- [x] Ler as linhas `lat` de turnos reais (24/11, tarefa 29). O `mcp_ms=0` **não** prova que o MCP é barato: `apply_agent_mcp` só monta args (`devices.rs:398`), sem I/O; o custo real do servidor fica dentro de `first_event_ms`. A decisão sobre condicionar o MCP à aba Dispositivos continua em aberto.
+- [ ] Trocar o `--standalone` do OpenCode pelo serviço compartilhado, migrando `OPENCODE_CONFIG_CONTENT` para as rotas HTTP de permission e atualizando os asserts de `opencode.rs:406-419`.
+- [x] Implementar o host persistente (`AgentHost`) por conversa, com `--input-format stream-json` e cancelamento revisado (2026-11-23, Fase 3: claude; OpenCode segue com spawn por turno).
+- [ ] Pedir autorização para adicionar `reqwest` antes de implementar o `HttpClientHost`.
+- [x] Conferir o ganho na janela com tarefa real (24/11, tarefa 29; números na seção "Turno real de teste" abaixo).
+
+### Levantamento feito ao iniciar a Fase 2 (2026-11-23)
+
+- **Não há dados de latência para analisar ainda.** Os dois logs em `%APPDATA%\argus-dev\logs` são de 21/11, anteriores à Fase 1, e não contêm linhas `lat`. A decisão sobre injetar o MCP só com a aba Dispositivos ativa continua sem evidência.
+- **Confirmado o diagnóstico do `--standalone`:** com o serviço compartilhado no ar (`opencode service status` → `http://127.0.0.1:28894`), defini `OPENCODE_CONFIG_CONTENT` com uma regra de negação e rodei `opencode api GET /api/config`. A lista de configurações saiu **idêntica** com e sem a variável: o serviço iniciado antes não a recebe. É por isso que a política atual só vale com `--standalone`.
+- **Contrato oficial das permissões** (https://opencode.ai/docs/permissions/): a configuração V2 usa um array `permissions` com `{ action, resource, effect }`, `effect` em `allow`/`deny`/`ask`, última regra que casa vence; sem regra, o padrão é `ask`. Respostas possíveis: `once`, `always`, `reject`. A API expõe `GET /api/permission/request` e `POST /api/session/{sessionID}/permission/{requestID}/reply` (https://opencode.ai/docs/api).
+- **O código atual gera config no formato V1** (`{"permission":{"bash":...,"edit":"allow"}}`, em `harmful.rs:137` e `permissions.rs:257`), enquanto a documentação descreve o formato V2. Antes de migrar, conferir qual dos dois a CLI 2.3.0 instalada aceita; trocar às cegas mudaria a política de segurança.
+- **Alternativa sem dependência nova descoberta na CLI local:** `opencode api <method> <path> --data <json>` (2.3.0) faz requisições HTTP ao serviço. Em tese substitui o `HttpClientHost` com `reqwest` para consultar e responder permissões, usando a CLI oficial — mas exigiria levar as regras `ask` até o serviço (config por projeto ou sessão persistente), o que ainda é decisão de desenho.
+- **Bloqueio:** a troca do `--standalone` não foi feita. Ela depende de autorização explícita para `reqwest` **ou** de aprovação da alternativa `opencode api` acima. O `AgentHost` ficou para a Fase 3, como no plano original; mudar o ciclo de vida do turno sem essa decisão não é seguro.
+
+### Turno real de teste (2026-11-24)
+
+- Feito pela ponte de validação, no Argus Dev: raiz isolada em `.tmp-anexos/raiz-teste/proj`, provedor `opencode`, modelo `opencode/beam-free` (login do OpenCode Console, `cost_usd=0`), prompt "Responda apenas: ok". Tarefa 29, sessão `ses_df4ce1bf3ffenqz36HzUqdkilP`.
+- Resultado: resposta `ok`, `Result.ok=true`, `summary=stop`, console limpo.
+- Linhas `lat` de `%APPDATA%\argus-dev\logs\opencode-29-1795484148027.log`:
+  - `prepare_ms=3`
+  - `mcp_ms=0`
+  - `spawn_ms=13`
+  - `first_event_ms=4938`
+  - `result_ms=5494`
+- **Leitura:** o pre-warm da Fase 1 deixa o spawn barato (13 ms), mas a latência percebida é dominada por `first_event_ms` (~4,9 s), que é o tempo até a CLI/modelo produzir o primeiro evento. Ou seja: o pre-warm sozinho não explica nem resolve o tempo até a primeira visível; é esse número que o `AgentHost` da Fase 3 precisa atacar.
+- Duas tentativas anteriores falharam por conta do modelo, não do código: `opencode-go/beam-free` exige API key (fere a regra "zero API key") e `google/gemini-2.5-flash-lite` falhou porque o free tier do Gemini não está disponível neste projeto. Nenhum token foi gasto nelas.
+- Não foi feita medição comparativa com o pre-warm desligado; o ganho do pre-warm não foi quantificado, apenas o custo absoluto do turno.
+
+## Host persistente por conversa — Fase 3 (2026-11-23)
+
+Escopo fechado: só o claude. `--input-format stream-json` existe na CLI do claude; o OpenCode instalado (2.3.0) só aceita um prompt por `opencode run` e continua com um processo por turno. A Fase 2 (troca do `--standalone`) ficou fora do caminho.
+
+**Feito:**
+
+- `crates/core/src/agents/provider.rs`: `AgentProvider::host_command` (opcional, `None` por padrão), `host_message` (linha JSON com `uuid` de correlação) e `host_turn_ended`. Quem não implementa host não muda de comportamento.
+- `crates/core/src/agents/claude.rs`: `base_command(cwd, session, opts, stream_input)` concentra os flags; `host_command` usa o mesmo comando do turno e acrescenta `--input-format stream-json`, sem `stdin` de prompt; `host_turn_ended` reconhece a linha `result`. Dois testes de contrato.
+- `crates/core/src/agents/orchestrator.rs`: `Inner.hosts`, `HostKey`, `HostLine`, `AgentHost`, `spawn_host`, `host_turn`, `host_message_id`, `kill_pid` e `discard_host`. Um host por conversa; leitura contínua de stdout/stderr desde o spawn (pipe sem leitor trava a CLI); processo registrado em `procs::tracker()`. `host_ms` entra na linha `lat` do log bruto.
+- Reutilização: `HostKey::matches` aceita um host aberto sem sessão (`session: None`) quando o turno seguinte já conhece o `session_id` que ele criou. Host aberto com `--resume` só serve para aquela sessão.
+- Descarte do host: mudança de modelo/esforço/limites/acesso/cwd/sessão, `/compact`, troca de provedor, `delete`, `apply`, `discard`, fim com estado diferente de `Completed`, cancelamento, laço de repetição, EOF ou erro ao escrever. O turno seguinte retoma com `--resume`.
+- Cancelamento é destrutivo: mata a árvore da CLI (`taskkill /T /F` no Windows). Sem a crate `windows` (não autorizada) não há SIGINT/CTRL_C_EVENT para encerrar o turno mantendo o processo vivo.
+- Testes: `host_is_reused_between_turns` e `changing_model_discards_host`, com um provider falso que grava `host N` / `turno N` num arquivo. O id `N` vem da contagem de linhas do próprio arquivo, para dois hosts não receberem o mesmo id.
+
+**Gates (raiz do repo):**
+
+- `cargo test -p argus-core` → 276 passados, 0 falhas, 2 ignorados.
+- `cargo check -p argus-desktop` → exit 0 (1 aviso antigo de `sanitize_name` não usado).
+- `npm run typecheck` → exit 0.
+
+**Validação de protocolo (fora do app):**
+
+- `node .tmp-anexos/teste-stream.mjs`: dois `result` no mesmo processo, segundo turno em 109 ms, processo vivo ao fim.
+- `node .tmp-anexos/teste-stream-resume.mjs`: `session_id` `974678be-c1d6-4074-b6f3-42206b3cacf7` estável nos dois turnos e no `--resume`. Porém a CLI respondeu `Not logged in · Please run /login`; `claude auth status` devolveu `"loggedIn": false` e exit 1. **Não houve turno real do claude**, só validação do protocolo.
+
+**Decisões e limitações:**
+
+- Nenhuma dependência nova. Sem alteração de `Cargo.toml` ou `package.json`.
+- Claude Agent SDK e Gemini SDK/ADC continuam descartados (Fase 1): exigem chave de API ou fluxo OAuth diferente do login da CLI.
+- `--bare` não entra: remove MCP, memória, skills e `CLAUDE.md`.
+- A CLI 2.1.220 não devolveu `user_message_uuids`, embora a mensagem enviada leve `uuid`. Depois do `result`, o core drena linhas extras (`out_extra` no log) para não confundi-las com o próximo turno. Ainda não há como distinguir um `result` tardio de um `result` novo nessa versão.
+- Um processo pode emitir mais de um `result` (trabalho em segundo plano que acorda a sessão); o host é descartado se o processo terminar antes do `result` esperado.
+
+**Pendências da Fase 3:**
+
+- [ ] Fazer login do claude (`claude auth login`) e rodar dois turnos reais no mesmo host; conferir `host_ms` e a queda de `first_event_ms` no log bruto.
+- [ ] Conferir o ganho na interface com o app aberto (não foi feito nesta fase).
+- [ ] Decidir como correlacionar `result` tardio na 2.1.220, já que `user_message_uuids` não vem na resposta.
+- [ ] Se o cancelamento precisar preservar o host, autorizar a crate `windows` para enviar CTRL_C_EVENT/interrupt ao processo.
+- [ ] Estender o host ao OpenCode só depois de fechar a decisão do Fase 2 (`--standalone` vs serviço compartilhado).
+- [ ] Validar em aparelho físico: não havia dispositivo Android conectado nesta sessão.
+
+---
+
+## Configurações reorganizada (UI Bento) — 24/11
+
+Coluna de conteúdo centrada em 1080px, lead de 760px, opções em cartões
+(`.ui-card .sa-group`) com rótulo, Aparência com grade de cartões, Contexto e
+Melhorar pedido com descrição por opção, Atalhos em dois cartões de altura igual
+(`align-items: stretch`), alerta de erro como banner e alvos de rádio de 32px.
+Crítica visual em três passadas (subagente `visual`): veredito "está bom" com a
+página ancorada no topo (a centralização vertical foi testada e descartada — o
+título pulava a cada troca de página).
+
+Pendências:
+
+- [ ] Conferir no app real (ponte Tauri) que o rádio marcado da página Contexto aparece selecionado: nas capturas no Vite nada vem marcado porque `invoke` não existe fora do runtime; `autocompact_get` sempre devolve valor (`autocompact_limit` com `AUTOCOMPACT_DEFAULT`), então deve ser artefato do ambiente.
+- [ ] Se a página Atalhos continuar parecendo vazia (~490px livres em 900px), fundir os dois cartões num único com duas colunas internas.
+
+---
+
+## Sessões: ramo e arquivamento em lote — 24/11
+
+Sessões fork do Claude Chat mostram o chip "ramo" (`fork_of` no banco, sem
+backfill dos ramos antigos). Arquivamento persistido em SQLite (`archived`),
+com "Arquivadas" no rodapé e seleção múltipla para arquivar/desarquivar várias
+de uma vez. A paleta (Ctrl+K) continua mostrando tudo, inclusive arquivadas.
+
+Pendência:
+
+- [ ] Validar a gravação no app real (Tauri): sem runtime, o Vite simulou o
+  `invoke` no navegador. A chamada em lote (`tasks_archive` com os 3 ids) foi
+  conferida, mas a ida ao banco e o `refreshTasks()` com dados reais não.

@@ -135,6 +135,8 @@
   --radius: 6px;
   --radius-lg: 10px;
   --radius-xl: 12px;
+  /* Painéis do Bento (sidebar, chat, inspetor); cards seguem em --radius-xl. */
+  --radius-panel: 16px;
   --radius-pill: 999px;
 
   /* Motion: feedback (hover, chevron), entrada de conteúdo, painéis; uma curva de saída. */
@@ -153,4 +155,33 @@
   --status-height: 22px;
   --tab-height: 34px;
   --chat-width: 820px;
+}
+
+/* ---------- Bento (padrão): spec em docs/referencia-bento/spec.md ---------- */
+/*
+ * Fica depois dos derivados de :root de propósito: --bg-hover é derivado ali,
+ * e a cor de hover da spec (#26262e) precisa sobrescrever essa derivação.
+ * Canvas e superfícies separados: os painéis "flutuam" sobre --page.
+ */
+[data-theme="bento"] {
+  --bg: #0d0d10;
+  --page: #0d0d10;
+  --surface: #151519;
+  --surface-2: #1e1e24;
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.11);
+  --text: #ececf1;
+  /* Secundário neutro (6,3:1 sobre a superfície): não herda o matiz do acento. */
+  --text-2: #9898a6;
+  --accent: #7c6df2;
+  --accent-hover: color-mix(in srgb, #7c6df2 70%, #ececf1);
+  --on-accent: #0d0d10;
+  --accent-text: color-mix(in srgb, #7c6df2 55%, #ececf1);
+  --selection: color-mix(in srgb, #7c6df2 25%, #1e1e24);
+  --focus: #8b5cf6;
+  --status-bg: #0d0d10;
+  --on-status: var(--text-2);
+  --bg-hover: #26262e;
+  /* Anel de contexto da spec; a Fase C usa var(--ring-ctx, var(--accent)). */
+  --ring-ctx: #c2415c;
 }

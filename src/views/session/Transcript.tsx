@@ -40,7 +40,7 @@ function Notices({ lines }: { lines: string[] }) {
 
 function UsageLine({ usage, pricing }: { usage: TokenUsage; pricing: Pricing | null }) {
   return (
-    <div className="cv-usage">
+    <div className="cv-usage" tabIndex={0}>
       {formatTokensPt(usage.input_tokens)} entrada · {formatTokensPt(usage.output_tokens)} saída · cache{" "}
       {formatTokensPt(usage.cache_read)} lido · {formatTokensPt(usage.cache_write)} gravado
       {usage.model && ` · ${usage.model}`}
@@ -363,7 +363,7 @@ export function Transcript(props: TranscriptProps) {
         );
       case "usage":
         return (
-          <TimelineItem key={key} dot={null} className="tl-plain">
+          <TimelineItem key={key} dot={null} className="tl-plain tl-usage">
             <UsageLine usage={entry.usage} pricing={pricing} />
           </TimelineItem>
         );

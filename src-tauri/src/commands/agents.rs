@@ -378,6 +378,12 @@ pub async fn task_fork(ctx: State<'_, AppCtx>, id: TaskId) -> Result<TaskId, Str
     ctx.orch.fork(id).map_err(err)
 }
 
+/// Arquiva/desarquiva várias sessões de uma vez (a lista filtra pelo flag).
+#[tauri::command]
+pub async fn tasks_archive(ctx: State<'_, AppCtx>, ids: Vec<TaskId>, archived: bool) -> Result<usize, String> {
+    ctx.orch.set_archived(&ids, archived).map_err(err)
+}
+
 /// Teto de custo por turno e modelo reserva da conversa.
 #[tauri::command]
 pub async fn task_limits(ctx: State<'_, AppCtx>, id: TaskId) -> Result<argus_core::agents::todos::Limits, String> {

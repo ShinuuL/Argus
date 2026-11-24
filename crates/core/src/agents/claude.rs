@@ -67,42 +67,11 @@ impl ClaudeProvider {
             CliFlags::from_help(&help)
         })
     }
-}
 
-impl AgentProvider for ClaudeProvider {
-    fn id(&self) -> &str {
-        "claude"
-    }
-    fn display_name(&self) -> &str {
-        "Claude Code"
-    }
-    fn detect(&self) -> Option<PathBuf> {
-        which_bin("claude")
-    }
-
-    fn login_status(&self) -> LoginStatus {
-        let Some(bin) = self.detect() else { return LoginStatus::NotInstalled };
-        if let Some((_, out)) = run_capture(&bin, &["auth", "status"]) {
-            if let Some(b) = parse_auth_status(&out) {
-                return if b { LoginStatus::LoggedIn } else { LoginStatus::LoggedOut };
-            }
-        }
-        // Fallback: verifica só a EXISTÊNCIA do arquivo, nunca lê o conteúdo.
-        let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"));
-        match home {
-            Some(ref h) if PathBuf::from(h).join(".claude").join(".credentials.json").exists() => {
-                LoginStatus::LoggedIn
-            }
-            _ => LoginStatus::Unknown,
-        }
-    }
-
-    fn login_command(&self) -> CommandSpec {
-        CommandSpec::new("claude").arg("auth").arg("login")
-    }
-
-    fn task_command(&self, prompt: &str, cwd: &Path, session: Option<&str>, opts: &TurnOptions) -> CommandSpec {
-        // `claude -p` sem argumento de prompt lê o prompt da entrada padrão.
+    /// Comando base do claude, usado tanto no turno comum quanto no host.
+    /// `stream_input` liga `--input-format stream-json`: nesse modo o prompt não
+    /// vai na linha de comando, o stdin fica aberto e cada mensagem vira um turno.
+    fn base_command(&self, cwd: &Path, session: Option<&str>, opts: &TurnOptions, stream_input: bool) -> CommandSpec {
         let mut c = CommandSpec::new("claude").arg("-p");
         if let Some(s) = session {
             c = c.arg("--resume").arg(s);
@@ -133,8 +102,6 @@ impl AgentProvider for ClaudeProvider {
         }
         // Em `-p` não há quem aprove permissões: sem isto toda edição de arquivo
         // é negada. `acceptEdits` libera só edições (Bash continua bloqueado).
-        // No modo de permissão "Auto", `permissions::apply` troca para `auto`.
-        // As pastas de anexos entram depois, com `--add-dir` (`attachments::apply_add_dirs`).
         // As seções do prompt de sistema que mudam a cada turno (git status, cwd,
         // memória) vão para a primeira mensagem. Sem isto, o git status muda quando
         // o agente edita um arquivo, o prompt de sistema muda junto e o cache da
@@ -154,6 +121,9 @@ impl AgentProvider for ClaudeProvider {
             // Sem `plan` na CLI, Planejar cai no padrão (`acceptEdits`).
             _ => c.arg("--permission-mode").arg("acceptEdits"),
         };
+        if stream_input {
+            c = c.arg("--input-format").arg("stream-json");
+        }
         c = c
             .arg("--output-format")
             .arg("stream-json")
@@ -162,9 +132,64 @@ impl AgentProvider for ClaudeProvider {
         if flags.partial_messages {
             c = c.arg("--include-partial-messages");
         }
-        c.cwd(cwd).stdin(prompt)
+        c.cwd(cwd)
+    }
+}
+
+impl AgentProvider for ClaudeProvider {
+    fn id(&self) -> &str {
+        "claude"
+    }
+    fn display_name(&self) -> &str {
+        "Claude Code"
+    }
+    fn detect(&self) -> Option<PathBuf> {
+        which_bin("claude")
     }
 
+    fn warmup(&self) {
+        // `flags` já é um `OnceLock`: a primeira chamada lê `claude --help` e
+        // as seguintes não custam nada. Sem o pre-warm, esse custo caía sempre
+        // no primeiro turno.
+        let _ = self.flags();
+    }
+
+    fn login_status(&self) -> LoginStatus {
+        let Some(bin) = self.detect() else { return LoginStatus::NotInstalled };
+        if let Some((_, out)) = run_capture(&bin, &["auth", "status"]) {
+            if let Some(b) = parse_auth_status(&out) {
+                return if b { LoginStatus::LoggedIn } else { LoginStatus::LoggedOut };
+            }
+        }
+        // Fallback: verifica só a EXISTÊNCIA do arquivo, nunca lê o conteúdo.
+        let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"));
+        match home {
+            Some(ref h) if PathBuf::from(h).join(".claude").join(".credentials.json").exists() => {
+                LoginStatus::LoggedIn
+            }
+            _ => LoginStatus::Unknown,
+        }
+    }
+
+    fn login_command(&self) -> CommandSpec {
+        CommandSpec::new("claude").arg("auth").arg("login")
+    }
+
+    fn task_command(&self, prompt: &str, cwd: &Path, session: Option<&str>, opts: &TurnOptions) -> CommandSpec {
+        // `claude -p` sem argumento de prompt lê o prompt da entrada padrão.
+        self.base_command(cwd, session, opts, false).stdin(prompt)
+    }
+
+    fn host_command(&self, cwd: &Path, session: Option<&str>, opts: &TurnOptions) -> Option<CommandSpec> {
+        // Mesmo comando do turno comum, com entrada em stream-json e sem prompt:
+        // o stdin fica aberto e cada turno entra como uma mensagem.
+        Some(self.base_command(cwd, session, opts, true))
+    }
+
+    fn host_turn_ended(&self, line: &str) -> bool {
+        let Ok(v) = serde_json::from_str::<Value>(line.trim()) else { return false };
+        v.get("type").and_then(Value::as_str) == Some("result")
+    }
     fn parse_line(&self, line: &str) -> Vec<AgentEvent> {
         self.parser.lock().unwrap_or_else(|e| e.into_inner()).parse(line)
     }
@@ -1137,6 +1162,32 @@ mod tests {
         assert!(!c.args.iter().any(|a| a == "--add-dir"));
         let bad = TurnOptions { model: Some("--dangerously-skip-permissions".into()), ..Default::default() };
         assert_eq!(ClaudeProvider::with_flags(CliFlags::ALL).task_command("oi", Path::new("."), None, &bad).args, [&["-p"][..], &tail].concat());
+    }
+
+    #[test]
+    fn host_command_keeps_the_same_flags_and_adds_stream_input() {
+        let p = ClaudeProvider::with_flags(CliFlags::ALL);
+        let c = p.host_command(Path::new("."), None, &TurnOptions::default()).unwrap();
+        assert!(c.stdin.is_none(), "no host o prompt vai por mensagem, não pelo stdin inteiro");
+        assert!(c.args.windows(2).any(|w| w == ["--input-format", "stream-json"]));
+        assert!(c.args.windows(2).any(|w| w == ["--output-format", "stream-json"]));
+        assert!(!c.args.iter().any(|a| a == "--resume"));
+        // O comum continua sem entrada em stream: um processo por turno.
+        assert!(!p.task_command("oi", Path::new("."), None, &TurnOptions::default()).args.iter().any(|a| a == "--input-format"));
+    }
+
+    #[test]
+    fn host_message_and_turn_end_are_recognized() {
+        let p = ClaudeProvider::with_flags(CliFlags::ALL);
+        let m: Value = serde_json::from_str(&p.host_message("faz isso", "msg-7")).unwrap();
+        assert_eq!(m["type"], "user");
+        assert_eq!(m["uuid"], "msg-7");
+        assert_eq!(m["message"]["role"], "user");
+        assert_eq!(m["message"]["content"], "faz isso");
+        assert_eq!(m["parent_tool_use_id"], Value::Null);
+        assert!(p.host_turn_ended(r#"{"type":"result","subtype":"success"}"#));
+        assert!(!p.host_turn_ended(r#"{"type":"system","subtype":"init"}"#));
+        assert!(!p.host_turn_ended("texto que não é json"));
     }
 
     #[test]

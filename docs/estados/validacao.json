@@ -1,7 +1,7 @@
 {
-  "gerado": "2026-11-22T02:49:53.028Z",
+  "gerado": "2026-11-23T21:08:24.504Z",
   "total": 27,
-  "falhas": 0,
+  "falhas": 1,
   "resultados": [
     {
       "id": "inicio-vazio",
@@ -9,7 +9,7 @@
       "area": "home",
       "ok": true,
       "problemas": [],
-      "ms": 1025
+      "ms": 1037
     },
     {
       "id": "conversas-vazio",
@@ -17,15 +17,17 @@
       "area": "chat",
       "ok": true,
       "problemas": [],
-      "ms": 1020
+      "ms": 1019
     },
     {
       "id": "dispositivos-vazio",
       "rotulo": "Dispositivos · sidecar parado",
       "area": "devices",
-      "ok": true,
-      "problemas": [],
-      "ms": 1022
+      "ok": false,
+      "problemas": [
+        "faltou na tela: Nenhum celular conectado por ADB"
+      ],
+      "ms": 1021
     },
     {
       "id": "git-vazio",
@@ -33,7 +35,7 @@
       "area": "git",
       "ok": true,
       "problemas": [],
-      "ms": 1026
+      "ms": 1029
     },
     {
       "id": "servidores-vazio",
@@ -49,7 +51,7 @@
       "area": "tasks",
       "ok": true,
       "problemas": [],
-      "ms": 1022
+      "ms": 1035
     },
     {
       "id": "metricas-vazio",
@@ -57,7 +59,7 @@
       "area": "metrics",
       "ok": true,
       "problemas": [],
-      "ms": 1019
+      "ms": 1033
     },
     {
       "id": "inicio-carregando",
@@ -65,7 +67,7 @@
       "area": "home",
       "ok": true,
       "problemas": [],
-      "ms": 1020
+      "ms": 1027
     },
     {
       "id": "servidores-carregando",
@@ -73,7 +75,7 @@
       "area": "servers",
       "ok": true,
       "problemas": [],
-      "ms": 1030
+      "ms": 1021
     },
     {
       "id": "metricas-carregando",
@@ -81,7 +83,7 @@
       "area": "metrics",
       "ok": true,
       "problemas": [],
-      "ms": 1024
+      "ms": 1025
     },
     {
       "id": "agendadas-carregando",
@@ -89,7 +91,7 @@
       "area": "tasks",
       "ok": true,
       "problemas": [],
-      "ms": 1024
+      "ms": 1026
     },
     {
       "id": "servidores-erro",
@@ -97,7 +99,7 @@
       "area": "servers",
       "ok": true,
       "problemas": [],
-      "ms": 1028
+      "ms": 1030
     },
     {
       "id": "metricas-erro",
@@ -105,7 +107,7 @@
       "area": "metrics",
       "ok": true,
       "problemas": [],
-      "ms": 1029
+      "ms": 1023
     },
     {
       "id": "agendadas-erro",
@@ -113,7 +115,7 @@
       "area": "tasks",
       "ok": true,
       "problemas": [],
-      "ms": 1026
+      "ms": 1016
     },
     {
       "id": "dispositivos-erro",
@@ -121,7 +123,7 @@
       "area": "devices",
       "ok": true,
       "problemas": [],
-      "ms": 1023
+      "ms": 1030
     },
     {
       "id": "inicio-cheio",
@@ -129,7 +131,7 @@
       "area": "home",
       "ok": true,
       "problemas": [],
-      "ms": 1028
+      "ms": 1021
     },
     {
       "id": "servidores-cheio",
@@ -137,7 +139,7 @@
       "area": "servers",
       "ok": true,
       "problemas": [],
-      "ms": 1023
+      "ms": 1022
     },
     {
       "id": "agendadas-cheio",
@@ -145,7 +147,7 @@
       "area": "tasks",
       "ok": true,
       "problemas": [],
-      "ms": 1025
+      "ms": 1023
     },
     {
       "id": "metricas-cheio",
@@ -153,7 +155,7 @@
       "area": "metrics",
       "ok": true,
       "problemas": [],
-      "ms": 1022
+      "ms": 1021
     },
     {
       "id": "conversas-cheio",
@@ -161,7 +163,7 @@
       "area": "chat",
       "ok": true,
       "problemas": [],
-      "ms": 1030
+      "ms": 1021
     },
     {
       "id": "conversas-ask-quebrado",
@@ -169,7 +171,7 @@
       "area": "chat",
       "ok": true,
       "problemas": [],
-      "ms": 1024
+      "ms": 1021
     },
     {
       "id": "dispositivos-cheio",
@@ -177,7 +179,7 @@
       "area": "devices",
       "ok": true,
       "problemas": [],
-      "ms": 1026
+      "ms": 1023
     },
     {
       "id": "servidores-estreito",
@@ -185,7 +187,7 @@
       "area": "servers",
       "ok": true,
       "problemas": [],
-      "ms": 1026
+      "ms": 1025
     },
     {
       "id": "inicio-estreito",
@@ -193,7 +195,7 @@
       "area": "home",
       "ok": true,
       "problemas": [],
-      "ms": 1024
+      "ms": 1030
     },
     {
       "id": "metricas-ciano",
@@ -201,7 +203,7 @@
       "area": "metrics",
       "ok": true,
       "problemas": [],
-      "ms": 1025
+      "ms": 1021
     },
     {
       "id": "metricas-ambar",
@@ -209,7 +211,7 @@
       "area": "metrics",
       "ok": true,
       "problemas": [],
-      "ms": 1028
+      "ms": 1030
     },
     {
       "id": "metricas-violeta",
@@ -217,7 +219,7 @@
       "area": "metrics",
       "ok": true,
       "problemas": [],
-      "ms": 1025
+      "ms": 1022
     }
   ]
 }

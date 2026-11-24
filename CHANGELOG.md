@@ -7,8 +7,25 @@ lugares, que precisam andar juntos: `package.json`, `src-tauri/tauri.conf.json`,
 `src-mobile/tauri.conf.json` e `src-mobile/Cargo.toml`. Cada release tem uma tag `vX.Y.Z` e o instalador
 `Argus_X.Y.Z_x64-setup.exe` anexado no GitHub.
 
-## Ainda não lançado
+## 0.1.4 (2026-11-24)
 
+Configurações em cartões e sessões mais fáceis de organizar. As duas colunas novas
+em `tasks` (`archived` e `fork_of`) entram com migração e valores padrão: o
+formato dos dados salvos continua o mesmo da série 0.1.x.
+
+- **Configurações reorganizada (UI Bento).** Coluna centrada em 1080 px, texto de
+  abertura mais curto e opções em cartões com rótulo e descrição. Aparência virou
+  grade de temas, Contexto e Melhorar pedido mostram o que cada escolha faz, e
+  Atalhos ficou em dois cartões de altura igual. Alvos de rádio de 32 px e banner
+  de erro com mais destaque. A centralização vertical foi testada e descartada:
+  o título pulava a cada troca de página.
+- **Sessões: ramo e arquivamento em lote.** Forks do Claude Chat ganham o chip
+  "ramo" na lista; sessões antigos não recebem marca retroativa. O rodapé da
+  lista tem "Selecionar" e "Arquivadas": dá para marcar várias sessões e arquivar
+  ou desarquivar todas de uma vez, além do item no menu de contexto. O estado
+  fica no SQLite e a paleta Ctrl+K continua mostrando tudo, inclusive arquivadas.
+
+- **Janelas de uso de 5 horas do OpenCode na bolinha do compositor.** O Argus lê o `state.json` do plugin `usage-window` e mostra cada `provider/modelo` ativo com tokens, requisições, limite estimado (manual ou mediana das amostras de rate limit), percentual e horário de reinício. Na própria linha dá para ajustar tokens e/ou requisições (`set_limit`) e apagar amostras e limite manual (`reset_samples`), com confirmação. A lista é relida ao abrir e a cada 30 segundos; janela vencida não aparece e sem calibração o percentual mostra "—". É a estimativa local do plugin, não a cota oficial do provider.
 - **Comparação e validação das telas.** `scripts/comparar-telas.mjs` compara as nove fotos com um
   baseline congelado em `docs/telas/base/`, calcula SSIM e grava imagens de diferença; o relatório
   fica em `docs/telas/comparacao.md`. `scripts/validar-galeria.mjs` percorre os 27 cenários e exige

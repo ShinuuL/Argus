@@ -1,13 +1,42 @@
 /* Configurações (tela 12). Cores só por tokens. */
-.sa-search { display: flex; align-items: center; gap: 6px; margin: 10px 10px 2px; padding: 3px 8px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--bg); }
+.sa-search { display: flex; align-items: center; gap: 6px; margin: 10px 10px 2px; padding: 0 12px; height: 30px; border: 1px solid var(--border-strong); border-radius: var(--radius-pill); background: var(--surface-2); }
 .sa-search input { flex: 1; min-width: 0; border: 0; background: none; color: var(--text); font: inherit; font-size: 12px; outline: none; padding: 0; }
 .sa-search:focus-within { border-color: var(--focus); }
 .sa-main { position: relative; }
+/* Página comum (fora de Permissões): a coluna de conteúdo fica centrada e com
+   medida de leitura larga o bastante para formulários e tabelas usarem a janela
+   em vez de ficarem presos à esquerda com um vazio à direita. */
+.sa-page > .sa-head, .sa-page > .sa-body { width: min(1080px, 100%); margin-inline: auto; }
+/* Coluna larga não quer dizer linha de texto infinita: lead e parágrafos
+   ficam na medida de leitura; tabelas, grades e cartões usam tudo. */
+.sa-page .sa-head-text { max-width: 760px; }
+.sa-body > p { max-width: 76ch; }
+.sa-init { display: flex; flex-direction: column; gap: 8px; max-width: 640px; }
 .sa-head { display: flex; gap: 16px; align-items: flex-end; padding: 18px 22px 10px; flex-wrap: wrap; }
 .sa-head-text { flex: 1; min-width: 220px; }
 .sa-h { margin: 0; font-size: 16px; font-weight: 600; color: var(--text); }
 .sa-lead { margin: 2px 0 0; }
-.sa-body { padding: 0 22px 16px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+.sa-body { padding: 0 22px 16px; display: flex; flex-direction: column; gap: 14px; flex: 1; }
+/* Erro da página: banner com traço de cor e fundo, não texto vermelho solto
+   no meio do conteúdo (o papel dele é ser lido, não sumir com o texto). */
+.sa-page .err[role="alert"] {
+  display: block; max-width: 760px; margin-top: 18px; padding: 10px 14px;
+  border: 1px solid var(--border); border-left: 3px solid var(--err);
+  border-radius: 8px; background: var(--surface-2);
+  color: var(--text); font-size: 12.5px;
+}
+/* Grupo de opções como cartão (mesmo ritmo das opções de Aparência): o grupo
+   ocupa a coluna em vez de flutuar solto e com um rótulo por cima. */
+.sa-group { display: flex; flex-direction: column; gap: 14px; padding: 16px 20px; }
+.sa-group-h { margin: 0; font-size: 13px; font-weight: 600; color: var(--text); }
+/* Bloco de parágrafos de apoio: peso menor que o lead, colados um no outro. */
+.sa-note {
+  display: flex; flex-direction: column; gap: 12px; max-width: 760px;
+  padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+.sa-note p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-2); }
+.sa-note b { color: var(--text); font-weight: 600; }
 .sa-narrow { max-width: 760px; }
 .sa-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
 .sa-perm td { vertical-align: middle; }
@@ -17,7 +46,7 @@
 .sa-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .sa-link { border: 0; background: none; padding: 0; color: var(--accent-text); font: inherit; font-size: 11.5px; cursor: pointer; }
 .sa-link:hover { text-decoration: underline; }
-.sa-card { margin: 2px 0 0; }
+.sa-card { margin: 2px 0 0; border-radius: var(--radius-xl); }
 .sa-modes { display: flex; gap: 10px; align-items: center; }
 .sa-grow { flex: 1; min-width: 0; }
 .sa-mode { border: 0; background: none; padding: 0; font: inherit; font-weight: 500; color: var(--text); cursor: pointer; }
@@ -29,12 +58,21 @@
 .sa-panel-h b { font-weight: 600; }
 .sa-panel-empty { padding: 14px; }
 .sa-soon { display: flex; gap: 8px; align-items: center; }
-.sa .set-themes { max-width: 760px; }
-.set-appear-rows { max-width: 760px; margin-top: 24px; border-top: 1px solid var(--border); }
-.set-appear-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+/* Aparência: as opções viram cartões em grade, preenchendo a coluna em vez de
+   uma fila estreita com vazio do lado. O controle vai embaixo, alinhado. */
+.set-appear-rows { margin-top: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px; }
+.set-appear-row { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+.set-appear-row > :last-child { margin-top: auto; }
 .set-appear-row b { font-size: 13px; color: var(--text); font-weight: 600; }
 .set-appear-row .small { margin: 2px 0 0; color: var(--text-2); }
-@container (max-width: 520px) { .set-appear-row { flex-direction: column; align-items: flex-start; } }
+.set-accent-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.set-accent-input {
+  width: 48px; height: 30px; padding: 2px; cursor: pointer;
+  border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-2);
+}
+.set-accent-input::-webkit-color-swatch-wrapper { padding: 0; }
+.set-accent-input::-webkit-color-swatch { border: 0; border-radius: 5px; }
+.set-accent-input::-moz-color-swatch { border: 0; border-radius: 5px; }
 @media (max-width: 900px) { .sa-panel { display: none; } }
 .sa-modes > .sa-grow { flex: 1 1 auto; white-space: nowrap; }
 .sa-modes > :not(.sa-grow) { flex: 0 0 300px; width: 300px; max-width: 50%; }
@@ -53,9 +91,24 @@
 .sa-field > pre { margin: 6px 0 0; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); overflow: auto; white-space: pre-wrap; }
 .sa-row { display: flex; gap: 10px; align-items: flex-start; }
 .ui-dim { opacity: .55; }
-.set-radio { display: flex; flex-direction: column; gap: 8px; }
-.set-radio-it { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
-.set-radio-it input { accent-color: var(--accent); margin: 0; }
+/* Opções em grade: preenchem o cartão (colunas curtas coladas umas às outras)
+   e voltam a uma coluna sozinha em janela estreita. */
+.set-radio { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 4px 24px; align-items: start; }
+.set-radio-it { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; cursor: pointer; padding: 6px 8px; }
+.set-radio-it input { accent-color: var(--accent); margin: 0; width: 16px; height: 16px; }
+/* Opção com texto longo (rótulo + dica): a dica embaixo e a coluna mais larga. */
+.set-radio.wide { grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 6px 24px; }
+.set-radio.wide .set-radio-it { align-items: flex-start; }
+.set-radio.wide .set-radio-it > span { padding-top: 1px; }
+.set-radio.wide .small { display: block; margin-top: 2px; }
+/* Atalhos: cada grupo na sua tabela, dentro do próprio cartão — dois blocos
+   explícitos em vez de uma régua larga com uma tabela partida no meio. */
+.set-shortcuts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 14px; align-items: stretch; }
+.set-shortcuts table { width: 100%; }
+.set-shortcuts .ui-t td { padding-block: 10px; }
+/* Alvo de clique confortável só onde a página é feita de controles. */
+.sa-page .ui-seg > button { min-height: 32px; padding: 6px 12px; font-size: 12.5px; }
+.sa-page .ui-btn.sm { padding: 4px 10px; font-size: 12px; }
 /* Subagentes: colunas fixas; descrição numa linha só, com reticências. */
 .sa-fixed { table-layout: fixed; width: 100%; }
 .sa-fixed td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -12,7 +12,8 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::sync::{broadcast, Notify, Semaphore};
+use tokio::process::{Child, ChildStdin};
+use tokio::sync::{broadcast, mpsc, Notify, Semaphore};
 
 pub type TaskId = u64;
 
@@ -121,6 +122,12 @@ pub struct Task {
     /// Modo de acesso da conversa (Planejar / normal / Bypass), persistido.
     #[serde(default)]
     pub access: crate::permissions::AccessMode,
+    /// Sessão arquivada: some da lista de sessões até o usuário pedir para ver as arquivadas.
+    #[serde(default)]
+    pub archived: bool,
+    /// Id da tarefa da qual esta é um ramo (`Orchestrator::fork`); None nas conversas originais.
+    #[serde(default)]
+    pub fork_of: Option<u64>,
     /// Sessão e modelo dos provedores que já atenderam a tarefa (por id).
     #[serde(skip)]
     pub others: HashMap<String, ProviderState>,
@@ -298,10 +305,59 @@ struct Inner {
     providers: HashMap<String, Arc<dyn AgentProvider>>,
     tasks: Mutex<HashMap<TaskId, Task>>,
     cancels: Mutex<HashMap<TaskId, Arc<Notify>>>,
+    /// Um processo da CLI vivo por conversa, quando o provedor aceita
+    /// (`host_command`). Fora isso o turno continua com spawn por turno.
+    hosts: Mutex<HashMap<TaskId, Arc<Mutex<AgentHost>>>>,
     sem: Arc<Semaphore>,
     tx: broadcast::Sender<OrchestratorEvent>,
     next_id: AtomicU64,
     db: Option<Arc<Db>>,
+}
+
+/// Configuração que fixa um host. Se qualquer campo mudar entre turnos, o
+/// processo é descartado e o próximo abre outro com as novas opções: cwd,
+/// sessão, modelo, esforço, limites e permissões são de inicialização da CLI.
+#[derive(Debug, Clone, PartialEq)]
+struct HostKey {
+    provider: String,
+    workdir: PathBuf,
+    session: Option<String>,
+    opts: TurnOptions,
+}
+
+impl HostKey {
+    /// O host que abriu a conversa (`session: None`) é válido para os turnos
+    /// seguintes dela, quando a tarefa já sabe o `session_id` que ele criou.
+    /// Um host que retomou uma sessão só serve para aquela sessão.
+    fn matches(&self, pedido: &HostKey) -> bool {
+        self.provider == pedido.provider
+            && self.workdir == pedido.workdir
+            && self.opts == pedido.opts
+            && match (&self.session, &pedido.session) {
+                (None, _) => true,
+                (Some(actual), Some(wanted)) => actual == wanted,
+                (Some(_), None) => false,
+            }
+    }
+}
+
+/// Uma linha da saída do host. `Eof` avisa que a CLI saiu: sem ele, um turno
+/// esperando `result` ficaria preso para sempre se o processo morresse.
+enum HostLine {
+    Line(String),
+    Eof,
+}
+
+/// Processo da CLI mantido vivo entre turnos de uma conversa.
+struct AgentHost {
+    child: Child,
+    /// `tokio::Mutex` para a escrita poder esperar sem prender o `MutexGuard`
+    /// numa future enviada entre threads.
+    stdin: Arc<tokio::sync::Mutex<ChildStdin>>,
+    /// O leitor de stdout roda sempre (pipe cheio trava a CLI). Um turno pega o
+    /// receiver e devolve ao terminar: a conversa só roda um turno por vez.
+    lines: Mutex<Option<mpsc::UnboundedReceiver<HostLine>>>,
+    key: HostKey,
 }
 
 /// Chave da preferência de um nível de git ("local" ou "remote") no banco.
@@ -371,6 +427,8 @@ impl Orchestrator {
                                 handoff: r.handoff,
                                 context: r.context.as_deref().and_then(|s| serde_json::from_str(s).ok()),
                                 access: r.access.as_deref().and_then(crate::permissions::AccessMode::parse).unwrap_or_default(),
+                                archived: r.archived,
+                                fork_of: r.fork_of.map(|v| v as u64),
                                 others: r
                                     .provider_state
                                     .as_deref()
@@ -392,6 +450,7 @@ impl Orchestrator {
                 providers: providers.into_iter().map(|p| (p.id().to_string(), p)).collect(),
                 tasks: Mutex::new(tasks),
                 cancels: Mutex::new(HashMap::new()),
+                hosts: Mutex::new(HashMap::new()),
                 sem: Arc::new(Semaphore::new(max_concurrent.max(1))),
                 tx,
                 next_id: AtomicU64::new(next),
@@ -583,6 +642,8 @@ impl Orchestrator {
             handoff: false,
             context: None,
             access: opts.access,
+            archived: false,
+            fork_of: None,
             others: HashMap::new(),
         };
         if let Some(db) = &self.inner.db {
@@ -666,6 +727,10 @@ impl Orchestrator {
             // inteiro. Só o claude tem `/compact` no `-p`.
             if let (Some(sid), false) = (session.as_deref(), t.handoff) {
                 if let (Some(why), "claude") = (this.needs_compact(id, idle), prov.id()) {
+                    // `/compact` é um turno à parte e troca a sessão da CLI: um
+                    // host vivo não pode receber isso. Descarta; o turno seguinte
+                    // abre outro com `--resume` da nova sessão.
+                    this.discard_host(id);
                     // A compactação é um turno inteiro e pode demorar minutos sem
                     // imprimir nada. Sem este aviso a tela fica igual a uma CLI
                     // travada: "Trabalhando" parado, e nada dizendo por quê.
@@ -764,6 +829,8 @@ impl Orchestrator {
             t.handoff = true;
             (from, t.clone())
         };
+        // O host foi aberto com as opções do provedor que sai.
+        self.discard_host(id);
         if let Some(db) = &self.inner.db {
             db.set_task_provider(
                 id as i64,
@@ -859,6 +926,9 @@ impl Orchestrator {
             prompt: prompt.clone(),
             state: TaskState::Completed,
             handoff: false,
+            // Ramo novo: marca de origem e nunca nasce arquivado (mesmo que o pai esteja).
+            archived: false,
+            fork_of: Some(id),
             ..t.clone()
         };
         if let Some(db) = &self.inner.db {
@@ -867,6 +937,7 @@ impl Orchestrator {
             db.set_task_access(new_id as i64, fork.access.as_str())?;
             db.set_task_model(new_id as i64, fork.model.as_deref())?;
             db.set_task_session(new_id as i64, &session)?;
+            db.set_task_fork_of(new_id as i64, Some(id as i64))?;
             if let Some(w) = &fork.workdir {
                 db.set_task_workdir(new_id as i64, &w.to_string_lossy())?;
             }
@@ -883,6 +954,23 @@ impl Orchestrator {
         self.inner.tasks.lock().unwrap().insert(new_id, fork);
         self.emit_state(new_id, TaskState::Completed);
         Ok(new_id)
+    }
+
+    /// Arquiva/desarquiva várias sessões de uma vez: a lista de sessões filtra
+    /// pelo flag, então o efeito é sumir/mostrar em lote. Devolve quantas mudaram.
+    pub fn set_archived(&self, ids: &[TaskId], archived: bool) -> Result<usize, OrchestratorError> {
+        let db_ids: Vec<i64> = ids.iter().map(|&i| i as i64).collect();
+        let mut changed = 0usize;
+        if let Some(db) = &self.inner.db {
+            changed = db.set_tasks_archived(&db_ids, archived)?;
+        }
+        let mut tasks = self.inner.tasks.lock().unwrap();
+        for &id in ids {
+            if let Some(t) = tasks.get_mut(&id) {
+                t.archived = archived;
+            }
+        }
+        Ok(changed)
     }
 
     /// Teto de custo e modelo reserva da conversa.
@@ -1015,6 +1103,10 @@ impl Orchestrator {
         }
         // Agente parado não segura arquivo: o mural só fala do que roda agora.
         crate::mural::global().clear_task(id as i64);
+        // Só uma conversa que terminou bem mantém a CLI viva para o próximo turno.
+        if !matches!(st, TaskState::Completed) {
+            self.discard_host(id);
+        }
         self.set_state(id, st);
     }
 
@@ -1158,6 +1250,254 @@ impl Orchestrator {
         self.record(id, task, turn, ev);
     }
 
+    /// Remove o host da conversa e mata a árvore da CLI. Serve também em contexts
+    /// síncronos (troca de provedor, exclusão): o kill roda numa task do runtime.
+    fn discard_host(&self, id: TaskId) {
+        let host = self.inner.hosts.lock().unwrap().remove(&id);
+        let Some(host) = host else { return };
+        let pid = host.lock().unwrap_or_else(|e| e.into_inner()).child.id();
+        if let Some(pid) = pid {
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn(async move { kill_pid(pid).await; });
+            }
+        }
+    }
+
+    /// Sobe o processo que fica vivo entre turnos. As leituras de stdout e
+    /// stderr começam já: pipe sem leitor trava a CLI.
+    fn spawn_host(
+        &self,
+        spec: &CommandSpec,
+        id: TaskId,
+        workdir: &Path,
+        key: HostKey,
+        log: &crate::agentlog::TurnLog,
+    ) -> Result<AgentHost, OrchestratorError> {
+        let mut cmd = build_command(spec, Some(workdir));
+        #[cfg(unix)]
+        cmd.process_group(0);
+        let mut child = cmd
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .stdin(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()?;
+        if let Some(pid) = child.id() {
+            crate::procs::tracker().track(pid, crate::procs::Owner::Session(id));
+        }
+        crate::procs::tracker().track_dir(crate::procs::Owner::Session(id), workdir);
+        let stdin = child.stdin.take().ok_or_else(|| std::io::Error::new(std::io::ErrorKind::BrokenPipe, "host sem stdin"))?;
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+        let (tx, rx) = mpsc::unbounded_channel();
+        let log_out = log.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stdout).lines();
+            while let Ok(Some(l)) = lines.next_line().await {
+                log_out.line("out", &l);
+                if tx.send(HostLine::Line(l)).is_err() {
+                    break;
+                }
+            }
+            let _ = tx.send(HostLine::Eof);
+        });
+        let this = self.clone();
+        let log_err = log.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(l)) = lines.next_line().await {
+                log_err.line("err", &l);
+                if crate::agentlog::is_cli_log(&l) {
+                    continue;
+                }
+                if let Some(db) = &this.inner.db {
+                    let _ = db.insert_event(id as i64, "Stderr", &json(&AgentEvent::Raw(l.clone())));
+                }
+                let _ = this.inner.tx.send(OrchestratorEvent::Stderr { task: id, line: l });
+            }
+        });
+        Ok(AgentHost {
+            child,
+            stdin: Arc::new(tokio::sync::Mutex::new(stdin)),
+            lines: Mutex::new(Some(rx)),
+            key,
+        })
+    }
+
+    /// Turno num host persistente (abre um se ainda não houver). Mantém o mesmo
+    /// contrato de `run_turn`: estado final e se algum modelo foi chamado.
+    async fn host_turn(
+        &self,
+        task: &Task,
+        prov: Arc<dyn AgentProvider>,
+        spec: CommandSpec,
+        prompt: &str,
+        session: Option<&str>,
+        workdir: &Path,
+        opts: &TurnOptions,
+        cancel: &Notify,
+        timer: &crate::agentlog::TurnTimer,
+        log: &crate::agentlog::TurnLog,
+        turn: i64,
+    ) -> Result<(TaskState, bool), OrchestratorError> {
+        let id = task.id;
+        let key = HostKey {
+            provider: task.provider.clone(),
+            workdir: workdir.to_path_buf(),
+            session: session.map(str::to_string),
+            opts: opts.clone(),
+        };
+        // Modelo, esforço, limites, acesso, cwd ou sessão diferentes: a CLI não
+        // muda isso em um processo vivo. Descarta e abre outro com as novas opções.
+        let stale_pid = {
+            let hosts = self.inner.hosts.lock().unwrap();
+            hosts.get(&id).and_then(|h| {
+                let guard = h.lock().unwrap_or_else(|e| e.into_inner());
+                (!guard.key.matches(&key)).then(|| guard.child.id()).flatten()
+            })
+        };
+        if let Some(pid) = stale_pid {
+            self.inner.hosts.lock().unwrap().remove(&id);
+            kill_pid(pid).await;
+        }
+        let host = {
+            let mut hosts = self.inner.hosts.lock().unwrap();
+            if let Some(h) = hosts.get(&id) {
+                h.clone()
+            } else {
+                let t = std::time::Instant::now();
+                let h = Arc::new(Mutex::new(self.spawn_host(&spec, id, workdir, key, log)?));
+                hosts.insert(id, h.clone());
+                log.latency("host", t.elapsed().as_millis());
+                h
+            }
+        };
+        let rx = {
+            let h = host.lock().unwrap_or_else(|e| e.into_inner());
+            let taken = h.lines.lock().unwrap_or_else(|e| e.into_inner()).take();
+            taken
+        };
+        let Some(mut rx) = rx else {
+            // Turno anterior abortou sem devolver o leitor: o host não é confiável.
+            log.line("meta", "host sem leitor de saida");
+            self.discard_host(id);
+            return Err(OrchestratorError::Io(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "host da CLI sem leitor de saída",
+            )));
+        };
+        let stdin = {
+            let h = host.lock().unwrap_or_else(|e| e.into_inner());
+            h.stdin.clone()
+        };
+        let line = prov.host_message(prompt, &host_message_id(id, turn));
+        {
+            let mut sin = stdin.lock().await;
+            if let Err(e) = sin.write_all(format!("{line}\n").as_bytes()).await {
+                self.discard_host(id);
+                return Err(e.into());
+            }
+            let _ = sin.flush().await;
+        }
+        let this = self.clone();
+        let t = task.clone();
+        let used_model = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let used = used_model.clone();
+        let turn_model = opts.model.clone();
+        let model_out = turn_model.clone();
+        let tracker = Arc::new(Mutex::new(prov.turn_tracker()));
+        let tracker_out = tracker.clone();
+        let looped = Arc::new(Notify::new());
+        let looped_out = looped.clone();
+        let prov_out = prov.clone();
+        let log_out = log.clone();
+        let timer_out = *timer;
+        let mut guard = super::loop_guard::RepeatGuard::new();
+        let mut saw_event = false;
+        let mut ended = false;
+        let mut cancelled = false;
+        let mut stopped = false;
+        let mut eof = false;
+
+        loop {
+            let msg = tokio::select! {
+                m = rx.recv() => m,
+                _ = cancel.notified() => { cancelled = true; break; }
+                _ = looped_out.notified() => { stopped = true; break; }
+            };
+            let Some(msg) = msg else { eof = true; break; };
+            let raw = match msg {
+                HostLine::Line(l) => l,
+                HostLine::Eof => { eof = true; break; }
+            };
+            if !saw_event {
+                saw_event = true;
+                log_out.latency("first_event", timer_out.elapsed_ms());
+            }
+            log_out.line("out", &raw);
+            let evs = prov_out.parse_line(&raw);
+            let evs = {
+                let mut tr = tracker_out.lock().unwrap_or_else(|e| e.into_inner());
+                tr.observe(&raw, &evs);
+                tr.transform(evs)
+            };
+            for ev in evs {
+                let stop = guard.observe(&ev);
+                this.record_turn_event(id, &t, turn, ev, model_out.as_deref(), &used);
+                if let Some(msg) = stop {
+                    this.record_turn_event(id, &t, turn, AgentEvent::Result { ok: false, summary: msg, cost: None }, model_out.as_deref(), &used);
+                    looped_out.notify_one();
+                }
+            }
+            if prov_out.host_turn_ended(&raw) {
+                ended = true;
+                break;
+            }
+        }
+        // A CLI pode acordar sozinha depois do result (trabalho em segundo plano)
+        // e imprimir outro. Drena o que já chegou para não confundir com o próximo
+        // turno. Limitação registrada no plano: sem uuid devolvido não há como
+        // distinguir um result tardio de um result novo nesta versão da CLI.
+        while let Ok(extra) = rx.try_recv() {
+            match extra {
+                HostLine::Line(l) => log_out.line("out_extra", &l),
+                HostLine::Eof => { eof = true; break; }
+            }
+        }
+        let keep = ended && !eof && !cancelled && !stopped;
+        if keep {
+            let h = host.lock().unwrap_or_else(|e| e.into_inner());
+            let mut lines = h.lines.lock().unwrap_or_else(|e| e.into_inner());
+            if lines.is_none() {
+                *lines = Some(rx);
+            }
+        } else {
+            // Cancelamento e loop preso não deixam o turno da CLI terminar: mata
+            // o host. O próximo turno retoma a sessão com `--resume`.
+            self.discard_host(id);
+        }
+        log.latency("result", timer.elapsed_ms());
+        let end = if cancelled || stopped {
+            TurnEnd::Cancelled
+        } else if ended {
+            TurnEnd::Exited { ok: true }
+        } else {
+            TurnEnd::Exited { ok: false }
+        };
+        let tail = tracker.lock().unwrap_or_else(|e| e.into_inner()).finish(end);
+        for ev in tail {
+            self.record_turn_event(id, task, turn, ev, turn_model.as_deref(), &used_model);
+        }
+        let st = if cancelled || stopped {
+            TaskState::Cancelled
+        } else if ended {
+            TaskState::Completed
+        } else {
+            TaskState::Failed("host da CLI encerrou antes do resultado".into())
+        };
+        Ok((st, used_model.load(Ordering::SeqCst)))
+    }
+
     /// Roda um turno. Devolve o estado final e se algum modelo foi usado (houve
     /// consumo): um comando de barra resolvido pela própria CLI devolve `false`.
     async fn run_turn(
@@ -1171,6 +1511,9 @@ impl Orchestrator {
         cancel: &Notify,
     ) -> Result<(TaskState, bool), OrchestratorError> {
         let id = task.id;
+        // Relógio do turno: os tempos vão só para o arquivo de log, nunca para
+        // a conversa. Mede a montagem, o spawn, o primeiro evento e o fim.
+        let timer = crate::agentlog::TurnTimer::new();
         // Identifica o turno nas linhas de consumo: uma tarefa roda um turno por vez.
         let turn = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1193,7 +1536,15 @@ impl Orchestrator {
             }
             None => prompt,
         };
-        let spec = prov.task_command(prompt, workdir, session, opts);
+        // Log bruto deste turno, sempre ligado. stdout (eventos) e stderr (logs da
+        // CLI) vão para o mesmo arquivo, fora da conversa: é o que permite
+        // investigar os defeitos do opencode sem repetir a execução.
+        let log = crate::agentlog::TurnLog::new(&task.provider, id, turn);
+        // Provedor com host mantém o processo vivo entre turnos; os demais seguem
+        // com um spawn por turno, exatamente como antes.
+        let host_spec = prov.host_command(workdir, session, opts);
+        let using_host = host_spec.is_some();
+        let spec = host_spec.unwrap_or_else(|| prov.task_command(prompt, workdir, session, opts));
         // Comandos de shell liberados: o padrão (git de leitura, inspeção), os níveis
         // de git do projeto neste modo e a lista "Comandos permitidos" do projeto.
         let spec = crate::permissions::apply_for(spec, &task.project, self.git_levels(&task.project, task.mode), self.permission_mode(&task.project), opts.access);
@@ -1211,22 +1562,30 @@ impl Orchestrator {
         }
         let spec = crate::attachments::apply_add_dirs(spec, &dirs);
         // Celulares Android: MCP do Screen-Mirror, se configurado e ligado.
+        // Cronometrado à parte: é a etapa que mais pode esperar um servidor
+        // externo (o `MCP_TIMEOUT` da CLI) e por isso merece linha própria.
+        let t_mcp = std::time::Instant::now();
         let spec = crate::devices::apply_agent_mcp(spec, workdir);
-        // Log bruto deste turno, sempre ligado. stdout (eventos) e stderr (logs da
-        // CLI) vão para o mesmo arquivo, fora da conversa: é o que permite
-        // investigar os defeitos do opencode sem repetir a execução.
-        let log = crate::agentlog::TurnLog::new(&task.provider, id, turn);
+        log.latency("mcp", t_mcp.elapsed().as_millis());
+        log.latency("prepare", timer.elapsed_ms());
         log.line("meta", &format!("provider={} task={} turn={} cwd={}", task.provider, id, turn, workdir.display()));
         log.line("cmd", &format!("{} {}", spec.program, spec.args.join(" ")));
+        if using_host {
+            return self
+                .host_turn(task, prov, spec, prompt, session, workdir, opts, cancel, &timer, &log, turn)
+                .await;
+        }
         let mut cmd = build_command(&spec, Some(workdir));
         #[cfg(unix)]
         cmd.process_group(0); // permite matar a árvore inteira no cancelamento
+        let t_spawn = std::time::Instant::now();
         let mut child = cmd
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .stdin(if spec.stdin.is_some() { Stdio::piped() } else { Stdio::null() })
             .kill_on_drop(true)
             .spawn()?;
+        log.latency("spawn", t_spawn.elapsed().as_millis());
         if let Some(pid) = child.id() {
             crate::procs::tracker().track(pid, crate::procs::Owner::Session(id));
         }
@@ -1259,10 +1618,17 @@ impl Orchestrator {
         let looped_out = looped.clone();
         let log_out = log.clone();
         let log_err = log.clone();
+        let log_first = log.clone();
+        let first_timer = timer;
         let out_task = tokio::spawn(async move {
             let mut guard = super::loop_guard::RepeatGuard::new();
             let mut lines = BufReader::new(stdout).lines();
+            let mut saw_event = false;
             while let Ok(Some(l)) = lines.next_line().await {
+                if !saw_event {
+                    saw_event = true;
+                    log_first.latency("first_event", first_timer.elapsed_ms());
+                }
                 log_out.line("out", &l);
                 let evs = prov.parse_line(&l);
                 let evs = {
@@ -1314,6 +1680,7 @@ impl Orchestrator {
             }
         };
         let (result, end) = result;
+        log.latency("result", timer.elapsed_ms());
         let tail = tracker.lock().unwrap_or_else(|e| e.into_inner()).finish(end);
         for ev in tail {
             self.record_turn_event(id, task, turn, ev, turn_model.as_deref(), &used_model);
@@ -1394,6 +1761,7 @@ impl Orchestrator {
 
     /// Commita no worktree, faz merge da branch no projeto e remove o worktree.
     pub async fn apply(&self, id: TaskId) -> Result<(), OrchestratorError> {
+        self.discard_host(id);
         let wt = self.worktree_of(id)?;
         let t = self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
         // Pasta já removida numa tentativa anterior: só faltam o merge e a branch.
@@ -1417,6 +1785,7 @@ impl Orchestrator {
 
     /// Remove o worktree e a branch sem aplicar.
     pub async fn discard(&self, id: TaskId) -> Result<(), OrchestratorError> {
+        self.discard_host(id);
         let wt = self.worktree_of(id)?;
         let t = self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
         remove_worktree(&t.project, &wt, &branch_name(id), id).await?;
@@ -1432,6 +1801,7 @@ impl Orchestrator {
     /// nas métricas (ver `Db::delete_task`). Emite `Removed`.
     pub async fn delete(&self, id: TaskId) -> Result<(), OrchestratorError> {
         let t = self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
+        self.discard_host(id);
         if t.state.is_active() {
             let _ = self.cancel(id);
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
@@ -1707,25 +2077,52 @@ fn json(ev: &AgentEvent) -> String {
     serde_json::to_string(ev).unwrap_or_default()
 }
 
+/// Id no formato uuid para correlacionar a mensagem enviada ao host. Não é
+/// segredo e não participa de autenticação: só distingue turnos no stream.
+fn host_message_id(id: TaskId, turn: i64) -> String {
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let n = SEQ.fetch_add(1, Ordering::SeqCst);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let a = (now as u64) ^ ((id as u64) << 32) ^ n;
+    let b = ((now >> 64) as u64) ^ (turn as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    format!(
+        "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+        a as u32,
+        (a >> 32) as u16,
+        (b >> 32) as u16,
+        b as u16,
+        b & 0xFFFF_FFFF_FFFF
+    )
+}
+
 /// Mata o processo e seus filhos (wrappers `.cmd`/shell deixam netos órfãos).
 async fn kill_tree(child: &mut tokio::process::Child) {
     if let Some(pid) = child.id() {
-        #[cfg(windows)]
-        let _ = build_command(&CommandSpec::new("taskkill"), None)
-            .args(["/T", "/F", "/PID", &pid.to_string()])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .await;
-        #[cfg(unix)]
-        let _ = tokio::process::Command::new("kill")
-            .args(["-KILL", "--", &format!("-{pid}")])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .await;
+        kill_pid(pid).await;
     }
     let _ = child.kill().await;
+}
+
+/// Mata uma árvore só pelo pid. Usado quando o `Child` já saiu do escopo, como
+/// no descarte de um host vivo entre turnos.
+async fn kill_pid(pid: u32) {
+    #[cfg(windows)]
+    let _ = build_command(&CommandSpec::new("taskkill"), None)
+        .args(["/T", "/F", "/PID", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await;
+    #[cfg(unix)]
+    let _ = tokio::process::Command::new("kill")
+        .args(["-KILL", "--", &format!("-{pid}")])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await;
 }
 
 /// Monta um tokio Command a partir do CommandSpec (resolve o executável real,
@@ -1804,6 +2201,76 @@ mod tests {
                 })];
             }
             if l.is_empty() { vec![] } else { vec![AgentEvent::Text(l.to_string())] }
+        }
+    }
+
+    /// Provider com host persistente, sem depender da CLI: um script que conta
+    /// cada mensagem num arquivo e responde com uma linha `result`. A linha
+    /// `host N` identifica o processo, para provar reutilização e descarte.
+    /// `N` sai do número de linhas já gravadas: hosts diferentes abrem em
+    /// momentos diferentes e veem contagens diferentes, sem depender de relógio.
+    struct HostFake(PathBuf, PathBuf);
+    impl HostFake {
+        fn new(dir: &Path) -> Self {
+            let count = dir.join("contagem.txt");
+            let script = dir.join(if cfg!(windows) { "host.cmd" } else { "host.sh" });
+            let c = count.to_string_lossy().replace('\\', "/");
+            let body = if cfg!(windows) {
+                format!(
+                    "@echo off\r\nfor /f %%n in ('find /c /v \"\" ^< \"{}\"') do set hid=%%n\r\necho SESSION:host-%hid%\r\necho host %hid% >> \"{}\"\r\n:loop\r\nset /p linha=\r\nif errorlevel 1 exit /b\r\necho turno %hid% >> \"{}\"\r\necho {{\"type\":\"result\",\"subtype\":\"success\"}}\r\ngoto loop\r\n",
+                    c, c, c
+                )
+            } else {
+                format!(
+                    "hid=$(wc -l < '{}'); echo SESSION:host-$hid; echo host $hid >> '{}'; while read l; do echo turno $hid >> '{}'; echo '{{\"type\":\"result\",\"subtype\":\"success\"}}'; done\n",
+                    c, c, c
+                )
+            };
+            std::fs::write(&script, body).unwrap();
+            std::fs::write(&count, "").unwrap();
+            Self(script, count)
+        }
+    }
+    impl AgentProvider for HostFake {
+        fn id(&self) -> &str {
+            "hostfake"
+        }
+        fn display_name(&self) -> &str {
+            "Host Fake"
+        }
+        fn detect(&self) -> Option<PathBuf> {
+            None
+        }
+        fn login_status(&self) -> LoginStatus {
+            LoginStatus::Unknown
+        }
+        fn login_command(&self) -> CommandSpec {
+            CommandSpec::new("cmd")
+        }
+        fn task_command(&self, prompt: &str, cwd: &Path, _s: Option<&str>, _o: &TurnOptions) -> CommandSpec {
+            CommandSpec::new("cmd").stdin(prompt).cwd(cwd)
+        }
+        fn host_command(&self, cwd: &Path, _s: Option<&str>, _o: &TurnOptions) -> Option<CommandSpec> {
+            let script = self.0.to_string_lossy().into_owned();
+            let c = if cfg!(windows) {
+                CommandSpec::new("cmd").arg("/c").arg(script)
+            } else {
+                CommandSpec::new("sh").arg(script)
+            };
+            Some(c.cwd(cwd))
+        }
+        fn parse_line(&self, l: &str) -> Vec<AgentEvent> {
+            if let Some(s) = l.trim().strip_prefix("SESSION:") {
+                return vec![AgentEvent::Session(s.to_string())];
+            }
+            if l.contains("\"result\"") {
+                vec![AgentEvent::Result { ok: true, summary: "ok".into(), cost: None }]
+            } else {
+                vec![]
+            }
+        }
+        fn host_turn_ended(&self, l: &str) -> bool {
+            l.contains("\"result\"")
         }
     }
 
@@ -1939,6 +2406,56 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         panic!("timeout")
+    }
+
+    async fn wait_host_turns(count: &Path, n: usize) {
+        for _ in 0..200 {
+            if std::fs::read_to_string(count).map(|s| s.matches("turno ").count()).unwrap_or(0) >= n {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!("timeout esperando {n} turnos no host");
+    }
+
+    #[tokio::test]
+    async fn host_is_reused_between_turns() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = HostFake::new(dir.path());
+        let count = fake.1.clone();
+        let o = Orchestrator::new(vec![Arc::new(fake)], 1);
+        let id = o.submit(dir.path(), "hostfake", "um").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        o.reply(id, "dois").unwrap();
+        wait_host_turns(&count, 2).await;
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        let raw = std::fs::read_to_string(&count).unwrap();
+        let hosts: Vec<&str> = raw.lines().filter(|l| l.starts_with("host ")).collect();
+        let turns: Vec<&str> = raw.lines().filter(|l| l.starts_with("turno ")).collect();
+        assert_eq!(hosts.len(), 1, "um host por conversa: {raw}");
+        assert_eq!(turns.len(), 2, "dois turnos no mesmo host: {raw}");
+        let hid = hosts[0].trim_start_matches("host ");
+        assert!(turns.iter().all(|t| t.trim_start_matches("turno ") == hid), "{raw}");
+        o.discard_host(id);
+    }
+
+    #[tokio::test]
+    async fn changing_model_discards_host() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = HostFake::new(dir.path());
+        let count = fake.1.clone();
+        let o = Orchestrator::new(vec![Arc::new(fake)], 1);
+        let id = o.submit(dir.path(), "hostfake", "um").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        o.set_model(id, Some("sonnet")).unwrap();
+        o.reply(id, "dois").unwrap();
+        wait_host_turns(&count, 2).await;
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        let raw = std::fs::read_to_string(&count).unwrap();
+        let hosts: Vec<&str> = raw.lines().filter(|l| l.starts_with("host ")).collect();
+        assert_eq!(hosts.len(), 2, "modelo novo abre outro host: {raw}");
+        assert_ne!(hosts[0], hosts[1], "{raw}");
+        o.discard_host(id);
     }
 
     #[tokio::test]

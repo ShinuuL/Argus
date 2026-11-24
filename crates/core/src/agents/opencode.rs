@@ -42,6 +42,12 @@ impl AgentProvider for OpencodeProvider {
         which_bin("opencode")
     }
 
+    fn warmup(&self) {
+        // `opencode models` faz a CLI descobrir/iniciar o background service.
+        // Falhar aqui não impede o turno: o modelo cai no padrão da CLI.
+        let _ = self.list_models();
+    }
+
     fn login_status(&self) -> LoginStatus {
         let Some(bin) = self.detect() else { return LoginStatus::NotInstalled };
         match run_capture(&bin, &["auth", "list"]) {

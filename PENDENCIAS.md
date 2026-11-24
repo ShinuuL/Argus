@@ -132,3 +132,19 @@ O Screen-Mirror funciona e tem MCP pronto. Reescrever o protocolo do scrcpy de c
 - Os repositórios antigos continuam vivos (versão standalone) ou são arquivados depois da integração?
 - O Screen-Mirror continua utilizável sozinho (CLI/MCP fora do Argus)? Se sim, a fase B precisa manter uma CLI Rust equivalente.
 - Distribuição: incluir `adb`/platform-tools e o scrcpy-server no instalador do Argus ou baixar sob demanda, verificando o SHA-256 como o Screen-Mirror já faz?
+
+---
+
+## 6. Redesign Bento (interface)
+
+_2026-11-23. Plano completo em [docs/PLANO_UI_BENTO.md](docs/PLANO_UI_BENTO.md); referência visual e spec em `docs/referencia-bento/`._
+
+- [ ] Fase A: tema Bento nos tokens (hexes da spec, `--radius-panel` 16px, tema padrão novo)
+- [ ] Fase B: shell bento — canvas `--page`, painéis arredondados com gap de 8px, busca em pílula
+- [ ] Fase C: composer em pílula — popover `+`, sub-barra de metadados (modelo/esforço, modo, anel), badge de fila só quando ocupado, some o `.chat-hint`
+- [ ] Fase D: Conversas — lista de sessões arredondada, blocos de código `rounded-xl` com Copiar, telemetria por mensagem no hover
+- [ ] Fase E: as nove áreas em painel arredondado (Início, Git, Servidores, Dispositivos, Métricas, Terminal, Tarefas, Configurações, Agentes)
+- [ ] Fase F: componentes de sistema (ui-card, menus, popovers, paleta Ctrl+K, holds)
+- [ ] Fase G: validação — `npm run typecheck`, `npm run build`, `node scripts/telas-print.mjs`, `npm run teste:telas`
+- [ ] Ctrl+K: abrir qualquer tela como aba no workbench (pedido separado, aguardando definição)
+- [x] Confirmar as premissas do plano: tema Bento como 5º tema padrão · microfone só visual — as duas confirmadas em 2026-11-23

@@ -6,6 +6,7 @@
 import type { LucideIcon } from "lucide-react";
 import { Clock,
   History,
+  Archive,
   ArrowUp,
   AtSign,
   SquareSlash,
@@ -147,6 +148,7 @@ const ICONS = {
   shieldAlert: ShieldAlert,
   // Painel de agentes (tarefas em segundo plano)
   trash: Trash2,
+  archive: Archive,
   expand: Maximize2,
 } as const satisfies Record<string, LucideIcon>;
 
@@ -170,6 +172,30 @@ export function Icon({ name, size = 16, filled = false, className }: IconProps) 
       fill={filled ? "currentColor" : "none"}
       aria-hidden="true"
     />
+  );
+}
+
+/**
+ * Marca do Argus (seis pontos em anel, de docs/icone/argus.svg) desenhada com
+ * `currentColor`, para seguir o tema — inclusive a cor de destaque escolhida.
+ */
+export function ArgusMark({ size = 16, className }: { size?: number; className?: string }) {
+  const pontos = [[512, 190], [791, 351], [791, 673], [512, 834], [233, 673], [233, 351]];
+  return (
+    <svg
+      className={className ? `ic ${className}` : "ic"}
+      width={size}
+      height={size}
+      viewBox="0 0 1024 1024"
+      fill="none"
+      aria-hidden="true"
+    >
+      <rect x="30" y="30" width="964" height="964" rx="190" stroke="currentColor" strokeOpacity=".45" strokeWidth="56" />
+      {pontos.map(([cx, cy]) => (
+        <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="94" fill="currentColor" />
+      ))}
+      <circle cx="512" cy="512" r="188" stroke="currentColor" strokeWidth="104" />
+    </svg>
   );
 }
 

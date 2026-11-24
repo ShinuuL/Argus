@@ -1,0 +1,993 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Argus — mockup do tema Bento (proposta para a Fase A)</title>
+<style>
+/* Tokens copiados da spec (docs/referencia-bento/spec.md). Nada de cor inventada. */
+:root{
+  --bg-canvas:#0d0d10;
+  --bg-panel:#151519;
+  --bg-surface-elevated:#1e1e24;
+  --bg-surface-hover:#26262e;
+  --border-subtle:rgba(255,255,255,.07);
+  --border-input:rgba(255,255,255,.11);
+  --border-focus:rgba(139,92,246,.45);
+  --text-primary:#ececf1;
+  --text-secondary:#9898a6;
+  --text-muted:#636370;
+  --accent-primary:#7c6df2;
+  --status-working:#60a5fa;
+  --status-context-ring:#c2415c;
+  --radius-panel:16px;
+  --radius-card:12px;
+  --radius-pill:9999px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg-canvas);color:var(--text-primary);
+  font:13px/1.5 "Segoe UI",system-ui,sans-serif}
+button,input,textarea{font:inherit}
+.wrap{max-width:1280px;margin:0 auto;padding:30px 24px 64px}
+h1{font-size:20px;margin:0 0 4px}
+.lead{color:var(--text-secondary);max-width:92ch;margin:0 0 18px}
+.lead b{color:var(--text-primary)}
+.nota{color:var(--text-secondary);font-size:12.5px;max-width:92ch;margin:10px 0 0}
+.nota b{color:var(--text-primary)}
+.tag{display:inline-block;font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--text-secondary);border:1px solid var(--border-subtle);border-radius:var(--radius-pill);
+  padding:1px 8px;margin-right:6px}
+
+/* legenda de tokens */
+.tokens{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px}
+.tk{display:flex;align-items:center;gap:7px;border:1px solid var(--border-subtle);
+  background:var(--bg-panel);border-radius:var(--radius-pill);padding:5px 11px 5px 6px;
+  color:var(--text-secondary);font-size:11px}
+.tk i{width:15px;height:15px;border-radius:50%;display:block;border:1px solid var(--border-subtle)}
+.tk code{color:var(--text-primary);font-size:10.5px}
+.raios{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+.raio{border:1px solid var(--border-subtle);background:var(--bg-panel);border-radius:var(--radius-card);
+  padding:6px 10px;font-size:11px;color:var(--text-secondary)}
+.raio code{color:var(--text-primary)}
+
+/* troca de tela do mockup */
+.troca{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+.troca button{cursor:pointer;border:1px solid var(--border-subtle);background:var(--bg-panel);
+  color:var(--text-secondary);border-radius:var(--radius-pill);padding:6px 14px;font-size:12px}
+.troca button:hover{background:var(--bg-surface-hover);color:var(--text-primary)}
+.troca button.on{background:var(--accent-primary);border-color:var(--accent-primary);
+  color:#fff;font-weight:600}
+
+/* ---------- moldura: canvas + painéis flutuantes ---------- */
+.app{height:720px;background:var(--bg-canvas);border:1px solid var(--border-subtle);
+  border-radius:var(--radius-panel);display:grid;grid-template-columns:52px 1fr;
+  grid-template-rows:minmax(0,1fr);overflow:hidden}
+.rail{grid-column:1;grid-row:1;display:flex;flex-direction:column;align-items:center;
+  gap:5px;padding:10px 0;border-right:1px solid var(--border-subtle);background:var(--bg-canvas)}
+.rail span{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
+  color:var(--text-muted);cursor:pointer}
+.rail span:hover{color:var(--text-primary);background:var(--bg-surface-hover)}
+.rail span.on{color:var(--text-primary);background:var(--bg-surface-elevated)}
+.rail .fim{margin-top:auto}
+.work{grid-column:2;grid-row:1;min-width:0;min-height:0;display:flex;flex-direction:column}
+.topbar{height:46px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;
+  border-bottom:1px solid var(--border-subtle)}
+.busca{width:min(420px,44%);height:30px;margin:0 auto;display:flex;align-items:center;gap:8px;
+  padding:0 12px;border-radius:var(--radius-pill);background:var(--bg-surface-elevated);
+  border:1px solid var(--border-input);color:var(--text-muted);font-size:12px}
+.topbar .tb-l,.topbar .tb-r{color:var(--text-secondary);font-size:11.5px;min-width:120px}
+.topbar .tb-r{text-align:right}
+.sh-body{flex:1;min-height:0;display:flex;gap:8px;padding:8px;background:var(--bg-canvas)}
+.panel{background:var(--bg-panel);border:1px solid var(--border-subtle);
+  border-radius:var(--radius-panel);min-width:0;min-height:0;overflow:hidden}
+.panel.sessoes{width:232px;flex:none;display:flex;flex-direction:column}
+.panel.centro{flex:1;display:flex;flex-direction:column}
+.panel.inspetor{width:322px;flex:none;display:flex;flex-direction:column;min-height:0}
+.statusbar{height:26px;flex:none;display:flex;align-items:center;gap:12px;padding:0 12px;
+  border-top:1px solid var(--border-subtle);color:var(--text-secondary);font-size:11px}
+.statusbar .sep{flex:1}
+.statusbar .bandeja{display:flex;align-items:center;gap:7px;padding-left:12px;
+  border-left:1px solid var(--border-subtle);border-radius:0}
+
+/* ícones SVG (traço, mesma família do app) */
+.i{width:14px;height:14px;flex:none;stroke:currentColor;fill:none;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round;vertical-align:-2px}
+.i.g{width:17px;height:17px}
+.i.p{width:20px;height:20px;stroke-width:1.7}
+.i.menor{width:12px;height:12px}
+
+/* sidebar de sessões */
+.ph{height:38px;flex:none;display:flex;align-items:center;gap:6px;padding:0 12px;
+  border-bottom:1px solid var(--border-subtle);font-size:12px;color:var(--text-secondary)}
+.filtro{height:28px;margin:10px 10px 6px;padding:0 10px;display:flex;align-items:center;gap:7px;
+  border-radius:var(--radius-pill);background:var(--bg-surface-elevated);
+  border:1px solid var(--border-input);color:var(--text-muted);font-size:11.5px}
+.grupo{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--text-muted);
+  padding:10px 12px 4px;display:flex;align-items:center;gap:6px}
+.grupo .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.sessao{display:flex;align-items:center;gap:8px;margin:1px 6px;padding:7px 8px;border-radius:10px;
+  font-size:12px;color:var(--text-secondary);cursor:pointer}
+.sessao:hover{background:var(--bg-surface-hover);color:var(--text-primary)}
+.sessao.on{background:var(--bg-surface-elevated);color:var(--text-primary)}
+.sessao b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sessao .tmp{margin-left:auto;font-size:10px;color:var(--text-muted)}
+
+/* abas + transcript */
+.abas{height:36px;flex:none;display:flex;align-items:stretch;gap:2px;padding:0 8px;
+  border-bottom:1px solid var(--border-subtle)}
+.aba{display:flex;align-items:center;gap:7px;padding:0 12px;font-size:12px;color:var(--text-secondary);
+  border-bottom:2px solid transparent;cursor:pointer}
+.aba.on{color:var(--text-primary);border-bottom-color:var(--accent-primary)}
+.aba span{color:var(--text-muted)}
+.cabecalho{height:34px;flex:none;display:flex;align-items:center;padding:0 16px;font-size:11.5px;
+  color:var(--text-secondary);border-bottom:1px solid var(--border-subtle)}
+.cabecalho .sep{flex:1}
+.cabecalho .custo{color:var(--text-muted);font-size:10.5px}
+.transcript{flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;padding:14px 20px 6px}
+.msg{margin:0 0 14px;max-width:88ch}
+.msg .quem{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);
+  margin-bottom:3px}
+.msg p{margin:0;color:var(--text-secondary);font-size:12.5px}
+.msg.eu p{color:var(--text-primary)}
+.meta{color:var(--text-secondary);font-size:10.5px;margin-top:5px;opacity:0;transition:opacity .15s}
+.msg:hover .meta{opacity:1}
+.code{background:var(--bg-surface-elevated);border:1px solid var(--border-subtle);
+  border-radius:var(--radius-card);margin-top:9px;padding:10px 12px;position:relative;
+  font:11.5px/1.6 ui-monospace,Consolas,monospace;color:var(--text-secondary)}
+.code .copiar{position:absolute;top:7px;right:8px;font:10.5px "Segoe UI",sans-serif;
+  color:var(--text-muted);border:1px solid var(--border-subtle);border-radius:8px;
+  background:var(--bg-panel);padding:1px 7px}
+.code b{color:#a8a1ff;font-weight:500}
+.code em{color:var(--status-working);font-style:normal}
+.hold{margin:0 0 10px;border:1px solid var(--border-subtle);border-radius:var(--radius-card);
+  background:var(--bg-surface-elevated);padding:8px 11px;font-size:11.5px;color:var(--text-secondary)}
+
+/* composer em pílula */
+.composer{flex:none;padding:4px 16px 10px;background:linear-gradient(to top,var(--bg-panel) 72%,transparent)}
+.working{color:var(--status-working);font-size:11.5px;margin:0 0 6px 4px;height:16px}
+.fila-badge{display:inline-flex;align-items:center;gap:5px;margin:0 0 6px 4px;
+  border:1px solid var(--border-input);background:var(--bg-surface-elevated);
+  border-radius:var(--radius-pill);padding:2px 9px;font-size:10.5px;color:var(--text-secondary)}
+.pill-input{min-height:44px;border-radius:var(--radius-pill);background:var(--bg-surface-elevated);
+  border:1px solid var(--border-input);display:flex;align-items:center;gap:8px;padding:5px 7px}
+.pill-input.multiline{border-radius:var(--radius-panel)}
+.mais{width:32px;height:32px;flex:none;border-radius:50%;border:1px solid var(--border-input);
+  background:var(--bg-surface-hover);color:var(--text-primary);display:grid;place-items:center;
+  cursor:pointer}
+.placeholder{flex:1;color:var(--text-muted);font-size:12.5px;padding-left:3px}
+.acoes-dir{display:flex;align-items:center;gap:5px}
+.ic-btn{width:30px;height:30px;flex:none;display:grid;place-items:center;border-radius:50%;
+  border:0;background:transparent;color:var(--text-secondary);cursor:pointer}
+.ic-btn:hover{background:var(--bg-surface-hover);color:var(--text-primary)}
+.enviar{background:var(--accent-primary);color:#fff}
+.parar{border-radius:50%;width:30px;height:30px;background:var(--text-primary);border:0;
+  display:grid;place-items:center;cursor:pointer}
+.parar svg{width:11px;height:11px;fill:var(--bg-panel)}
+.subbar{display:flex;align-items:center;justify-content:flex-end;gap:14px;height:26px;
+  padding:0 5px;font-size:11px;color:var(--text-secondary)}
+.subbar .modelo b{color:var(--text-primary);font-weight:600}
+.subbar .modelo span{color:var(--text-muted);margin-left:5px}
+.subbar span[title]{cursor:help}
+.anel{width:14px;height:14px;flex:none}
+
+/* inspetor */
+.inspetor h4{margin:0 0 10px;font-size:11px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--text-muted);font-weight:500}
+.kv{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;padding:5px 0;
+  border-bottom:1px solid var(--border-subtle);color:var(--text-secondary)}
+.kv b{color:var(--text-primary);font-weight:500}
+.inspetor .cardzinho{margin-top:12px;border:1px solid var(--border-subtle);
+  border-radius:var(--radius-card);background:var(--bg-surface-elevated);padding:10px;
+  font-size:11.5px;color:var(--text-secondary)}
+/* Inspetor: abas e conteúdo de src/shell/RightPanel.tsx */
+.insp-tabs{display:flex;gap:1px;flex:none;padding:0 3px;overflow-x:auto;
+  border-bottom:1px solid var(--border-subtle);scrollbar-width:none}
+.insp-tab{cursor:pointer;white-space:nowrap;border:0;border-bottom:2px solid transparent;
+  background:transparent;color:var(--text-muted);font-size:10px;padding:10px 5px 8px}
+.insp-tab:hover{color:var(--text-primary)}
+.insp-tab.on{color:var(--text-primary);border-bottom-color:var(--accent-primary)}
+.insp-count{display:inline-block;margin-left:4px;border-radius:var(--radius-pill);
+  background:var(--bg-surface-hover);color:var(--text-secondary);padding:0 5px;font-size:9.5px}
+.insp-pane{display:none;flex:1;min-height:0;overflow:auto;padding:10px;gap:5px}
+.insp-pane.on{display:flex;flex-direction:column}
+.insp-head{display:flex;align-items:center;gap:6px;color:var(--text-muted);
+  font-size:10px;letter-spacing:.06em;text-transform:uppercase;margin:2px 0 4px}
+.insp-head .sep{flex:1}
+.insp-file{display:flex;align-items:center;gap:6px;width:100%;text-align:left;cursor:pointer;
+  border:1px solid transparent;border-radius:8px;background:transparent;padding:5px 7px;
+  color:var(--text-secondary);font-size:11px}
+.insp-file:hover{background:var(--bg-surface-hover);color:var(--text-primary)}
+.insp-file.on{background:rgba(124,109,242,.14);border-color:rgba(124,109,242,.3);color:var(--text-primary)}
+.insp-file span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:var(--font-mono-family,ui-monospace,monospace);font-size:10.5px}
+.insp-add{color:var(--ok,#5fd38d);font-size:10px}
+.insp-del{color:var(--err,#ff8f7a);font-size:10px}
+.insp-diff{border-top:1px solid var(--border-subtle);margin-top:6px;padding:7px 0 0;
+  font:10.5px/1.7 ui-monospace,Consolas,monospace;overflow:hidden}
+.insp-diff div{padding:0 6px;white-space:nowrap}
+.insp-diff .hunk{color:var(--text-muted)}
+.insp-diff .add{background:rgba(95,211,141,.12);color:var(--text-primary)}
+.insp-diff .del{background:rgba(255,143,122,.12);color:var(--text-primary)}
+.insp-foot{display:flex;gap:7px;flex:none;padding:9px;border-top:1px solid var(--border-subtle)}
+.insp-foot .btn{flex:1;justify-content:center;font-size:11px}
+/* Aba Arquivos: explorer do VS Code (Dark Modern). Cores locais, resto do Bento intacto. */
+.insp-pane.vsc{--vsc-bg:#1f1f1f;--vsc-head:#181818;--vsc-line:#2b2b2b;--vsc-fg:#cccccc;
+  --vsc-dim:#9d9d9d;--vsc-hover:#2a2d2e;--vsc-sel:#04395e;--vsc-focus:#007fd4;
+  padding:0;gap:0;background:var(--vsc-bg);color:var(--vsc-fg);
+  font:12px/22px "Segoe UI",system-ui,sans-serif}
+.insp-pane.vsc *{box-sizing:border-box}
+.vsc-title{height:35px;flex:none;display:flex;align-items:center;justify-content:space-between;
+  padding:0 6px 0 20px;background:var(--vsc-head);border-bottom:1px solid var(--vsc-line);
+  font-size:11px;letter-spacing:.09em;color:var(--vsc-dim)}
+.vsc-acts{display:flex;gap:1px}
+.vsc-acts button{width:22px;height:22px;display:grid;place-items:center;border:0;border-radius:4px;
+  background:transparent;color:#c5c5c5;cursor:pointer}
+.vsc-acts button:hover{background:#303030;color:#fff}
+.vsc-acts svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.6}
+.vsc-sec-h{height:22px;flex:none;display:flex;align-items:center;gap:4px;padding:0 8px 0 6px;
+  font-size:11px;font-weight:700;letter-spacing:.04em;color:#bbb}
+.vsc-sec-h .tw{width:12px;text-align:center;font-size:9px;color:#ccc}
+.vsc-row{height:22px;flex:none;display:flex;align-items:center;gap:5px;padding-right:8px;
+  color:var(--vsc-fg);white-space:nowrap;cursor:default}
+.vsc-row:hover{background:var(--vsc-hover)}
+.vsc-row.on{background:var(--vsc-sel);color:#fff}
+.vsc-row.on:focus-visible{box-shadow:inset 0 0 0 1px var(--vsc-focus)}
+.vsc-row.oculto{display:none}
+.vsc-row .tw{width:12px;flex:none;text-align:center;font-size:9px;color:#aaa}
+.vsc-row .ico{width:15px;height:15px;flex:none;display:grid;place-items:center}
+.vsc-row .ico svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.4}
+.vsc-row .folder{color:#dcb67a}
+.vsc-row .folder svg{fill:currentColor;stroke:none}
+.vsc-row .g{width:13px;height:22px;flex:none;border-left:1px solid #333}
+.vsc-row .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.vsc-row .mod{color:#e2c08d;font-size:11px;margin-left:auto}
+.vsc-row .x{color:#a0a0a0;font-size:13px;opacity:0;margin-left:6px}
+.vsc-row:hover .x{opacity:1}
+.fi{width:15px;height:15px;flex:none;border-radius:2px;display:grid;place-items:center;
+  color:#1b1b1b;font:700 7px/1 "Segoe UI",sans-serif;letter-spacing:-.04em}
+.fi.tsx,.fi.ts{background:#519aba}.fi.css{background:#42a5f5}.fi.html{background:#e34c26;color:#fff}
+.fi.rs{background:#dea584}.fi.md{background:#519aba}.fi.json,.fi.toml{background:#cbcb41}
+.vsc-status{height:22px;flex:none;margin-top:auto;display:flex;align-items:center;padding:0 10px;
+  border-top:1px solid var(--vsc-line);font-size:10.5px;color:var(--vsc-dim)}
+.insp-row{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text-secondary);
+  padding:6px 2px;border-bottom:1px solid var(--border-subtle)}
+.insp-row b{color:var(--text-primary);font-weight:500}
+.insp-row .sep{flex:1}
+.insp-check{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--text-secondary);
+  padding:6px 2px;border-bottom:1px solid var(--border-subtle)}
+.insp-check i{width:13px;height:13px;flex:none;border-radius:4px;border:1px solid var(--text-secondary)}
+.insp-check.feito i{background:var(--accent-primary);border-color:var(--accent-primary);
+  display:grid;place-items:center}
+.insp-check.feito i:after{content:"";width:5px;height:3px;border-left:1.5px solid #fff;
+  border-bottom:1.5px solid #fff;transform:rotate(-45deg) translateY(-1px)}
+
+/* áreas em tela cheia */
+.screen{display:none;flex:1;min-width:0}
+.screen.on{display:flex}
+.area{flex:1;min-width:0;padding:14px 16px;display:flex;flex-direction:column;gap:12px;overflow:hidden}
+.area-h{display:flex;align-items:center;gap:10px}
+.area-h h3{margin:0;font-size:13px;font-weight:600}
+.area-h .cont{color:var(--text-muted);font-size:11.5px}
+.area-h .sep{flex:1}
+.btn{border:1px solid var(--border-input);background:var(--bg-surface-elevated);color:var(--text-primary);
+  border-radius:10px;padding:5px 11px;font-size:11.5px;cursor:pointer}
+.btn.primario{background:var(--accent-primary);border-color:var(--accent-primary);color:#fff}
+.btn.quieto{background:transparent;border-color:transparent;color:var(--text-secondary)}
+.cards{display:grid;gap:10px}
+.c2{grid-template-columns:1fr 1fr}
+.c3{grid-template-columns:repeat(3,1fr)}
+.card{background:var(--bg-surface-elevated);border:1px solid var(--border-subtle);
+  border-radius:var(--radius-card);padding:13px}
+.card h5{margin:0 0 7px;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--text-muted);font-weight:500}
+.num{font-size:20px;font-weight:600;color:var(--text-primary)}
+.sub{color:var(--text-secondary);font-size:11.5px}
+.card .linha{display:flex;align-items:center;gap:10px}
+.card .linha .txt{min-width:0}
+.card .linha b{color:var(--text-primary);font-weight:500}
+.tabela{border:1px solid var(--border-subtle);border-radius:var(--radius-card);overflow:hidden;
+  background:var(--bg-panel)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);
+  font-weight:500;padding:8px 11px;border-bottom:1px solid var(--border-subtle)}
+td{padding:9px 11px;border-bottom:1px solid var(--border-subtle);color:var(--text-primary)}
+td.sec{color:var(--text-secondary)}
+tr:last-child td{border-bottom:0}
+.pill{display:inline-flex;align-items:center;gap:5px;border-radius:var(--radius-pill);
+  border:1px solid var(--border-input);padding:1px 9px;font-size:10.5px;color:var(--text-secondary)}
+.pill.ok{color:#7fd6a0;border-color:rgba(127,214,160,.35)}
+.pill.dot i{width:6px;height:6px;border-radius:50%;background:currentColor}
+.barras{display:flex;align-items:flex-end;gap:6px;height:96px;padding:8px 2px 0}
+.barras span{flex:1;background:var(--accent-primary);border-radius:6px 6px 2px 2px;opacity:.85}
+.barras span:nth-child(3n){background:var(--status-working);opacity:.55}
+
+/* ---------- Métricas melhorada (cards reais + pergunta do agente) ---------- */
+.seg{display:inline-flex;gap:2px;padding:2px;border-radius:var(--radius-pill);
+  background:var(--bg-surface-elevated);border:1px solid var(--border-input)}
+.seg button{cursor:pointer;border:0;background:transparent;color:var(--text-secondary);
+  border-radius:var(--radius-pill);padding:3px 10px;font-size:11px}
+.seg button.on{background:var(--bg-surface-hover);color:var(--text-primary)}
+.mx-split{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 306px;gap:10px}
+.mx-chart{display:flex;flex-direction:column;min-height:0;gap:8px}
+.mx-chart .h{display:flex;align-items:center;gap:10px}
+.mx-chart .h h5{margin:0}
+.mx-chart .h .sep{flex:1}
+.mx-bars{position:relative;flex:1;min-height:110px;display:grid;grid-template-columns:repeat(7,1fr);
+  gap:9px;align-items:end;border-bottom:1px solid var(--border-input);padding:8px 4px 0}
+.mx-bars:before,.mx-bars:after{content:"";position:absolute;left:0;right:0;
+  border-top:1px dashed var(--border-subtle)}
+.mx-bars:before{top:34%}.mx-bars:after{top:67%}
+.mx-col{height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:5px;
+  position:relative;z-index:1}
+.mx-col i{display:block;width:70%;min-width:14px;border-radius:6px 6px 2px 2px;
+  background:var(--accent-primary);opacity:.8}
+.mx-col.quiet i{background:var(--bg-surface-hover);opacity:1}
+.mx-col b{font-size:10px;font-weight:400;color:var(--text-muted)}
+.mx-legenda{display:flex;gap:12px;font-size:10.5px;color:var(--text-muted)}
+.mx-legenda .ponto{display:inline-block;width:7px;height:7px;border-radius:2px;
+  background:var(--accent-primary);margin-right:5px}
+.mx-nota{font-size:10.5px;color:var(--text-muted);margin-top:8px;text-align:right}
+.progresso{height:4px;border-radius:var(--radius-pill);background:var(--bg-surface-hover);
+  margin-top:7px;overflow:hidden}
+.progresso i{display:block;height:100%;border-radius:var(--radius-pill);background:var(--accent-primary)}
+.mx-pe{display:flex;gap:9px;padding:5px 0;border-bottom:1px solid var(--border-subtle);
+  font-size:11.5px;color:var(--text-secondary)}
+.mx-pe:last-child{border-bottom:0}
+.mx-pe b{color:var(--text-primary);font-weight:500;margin-left:auto}
+
+/* AskCard — mesma anatomia de src/views/session/AskCard.tsx, com tokens Bento */
+.ask{height:100%;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:9px;
+  border:1px solid var(--border-input);border-radius:var(--radius-card);
+  background:var(--bg-surface-elevated);padding:11px;font-size:11.5px}
+.ask-bar{display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--border-subtle);
+  padding-bottom:8px}
+.ask-tabs{display:flex;gap:4px;flex:1;min-width:0}
+.ask-tab{cursor:pointer;border:1px solid transparent;background:transparent;color:var(--text-muted);
+  border-radius:var(--radius-pill);padding:2px 8px;font-size:10.5px;white-space:nowrap}
+.ask-tab.on{background:var(--bg-surface-hover);color:var(--text-primary)}
+.ask-tab.ok svg{color:var(--ok,#5fd38d)}
+.ask-ibtn{cursor:pointer;border:0;background:transparent;color:var(--text-muted);padding:2px}
+.ask-ibtn svg{transform:rotate(90deg)}
+.ask-resp{color:var(--text-muted);font-size:10px;white-space:nowrap}
+.ask-text{color:var(--text-primary);line-height:1.4}
+.ask-sub{color:var(--text-muted);font-size:10.5px;margin-top:-4px}
+.ask-opts{display:flex;flex-direction:column;gap:5px}
+.ask-opt{display:flex;align-items:flex-start;gap:8px;width:100%;text-align:left;cursor:pointer;
+  border:1px solid var(--border-input);border-radius:10px;background:transparent;color:var(--text-primary);
+  padding:7px 9px;font-size:11.5px}
+.ask-opt:hover{background:var(--bg-surface-hover)}
+.ask-opt.on{border-color:var(--accent-primary);background:rgba(124,109,242,.1)}
+.ask-mark{width:12px;height:12px;flex:none;border-radius:50%;border:1px solid var(--text-secondary);
+  margin-top:2px;display:grid;place-items:center}
+.ask-opt.on .ask-mark{border-color:var(--accent-primary)}
+.ask-opt.on .ask-mark i{width:6px;height:6px;border-radius:50%;background:var(--accent-primary)}
+.ask-mark svg{width:10px;height:10px;color:var(--accent-primary)}
+.ask-body{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ask-label{display:flex;align-items:center;gap:6px}
+.ask-key{font:10px var(--font-mono-family,ui-monospace,monospace);color:var(--text-muted);
+  border:1px solid var(--border-input);border-radius:4px;padding:0 4px}
+.ask-desc{color:var(--text-muted);font-size:10.5px}
+.ask-extra{width:calc(100% - 20px);margin:5px 0 0 20px;background:var(--bg-panel);
+  border:1px solid var(--border-input);border-radius:8px;color:var(--text-primary);
+  padding:5px 8px;font-size:11px;outline:none}
+.ask-extra:focus{border-color:var(--border-focus)}
+.ask-foot{display:flex;flex-direction:column;gap:5px;margin-top:auto;padding-top:8px;
+  border-top:1px solid var(--border-subtle)}
+.ask-foot .btn{width:100%;justify-content:center}
+.ask-foot .btn:disabled{opacity:.45;cursor:default}
+.ask-foot small{color:var(--text-muted);font-size:9.5px;line-height:1.35}
+.ask.enviada .ask-opts,.ask.enviada .ask-foot,.ask.enviada .ask-sub{display:none}
+.ask.recolhido .ask-text,.ask.recolhido .ask-sub,.ask.recolhido .ask-opts{display:none}
+/* Pergunta dentro do transcript: largura de leitura, não a altura toda do painel. */
+.ask-chat{height:auto;max-width:520px;margin:2px 0 12px;background:var(--bg-panel)}
+.ask-chat .ask-opt{padding:5px 8px}
+.ask-chat .ask-foot{margin-top:2px}
+.ask-resumo{display:none;border:1px solid var(--border-subtle);border-radius:10px;
+  background:var(--bg-panel);padding:9px;color:var(--text-secondary);font-size:11px}
+.ask.enviada .ask-resumo{display:block}
+.ask-resumo b{color:var(--text-primary);font-weight:500}
+.nav-config{width:170px;flex:none;border:1px solid var(--border-subtle);border-radius:var(--radius-card);
+  background:var(--bg-panel);padding:8px}
+.nav-config a{display:block;padding:6px 10px;border-radius:9px;color:var(--text-secondary);
+  font-size:12px;text-decoration:none}
+.nav-config a.on{background:var(--bg-surface-elevated);color:var(--text-primary)}
+.nav-config h6{margin:12px 10px 4px;font-size:10px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--text-muted);font-weight:500}
+.conteudo-config{flex:1;display:flex;flex-direction:column;gap:10px;min-width:0}
+.linha-tema{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.linha-tema button{border:1px solid var(--border-input);background:var(--bg-panel);color:var(--text-secondary);
+  border-radius:var(--radius-pill);padding:4px 11px;font-size:11px;cursor:pointer}
+.linha-tema button.on{border-color:var(--accent-primary);color:var(--text-primary);
+  background:rgba(124,109,242,.12)}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11 12 3l9 8"/><path d="M5 10v10h14V10"/></symbol>
+<symbol id="i-git" viewBox="0 0 24 24"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+<symbol id="i-server" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></symbol>
+<symbol id="i-devices" viewBox="0 0 24 24"><rect x="2" y="4" width="12" height="16" rx="2"/><rect x="16" y="9" width="6" height="11" rx="1.5"/></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><line x1="3" y1="21" x2="21" y2="21"/><rect x="5" y="11" width="3.5" height="7"/><rect x="10.5" y="6" width="3.5" height="12"/><rect x="16" y="14" width="3.5" height="4"/></symbol>
+<symbol id="i-term" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="7 9 10 12 7 15"/><line x1="13" y1="15" x2="17" y2="15"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2 2 2 0 1 1-4 0 1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 15a2 2 0 1 1 0-4 1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 4a2 2 0 1 1 4 0 1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 21 11a2 2 0 1 1 0 4z"/></symbol>
+<symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><line x1="12" y1="4" x2="12" y2="8"/><line x1="9" y1="13" x2="9.01" y2="13"/><line x1="15" y1="13" x2="15.01" y2="13"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+<symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><line x1="12" y1="20" x2="12" y2="5"/><polyline points="6 11 12 5 18 11"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="16" y1="16" x2="21" y2="21"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><polyline points="5 13 10 18 19 6"/></symbol>
+<symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><polygon points="7 4 20 12 7 20"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><polyline points="21 4 21 10 15 10"/><polyline points="3 20 3 14 9 14"/><path d="M19 10a8 8 0 0 0-14-3M5 14a8 8 0 0 0 14 3"/></symbol>
+<symbol id="i-collapse" viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="10" y1="18" x2="14" y2="18"/></symbol>
+</defs></svg>
+
+<div class="wrap">
+  <h1>Argus — mockup do tema Bento</h1>
+  <p class="lead">
+    Proposta visual para a <b>Fase A</b>, desenhada a partir da spec anexa. É uma <b>pele</b>: a
+    estrutura do app (rail, inspetor, abas, barra de estado) continua a do mockup aprovado.
+    Use os botões abaixo para ver o mesmo tema nas telas principais. <b>Nada disto está no código ainda.</b>
+  </p>
+
+  <div class="tokens">
+    <span class="tk"><i style="background:#0d0d10"></i>canvas <code>#0d0d10</code></span>
+    <span class="tk"><i style="background:#151519"></i>painel <code>#151519</code></span>
+    <span class="tk"><i style="background:#1e1e24"></i>elevado <code>#1e1e24</code></span>
+    <span class="tk"><i style="background:#26262e"></i>hover <code>#26262e</code></span>
+    <span class="tk"><i style="background:#ececf1"></i>texto <code>#ececf1</code></span>
+    <span class="tk"><i style="background:#9898a6"></i>texto 2 <code>#9898a6</code></span>
+    <span class="tk"><i style="background:#636370"></i>muted <code>#636370</code></span>
+    <span class="tk"><i style="background:#7c6df2"></i>acento <code>#7c6df2</code></span>
+    <span class="tk"><i style="background:#60a5fa"></i>trabalhando <code>#60a5fa</code></span>
+    <span class="tk"><i style="background:#c2415c"></i>anel ctx <code>#c2415c</code></span>
+  </div>
+  <div class="raios">
+    <span class="raio">painel <code>16px</code></span>
+    <span class="raio">card <code>12px</code></span>
+    <span class="raio">pílula <code>9999px</code></span>
+    <span class="raio">gap entre painéis <code>8px</code></span>
+  </div>
+
+  <div class="troca" id="troca">
+    <button class="on" data-tela="conversas">01 · Conversas</button>
+    <button data-tela="inicio">02 · Início</button>
+    <button data-tela="servidores">04 · Servidores</button>
+    <button data-tela="metricas">06 · Métricas</button>
+    <button data-tela="config">09 · Configurações</button>
+  </div>
+
+  <div class="app">
+    <div class="rail">
+      <span class="on" data-rail="conversas" title="Conversas"><svg class="i g"><use href="#i-chat"/></svg></span>
+      <span data-rail="inicio" title="Início"><svg class="i g"><use href="#i-home"/></svg></span>
+      <span title="Git"><svg class="i g"><use href="#i-git"/></svg></span>
+      <span data-rail="servidores" title="Servidores"><svg class="i g"><use href="#i-server"/></svg></span>
+      <span title="Dispositivos"><svg class="i g"><use href="#i-devices"/></svg></span>
+      <span data-rail="metricas" title="Métricas"><svg class="i g"><use href="#i-chart"/></svg></span>
+      <span title="Terminal"><svg class="i g"><use href="#i-term"/></svg></span>
+      <span title="Tarefas"><svg class="i g"><use href="#i-clock"/></svg></span>
+      <span class="fim" data-rail="config" title="Configurações"><svg class="i g"><use href="#i-gear"/></svg></span>
+    </div>
+
+    <div class="work">
+      <div class="topbar">
+        <span class="tb-l">Argus <span style="color:var(--text-muted)">/</span> <b style="color:var(--text-primary);font-weight:500" id="crumb">Conversas</b></span>
+        <div class="busca"><svg class="i"><use href="#i-search"/></svg> Buscar comandos, arquivos, sessões… <span style="margin-left:auto">Ctrl K</span></div>
+        <span class="tb-r">Bento</span>
+      </div>
+
+      <div class="sh-body">
+
+        <!-- ============ 01 CONVERSAS ============ -->
+        <section class="screen on" data-screen="conversas">
+          <aside class="panel sessoes">
+            <div class="ph">Sessões <span style="margin-left:auto"><svg class="i"><use href="#i-plus"/></svg></span></div>
+            <div class="filtro"><svg class="i menor"><use href="#i-search"/></svg> Filtrar sessões</div>
+            <div class="grupo"><span class="dot" style="color:var(--status-working)"></span> Hoje</div>
+            <div class="sessao on"><svg class="i"><use href="#i-chat"/></svg><b>Refatorar o composer</b><span class="tmp">14:22</span></div>
+            <div class="sessao"><svg class="i"><use href="#i-chat"/></svg><b>Revisar métricas</b><span class="tmp">11:08</span></div>
+            <div class="grupo"><span class="dot" style="color:#7fd6a0"></span> Ontem</div>
+            <div class="sessao"><svg class="i"><use href="#i-chat"/></svg><b>Subir servidor dev</b><span class="tmp">18:42</span></div>
+            <div class="sessao"><svg class="i"><use href="#i-chat"/></svg><b>Ajustar tema Noite</b><span class="tmp">09:15</span></div>
+            <div class="grupo"><span class="dot" style="color:var(--text-muted)"></span> Esta semana</div>
+            <div class="sessao"><svg class="i"><use href="#i-chat"/></svg><b>Relatório de tokens</b><span class="tmp">sex</span></div>
+          </aside>
+
+          <div class="panel centro">
+            <div class="abas">
+              <div class="aba on">Refatorar o composer <span>✕</span></div>
+              <div class="aba">Revisar métricas <span>✕</span></div>
+              <div class="aba" style="color:var(--text-muted)">+</div>
+            </div>
+            <div class="cabecalho"><span>Conversas anteriores</span><span class="sep"></span><span class="custo">US$ 2,29</span></div>
+            <div class="transcript">
+              <div class="msg eu">
+                <div class="quem">você</div>
+                <p>Reduz a barra de ferramentas do composer, mas mantém a fila e o seletor de modelo.</p>
+              </div>
+              <div class="msg">
+                <div class="quem">Argus · Opus 5.5</div>
+                <p>Feito. Os controles saíram da caixa e foram para o menu <b>+</b> e para a sub-barra:</p>
+                <div class="code"><span class="copiar">Copiar</span>
+<b>const</b> composer = { modo: <em>"automatico"</em>, fila: <em>2</em> }<br>
+<span style="color:var(--text-muted)">// Enter envia • Ctrl+Enter põe na fila</span>
+                </div>
+                <div class="meta">96 entrada • 26,7 mil saída • 12s</div>
+              </div>
+              <div class="hold">⟳ Checkpoint criado antes da edição · <span style="color:var(--accent-primary)">Restaurar</span></div>
+              <!-- Pergunta do agente no transcript (conteúdo gerado pelo script) -->
+              <div class="ask ask-chat" id="ask-chat" role="group" aria-label="Pergunta do agente"></div>
+            </div>
+            <div class="composer">
+              <div class="working">••• trabalhando...</div>
+              <div class="fila-badge"><svg class="i menor"><use href="#i-chat"/></svg> 2 na fila</div>
+              <div class="pill-input">
+                <button class="mais" title="Anexar · contexto @ · prompt / · fila"><svg class="i"><use href="#i-plus"/></svg></button>
+                <div class="placeholder">Digite / para comandos</div>
+                <div class="acoes-dir">
+                  <button class="parar" title="Parar"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button>
+                </div>
+              </div>
+              <div class="subbar">
+                <span class="modelo"><b>Opus 5.5</b><span>Baixo</span></span>
+                <span>Automático</span>
+                <span title="Janela de contexto: 14% usada">
+                  <svg class="anel" viewBox="0 0 20 20" fill="none">
+                    <circle cx="10" cy="10" r="7" stroke="var(--border-input)" stroke-width="3"/>
+                    <circle cx="10" cy="10" r="7" stroke="var(--status-context-ring)" stroke-width="3"
+                      stroke-dasharray="44" stroke-dashoffset="38" transform="rotate(-90 10 10)" stroke-linecap="round"/>
+                  </svg>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <aside class="panel inspetor" aria-label="Inspetor">
+            <div class="insp-tabs" role="tablist" aria-label="Inspetor">
+              <button class="insp-tab on" type="button" role="tab" data-insp="changes">Alterações <span class="insp-count">7</span></button>
+              <button class="insp-tab" type="button" role="tab" data-insp="files">Arquivos</button>
+              <button class="insp-tab" type="button" role="tab" data-insp="agents">Agentes</button>
+              <button class="insp-tab" type="button" role="tab" data-insp="servers">Servidores</button>
+              <button class="insp-tab" type="button" role="tab" data-insp="checklist">Pendências</button>
+            </div>
+
+            <div class="insp-pane on" data-insp="changes" role="tabpanel">
+              <div class="insp-head">7 arquivos alterados <span class="sep"></span> diff da sessão</div>
+              <button class="insp-file on" type="button"><span>src/views/chat/Composer.tsx</span><span class="insp-add">+128</span><span class="insp-del">−41</span></button>
+              <button class="insp-file" type="button"><span>src/styles/chat.css</span><span class="insp-add">+64</span><span class="insp-del">−12</span></button>
+              <button class="insp-file" type="button"><span>src/styles/tokens.css</span><span class="insp-add">+29</span></button>
+              <button class="insp-file" type="button"><span>src/store/theme.ts</span><span class="insp-add">+5</span><span class="insp-del">−2</span></button>
+              <button class="insp-file" type="button"><span>src/views/session/index.tsx</span><span class="insp-add">+18</span><span class="insp-del">−9</span></button>
+              <div class="insp-diff">
+                <div class="hunk">@@ -742,6 +742,9 @@ export function Composer()</div>
+                <div class="del">- &lt;div className="chat-bar"&gt; … 7 controles</div>
+                <div class="add">+ &lt;div className="pill-input"&gt;</div>
+                <div class="add">+   &lt;button className="mais" /&gt;</div>
+                <div class="add">+ &lt;/div&gt;</div>
+              </div>
+              <div class="insp-foot">
+                <button class="btn" type="button">Descartar</button>
+                <button class="btn primario" type="button">Aplicar tudo</button>
+              </div>
+            </div>
+
+            <div class="insp-pane vsc" data-insp="files" role="tabpanel" aria-label="Arquivos">
+              <div class="vsc-title"><span>EXPLORER</span>
+                <span class="vsc-acts">
+                  <button type="button" title="Novo arquivo" aria-label="Novo arquivo"><svg><use href="#i-plus"/></svg></button>
+                  <button type="button" title="Nova pasta" aria-label="Nova pasta"><svg><use href="#i-folder"/></svg></button>
+                  <button type="button" title="Atualizar" aria-label="Atualizar"><svg><use href="#i-refresh"/></svg></button>
+                  <button type="button" title="Recolher pastas" aria-label="Recolher pastas"><svg><use href="#i-collapse"/></svg></button>
+                </span>
+              </div>
+              <div class="vsc-sec-h"><span class="tw">▾</span> ABERTOS</div>
+              <div class="vsc-row" data-depth="0"><span class="tw"></span><span class="ico"><i class="fi tsx">TS</i></span><span class="name">RightPanel.tsx</span><span class="mod">●</span><span class="x">×</span></div>
+              <div class="vsc-row" data-depth="0"><span class="tw"></span><span class="ico"><i class="fi html">&lt;&gt;</i></span><span class="name">argus-bento.html</span><span class="x">×</span></div>
+              <div class="vsc-sec-h"><span class="tw">▾</span> ARGUS</div>
+              <div class="vsc-row" data-depth="0" data-folder="1"><span class="tw">▾</span><span class="ico folder"><svg><use href="#i-folder"/></svg></span><span class="name">crates</span></div>
+              <div class="vsc-row" data-depth="1" data-folder="1"><span class="tw">▾</span><span class="g"></span><span class="ico folder"><svg><use href="#i-folder"/></svg></span><span class="name">core</span></div>
+              <div class="vsc-row" data-depth="2" data-folder="1"><span class="tw">▾</span><span class="g"></span><span class="g"></span><span class="ico folder"><svg><use href="#i-folder"/></svg></span><span class="name">src</span></div>
+              <div class="vsc-row" data-depth="3" data-folder="1"><span class="tw">▸</span><span class="g"></span><span class="g"></span><span class="g"></span><span class="ico folder"><svg><use href="#i-folder"/></svg></span><span class="name">agents</span></div>
+              <div class="vsc-row" data-depth="3"><span class="tw"></span><span class="g"></span><span class="g"></span><span class="g"></span><span class="ico"><i class="fi rs">RS</i></span><span class="name">agentlog.rs</span><span class="mod">M</span></div>
+              <div class="vsc-row" data-depth="2"><span class="tw"></span><span class="g"></span><span class="g"></span><span class="ico"><i class="fi toml">{}</i></span><span class="name">Cargo.toml</span></div>
+              <div class="vsc-row" data-depth="0" data-folder="1"><span class="tw">▾</span><span class="ico folder"><svg><use href="#i-folder"/></svg></span><span class="name">docs</span></div>
+              <div class="vsc-row" data-depth="1" data-folder="1"><span class="tw">▾</span><span class="g"></span><span class="ico folder"><svg><use href="#i-folder"/></svg></span><span class="name">mockups</span></div>
+              <div class="vsc-row on" data-depth="2"><span class="tw"></span><span class="g"></span><span class="g"></span><span class="ico"><i class="fi html">&lt;&gt;</i></span><span class="name">argus-bento.html</span></div>
+              <div class="vsc-row" data-depth="1"><span class="tw"></span><span class="g"></span><span class="ico"><i class="fi md">M↓</i></span><span class="name">PLANO_UI_BENTO.md</span></div>
+              <div class="vsc-row" data-depth="0" data-folder="1"><span class="tw">▾</span><span class="ico folder"><svg><use href="#i-folder"/></svg></span><span class="name">src</span></div>
+              <div class="vsc-row" data-depth="1" data-folder="1"><span class="tw">▾</span><span class="g"></span><span class="ico folder"><svg><use href="#i-folder"/></svg></span><span class="name">shell</span></div>
+              <div class="vsc-row" data-depth="2"><span class="tw"></span><span class="g"></span><span class="g"></span><span class="ico"><i class="fi tsx">TS</i></span><span class="name">RightPanel.tsx</span><span class="mod">●</span></div>
+              <div class="vsc-row" data-depth="1" data-folder="1"><span class="tw">▾</span><span class="g"></span><span class="ico folder"><svg><use href="#i-folder"/></svg></span><span class="name">styles</span></div>
+              <div class="vsc-row" data-depth="2"><span class="tw"></span><span class="g"></span><span class="g"></span><span class="ico"><i class="fi css">#</i></span><span class="name">tokens.css</span><span class="mod">●</span></div>
+              <div class="vsc-row" data-depth="0"><span class="tw"></span><span class="ico"><i class="fi json">{}</i></span><span class="name">package.json</span></div>
+              <div class="vsc-row" data-depth="0"><span class="tw"></span><span class="ico"><i class="fi md">M↓</i></span><span class="name">README.md</span></div>
+              <div class="vsc-status">3 arquivos modificados · 19 itens</div>
+            </div>
+
+            <div class="insp-pane" data-insp="agents" role="tabpanel">
+              <div class="insp-head">3 agentes nesta conversa</div>
+              <div class="insp-row"><span class="pill ok"><i></i> rodando</span><b>claude</b><span class="sep"></span><span>#24</span></div>
+              <div class="insp-row"><span class="pill">parado</span><b>Opus 5.5</b><span class="sep"></span><span>15 min</span></div>
+              <div class="insp-row"><span class="pill ok"><i></i> concluído</span><b>mapa</b><span class="sep"></span><span>subagente</span></div>
+              <button class="btn" type="button" style="margin-top:8px">Abrir mapa de agentes</button>
+            </div>
+
+            <div class="insp-pane" data-insp="servers" role="tabpanel">
+              <div class="insp-head">2 servidores detectados</div>
+              <div class="insp-row"><span class="pill ok"><i></i> 1420</span><b>vite</b><span class="sep"></span><span>2,4%</span></div>
+              <div class="insp-row"><span class="pill ok"><i></i> 5173</span><b>tauri dev</b><span class="sep"></span><span>0,8%</span></div>
+              <button class="btn quieto" type="button" style="margin-top:8px">Abrir área de Servidores</button>
+            </div>
+
+            <div class="insp-pane" data-insp="checklist" role="tabpanel">
+              <div class="insp-head">1 de 3 concluídas</div>
+              <div class="insp-check feito"><i></i> Tokens e tema Bento (Fase A)</div>
+              <div class="insp-check"><i></i> Revisar diff do composer</div>
+              <div class="insp-check"><i></i> Fotos das nove telas</div>
+            </div>
+          </aside>
+        </section>
+
+        <!-- ============ 02 INÍCIO ============ -->
+        <section class="screen" data-screen="inicio">
+          <div class="panel area">
+            <div class="area-h"><h3>Início</h3><span class="cont">· retome de onde parou</span><span class="sep"></span>
+              <button class="btn primario"><svg class="i"><use href="#i-folder"/></svg> Abrir pasta raiz</button></div>
+            <div class="cards c2">
+              <div class="card"><h5>Continuar</h5>
+                <div class="linha"><div class="txt"><b>#24</b> Suba o servidor e confira a porta
+                  <div class="sub">ontem às 18:42 · claude · 1,2 mi tokens</div></div>
+                  <button class="btn primario">Retomar</button></div></div>
+              <div class="card"><h5>Agora</h5>
+                <div style="display:flex;gap:20px">
+                  <div><span class="num">1</span><div class="sub">agente rodando</div></div>
+                  <div><span class="num">2</span><div class="sub">servidores</div></div>
+                  <div><span class="num">4,1 mi</span><div class="sub">tokens hoje</div></div>
+                </div></div>
+            </div>
+            <div class="card" style="flex:1"><h5>Projetos recentes</h5>
+              <div class="linha" style="padding:6px 0"><svg class="i g"><use href="#i-folder"/></svg>
+                <div class="txt"><b>Argus</b><div class="sub">D:\Dev\Desenvolvimento\Projetos\Argus</div></div>
+                <span class="pill ok"><i></i> git pronto</span></div>
+              <div class="linha" style="padding:6px 0"><svg class="i g"><use href="#i-folder"/></svg>
+                <div class="txt"><b>Screen-Mirror</b><div class="sub">D:\Dev\Desenvolvimento\Projetos\Screen-Mirror</div></div>
+                <span class="pill"><i></i> sem alterações</span></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ 04 SERVIDORES ============ -->
+        <section class="screen" data-screen="servidores">
+          <div class="panel area">
+            <div class="area-h"><h3>Servidores</h3><span class="cont">· 2 em execução</span><span class="sep"></span>
+              <div class="busca" style="width:200px;margin:0"><svg class="i menor"><use href="#i-search"/></svg> filtrar porta ou processo</div>
+              <button class="btn quieto"><svg class="i"><use href="#i-refresh"/></svg></button></div>
+            <div class="tabela"><table>
+              <tr><th>Projeto</th><th>Porta</th><th>Processo</th><th>Estado</th><th>CPU</th></tr>
+              <tr><td>Argus</td><td class="sec">1420</td><td class="sec">vite</td>
+                <td><span class="pill ok"><i></i> rodando</span></td><td class="sec">2,4%</td></tr>
+              <tr><td>Argus</td><td class="sec">5173</td><td class="sec">tauri dev</td>
+                <td><span class="pill ok"><i></i> rodando</span></td><td class="sec">0,8%</td></tr>
+              <tr><td>Screen-Mirror</td><td class="sec">—</td><td class="sec">—</td>
+                <td><span class="pill">parado</span></td><td class="sec">—</td></tr>
+            </table></div>
+            <div class="card"><h5>Servidores são descobertos sozinhos</h5>
+              <div class="sub">Quando um agente sobe um servidor na pasta do projeto, ele aparece aqui com a porta,
+              o processo e as ações de abrir, parar ou expor por túnel.</div></div>
+          </div>
+        </section>
+
+        <!-- ============ 06 MÉTRICAS (melhorada + pergunta do agente) ============ -->
+        <section class="screen" data-screen="metricas">
+          <div class="panel area">
+            <div class="area-h"><h3>Uso</h3><span class="cont">· últimos 7 dias</span><span class="sep"></span>
+              <div class="seg" aria-label="Período">
+                <button class="on" type="button">7 dias</button><button type="button">30 dias</button>
+              </div></div>
+            <div class="cards c3">
+              <div class="card"><h5>Janela do plano · 5 horas</h5><span class="num">59%</span>
+                <div class="sub">reinicia às 18:00 · vindo da CLI a cada turno</div>
+                <div class="progresso"><i style="width:59%"></i></div></div>
+              <div class="card"><h5>Turnos em 7 dias</h5><span class="num">128</span>
+                <div class="sub">média 18 por dia · 18,4 mi tokens · US$ 42,60 eq. API</div></div>
+              <div class="card"><h5>Projeto que mais usou</h5><span class="num">Argus</span>
+                <div class="sub">62% dos tokens · 11,4 mi tokens</div></div>
+            </div>
+            <div class="mx-split">
+              <div class="card mx-chart">
+                <div class="h"><h5>Tokens por dia</h5><span class="sep"></span>
+                  <div class="seg" aria-label="Medida">
+                    <button class="on" type="button">Tokens</button><button type="button">Custo</button>
+                  </div></div>
+                <div class="mx-bars">
+                  <div class="mx-col"><i style="height:44%"></i><b>seg</b></div>
+                  <div class="mx-col"><i style="height:60%"></i><b>ter</b></div>
+                  <div class="mx-col"><i style="height:42%"></i><b>qua</b></div>
+                  <div class="mx-col"><i style="height:72%"></i><b>qui</b></div>
+                  <div class="mx-col"><i style="height:51%"></i><b>sex</b></div>
+                  <div class="mx-col"><i style="height:100%;opacity:1"></i><b>sáb</b></div>
+                  <div class="mx-col quiet"><i style="height:58%"></i><b>dom</b></div>
+                </div>
+                <div class="mx-legenda"><span><span class="ponto"></span>tokens por dia</span><span>máx. 4,3 mi em sáb</span></div>
+              </div>
+              <!-- Pergunta do agente: conteúdo gerado pelo script, igual ao AskCard real -->
+              <div class="ask" id="ask" role="group" aria-label="Pergunta do agente"></div>
+            </div>
+            <div class="mx-nota">dados locais · histórico ativo</div>
+          </div>
+        </section>
+
+        <!-- ============ 09 CONFIGURAÇÕES ============ -->
+        <section class="screen" data-screen="config">
+          <div class="panel area" style="flex-direction:row;padding:12px;gap:10px">
+            <div class="nav-config">
+              <h6>Geral</h6>
+              <a class="on">Aparência</a><a>Atalhos</a><a>Projetos</a>
+              <h6>Agente</h6>
+              <a>Modelos</a><a>Permissões</a><a>MCP</a>
+              <h6>Sistema</h6>
+              <a>Servidores</a><a>Diagnóstico</a>
+            </div>
+            <div class="conteudo-config">
+              <div class="card"><h5>Aparência</h5>
+                <div style="font-size:12.5px">Tema</div>
+                <div class="linha-tema"><button class="on">Bento <span style="color:var(--text-muted)">· padrão</span></button>
+                  <button>Oceano</button><button>Ardósia</button><button>Grafite</button><button>Noite</button></div>
+                <div class="sub" style="margin-top:10px">Os quatro temas anteriores continuam disponíveis. Quem já escolheu um tema mantém a escolha.</div>
+              </div>
+              <div class="card"><h5>Composer</h5>
+                <div class="sub">Microfone aparece na pílula, mas é apenas visual nesta rodada: ao passar o mouse,
+                o tooltip diz “voz ainda não disponível”. Nenhuma API de voz é ativada.</div>
+              </div>
+              <div class="card"><h5>Painéis</h5>
+                <div class="sub">Raio de 16 px, fundo elevado sobre o canvas e borda de 7% de branco.
+                Cards internos usam 12 px e controles, 8 px.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <div class="statusbar">
+        <span>pronto</span><span>main</span><span>7 alterações</span><span>1 agente rodando</span><span>2 servidores</span>
+        <span class="sep"></span>
+        <span class="bandeja"><svg class="i"><use href="#i-music"/></svg> SHIBUYA <svg class="i"><use href="#i-play"/></svg></span>
+      </div>
+    </div>
+  </div>
+
+  <p class="nota">
+    <b>O que este mockup mostra:</b> painéis soltos no canvas com 8 px de separação; composer reduzido a
+    uma pílula de 44 px com <b>+</b> à esquerda, texto no centro e, à direita, mic/enviar quando livre ou
+    stop quando ocupado; sub-barra discreta com modelo, modo e anel de contexto; telemetria escondida até
+    o hover; fila só quando o agente está trabalhando. O microfone é <b>só visual</b>. Abrir telas como
+    abas pelo Ctrl+K fica de fora.
+  </p>
+  <p class="nota">Arquivo: <code>docs/mockups/argus-bento.html</code> · base: <code>docs/referencia-bento/spec.md</code> e
+    <code>docs/PLANO_UI_BENTO.md</code> · estado atual (antes do redesign): <code>docs/telas/</code>.</p>
+</div>
+<script>
+const nomes = { conversas:'Conversas', inicio:'Início', servidores:'Servidores', metricas:'Uso', config:'Configurações' };
+document.querySelectorAll('#troca button').forEach(function(b){
+  b.addEventListener('click', function(){
+    const tela = b.dataset.tela;
+    document.querySelectorAll('#troca button').forEach(x => x.classList.toggle('on', x === b));
+    document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.dataset.screen === tela));
+    document.querySelectorAll('.rail span[data-rail]').forEach(r => r.classList.toggle('on', r.dataset.rail === tela));
+    document.getElementById('crumb').textContent = nomes[tela];
+  });
+});
+/* Link direto: #metricas abre a tela de Uso (útil para screenshots do mockup). */
+window.addEventListener('hashchange', () => location.reload());
+const telaInicial = location.hash.replace('#', '');
+document.querySelector(`#troca button[data-tela="${telaInicial}"]`)?.click();
+
+/* Segmentados (7/30 dias, Tokens/Custo) — só trocam o destaque, como no app. */
+document.querySelectorAll('.seg').forEach(function(g){
+  g.addEventListener('click', function(e){
+    const b = e.target.closest('button');
+    if (!b) return;
+    g.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  });
+});
+
+/* Inspetor: abas de src/shell/RightPanel.tsx (RIGHT_TABS). */
+document.querySelectorAll('.insp-tab').forEach(function(b){
+  b.addEventListener('click', function(){
+    const alvo = b.dataset.insp;
+    document.querySelectorAll('.insp-tab').forEach(x => x.classList.toggle('on', x === b));
+    document.querySelectorAll('.insp-pane').forEach(p => p.classList.toggle('on', p.dataset.insp === alvo));
+  });
+});
+document.querySelectorAll('.insp-pane[data-insp="changes"] .insp-file').forEach(function(f){
+  f.addEventListener('click', function(){
+    document.querySelectorAll('.insp-pane[data-insp="changes"] .insp-file').forEach(x => x.classList.toggle('on', x === f));
+  });
+});
+/* Explorer da aba Arquivos: seleção e recolher pasta, como no VS Code. */
+const vscRows = document.querySelectorAll('.insp-pane.vsc .vsc-row');
+vscRows.forEach(function(row){
+  row.addEventListener('click', function(){
+    vscRows.forEach(x => x.classList.toggle('on', x === row));
+    if (!row.dataset.folder) return;
+    const fechada = !row.classList.toggle('aberta');
+    row.querySelector('.tw').textContent = fechada ? '▸' : '▾';
+    const d = Number(row.dataset.depth);
+    let filha = row.nextElementSibling;
+    while (filha && Number(filha.dataset.depth) > d){
+      filha.classList.toggle('oculto', fechada);
+      filha = filha.nextElementSibling;
+    }
+  });
+});
+
+const esc = (s) => s.replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+
+/*
+ * Fábrica do AskCard: mesma anatomia e teclado de src/views/session/AskCard.tsx.
+ * Cada instância tem estado próprio e só mexe no seu elemento — os IDs internos
+ * viraram data-* para não colidir quando o cartão aparece em duas telas.
+ */
+function criarAsk(id, perguntas, inicial){
+  const root = document.getElementById(id);
+  if (!root) return null;
+  const st = {
+    tab: 0,
+    escolha: perguntas.map((_, i) => inicial?.escolha?.[i] ?? null),
+    outro: perguntas.map(() => ''),
+    outroAberto: perguntas.map(() => false),
+    enviada: false,
+    recolhido: false,
+  };
+  const respondeu = (i) => !!(st.escolha[i] || st.outro[i].trim());
+  const totalResp = () => perguntas.filter((_, i) => respondeu(i)).length;
+  const escolhido = (i) => st.escolha[i] || (st.outro[i].trim() ? `Outra: ${st.outro[i].trim()}` : '—');
+  const enviar = () => {
+    if (totalResp() === perguntas.length){ st.enviada = true; render(); }
+  };
+
+  function render(){
+    if (st.enviada){
+      root.classList.add('enviada');
+      const linhas = perguntas.map((p, i) => `<b>${esc(p.tab)}:</b> ${esc(escolhido(i))}`).join('<br>');
+      root.innerHTML = `
+        <div class="ask-bar">
+          <div class="ask-tabs"><button class="ask-tab ok" type="button" disabled>
+            <svg class="i menor"><use href="#i-check"/></svg> Resposta enviada</button></div>
+          <span class="ask-resp">já respondida</span>
+        </div>
+        <div class="ask-resumo">${linhas}
+          <div style="margin-top:8px"><button class="btn quieto" type="button" data-reopen>Ver novamente</button></div>
+        </div>`;
+      root.querySelector('[data-reopen]').addEventListener('click', () => { st.enviada = false; render(); });
+      return;
+    }
+    root.classList.remove('enviada');
+    root.classList.toggle('recolhido', st.recolhido);
+    const i = st.tab, q = perguntas[i], n = totalResp();
+    const tabs = perguntas.map((p, idx) => `
+      <button type="button" class="ask-tab${idx === i ? ' on' : ''}${respondeu(idx) ? ' ok' : ''}" data-tab="${idx}">
+        ${respondeu(idx) ? '<svg class="i menor"><use href="#i-check"/></svg>' : ''}${esc(p.tab)}</button>`).join('');
+    const opcoes = q.opcoes.map((o, idx) => {
+      const on = st.escolha[i] === o.label;
+      return `<button type="button" class="ask-opt${on ? ' on' : ''}" data-opt="${idx}" role="radio" aria-checked="${on}">
+        <span class="ask-mark">${on ? '<i></i>' : ''}</span>
+        <span class="ask-body"><span class="ask-label"><kbd class="ask-key">${idx + 1}</kbd>${esc(o.label)}</span>
+        <span class="ask-desc">${esc(o.desc)}</span></span></button>`;
+    }).join('');
+    const outraOn = st.outroAberto[i] && !!st.outro[i].trim();
+    const outra = `<button type="button" class="ask-opt${st.outroAberto[i] ? ' on' : ''}" data-outro="1"
+        role="radio" aria-checked="${outraOn}">
+        <span class="ask-mark">${outraOn ? '<i></i>' : ''}</span>
+        <span class="ask-body"><span class="ask-label"><kbd class="ask-key">${q.opcoes.length + 1}</kbd>Outra</span></span></button>`;
+    const extra = st.outroAberto[i]
+      ? `<input class="ask-extra" placeholder="Escreva a sua resposta" value="${esc(st.outro[i])}">`
+      : '';
+    root.innerHTML = `
+      <div class="ask-bar">
+        <div class="ask-tabs">${tabs}</div>
+        <span class="ask-resp">${n} de ${perguntas.length}</span>
+        <button class="ask-ibtn" type="button" data-fold aria-expanded="${!st.recolhido}"
+          title="${st.recolhido ? 'Mostrar a pergunta' : 'Recolher a pergunta'}">
+          <svg class="i"><use href="#i-chevron"/></svg></button>
+      </div>
+      <div class="ask-text">${esc(q.texto)}</div>
+      <div class="ask-sub">A escolha volta para o agente como mensagem do usuário.</div>
+      <div class="ask-opts" role="radiogroup">${opcoes}${outra}${extra}</div>
+      <div class="ask-foot">
+        <button class="btn primario" type="button" data-send ${n === perguntas.length ? '' : 'disabled'}>
+          ${n < perguntas.length ? `Enviar respostas (${n} de ${perguntas.length})` : 'Enviar respostas'}</button>
+        <small>1–9 escolhe · ←/→ troca de pergunta · Ctrl+Enter envia</small>
+      </div>`;
+
+    root.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => {
+      st.tab = Number(b.dataset.tab); render();
+    }));
+    root.querySelector('[data-fold]').addEventListener('click', () => {
+      st.recolhido = !st.recolhido; render();
+    });
+    root.querySelectorAll('[data-opt]').forEach(b => b.addEventListener('click', () => {
+      st.escolha[i] = q.opcoes[Number(b.dataset.opt)].label;
+      st.outro[i] = ''; st.outroAberto[i] = false;
+      const proxima = perguntas.findIndex((_, idx) => idx > i && !respondeu(idx));
+      if (proxima >= 0) st.tab = proxima;
+      render();
+    }));
+    root.querySelector('[data-outro]').addEventListener('click', () => {
+      const abrir = !st.outroAberto[i];
+      st.outroAberto[i] = abrir;
+      if (abrir) st.escolha[i] = null;
+      render();
+      if (abrir) requestAnimationFrame(() => root.querySelector('.ask-extra')?.focus());
+    });
+    const input = root.querySelector('.ask-extra');
+    if (input) input.addEventListener('input', (e) => {
+      st.outro[i] = e.target.value;
+      const pronto = totalResp() === perguntas.length;
+      const botao = root.querySelector('[data-send]');
+      botao.disabled = !pronto;
+      botao.textContent = pronto ? 'Enviar respostas' : `Enviar respostas (${totalResp()} de ${perguntas.length})`;
+      root.querySelector(`[data-tab="${i}"]`)?.classList.toggle('ok', respondeu(i));
+      root.querySelector('[data-outro] .ask-mark').innerHTML = respondeu(i) ? '<i></i>' : '';
+    });
+    root.querySelector('[data-send]').addEventListener('click', enviar);
+  }
+
+  root.addEventListener('keydown', (e) => {
+    if (e.target instanceof HTMLInputElement || st.enviada) return;
+    const q = perguntas[st.tab];
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); enviar(); return; }
+    if (e.key === 'ArrowRight' && st.tab < perguntas.length - 1){ st.tab++; render(); }
+    else if (e.key === 'ArrowLeft' && st.tab > 0){ st.tab--; render(); }
+    else if (/^[1-9]$/.test(e.key)){
+      const n = Number(e.key) - 1;
+      if (n < q.opcoes.length) root.querySelector(`[data-opt="${n}"]`)?.click();
+      else if (n === q.opcoes.length) root.querySelector('[data-outro]')?.click();
+    } else return;
+    e.preventDefault();
+  });
+  render();
+  return st;
+}
+
+/* Métricas: duas perguntas, como no mock aprovado. */
+criarAsk('ask', [
+  { tab:'Período', texto:'Qual período devo usar para comparar o uso?',
+    opcoes:[
+      { label:'Últimos 7 dias', desc:'comparar com a semana anterior' },
+      { label:'Últimos 30 dias', desc:'visão mensal de tokens e custo' },
+    ] },
+  { tab:'Medida', texto:'Qual medida você quer ver no gráfico?',
+    opcoes:[
+      { label:'Tokens', desc:'volume de uso por dia' },
+      { label:'Custo equivalente em API', desc:'quanto o uso custaria na API' },
+    ] },
+], { escolha:['Últimos 7 dias', null] });
+
+/* Conversa: uma pergunta só, montada pelo agente antes de editar o composer. */
+criarAsk('ask-chat', [
+  { tab:'Composer', texto:'Antes de editar, como você quer o composer da conversa?',
+    opcoes:[
+      { label:'Pílula minimalista', desc:'44 px, + à esquerda, mic/enviar à direita' },
+      { label:'Barra completa', desc:'modelo, modo e controles sempre visíveis' },
+      { label:'Pílula + sub-barra', desc:'o modelo e o modo ficam numa linha discreta' },
+    ] },
+], { escolha:['Pílula minimalista'] });
+
+/* A conversa abre com a pergunta à vista, como no print que o usuário viu. */
+requestAnimationFrame(() => {
+  const tr = document.querySelector('.transcript');
+  const card = document.getElementById('ask-chat');
+  if (!tr || !card) return;
+  const top = card.getBoundingClientRect().top - tr.getBoundingClientRect().top + tr.scrollTop;
+  tr.scrollTop = Math.max(0, top - 54);
+});
+</script>
+</body>
+</html>

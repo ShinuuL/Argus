@@ -2,7 +2,7 @@
  * Componentes compartilhados do redesign (docs/mockups/argus-telas.html).
  * Prefixo "ui-" para não colidir com as classes antigas. Cores só por tokens.
  */
-.ui-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; min-width: 0; }
+.ui-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 12px; min-width: 0; }
 .ui-card-h { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 12.5px; font-weight: 600; color: var(--text); }
 .ui-card-h .ui-sp { flex: 1; }
 
@@ -15,12 +15,12 @@ button.ui-chip:hover { color: var(--text); }
 .ui-chip.info { color: var(--run); border-color: color-mix(in srgb, var(--run) 45%, transparent); }
 
 .ui-tabs { display: flex; gap: 2px; padding: 6px 8px; border-bottom: 1px solid var(--border); flex: none; }
-.ui-tab { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 0; border-radius: 6px; background: none; color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
+.ui-tab { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 0; border-radius: 8px; background: none; color: var(--text-2); font: inherit; font-size: 12.5px; cursor: pointer; }
 .ui-tab:hover { color: var(--text); background: color-mix(in srgb, var(--selection) 50%, transparent); }
 .ui-tab.on { background: var(--selection); color: var(--text); }
 .ui-tab .ui-count { font-size: 10.5px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 
-.ui-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 7px; overflow: hidden; }
+.ui-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; }
 .ui-seg > button { border: 0; border-radius: 0; background: none; font: inherit; font-size: 11.5px; padding: 2px 9px; color: var(--text-2); cursor: pointer; }
 .ui-seg > button + button { border-left: 1px solid var(--border-strong); }
 .ui-seg > button:hover { color: var(--text); }
@@ -29,7 +29,7 @@ button.ui-chip:hover { color: var(--text); }
 .ui-seg > .on-bad { background: color-mix(in srgb, var(--err) 22%, transparent); color: var(--text); }
 .ui-seg > .on { background: var(--selection); color: var(--text); }
 
-.ui-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: var(--accent); color: var(--on-accent); border: 1px solid transparent; border-radius: 7px; padding: 4px 12px; font: inherit; font-weight: 500; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.ui-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: var(--accent); color: var(--on-accent); border: 1px solid transparent; border-radius: 8px; padding: 4px 12px; font: inherit; font-weight: 500; font-size: 12px; white-space: nowrap; cursor: pointer; }
 .ui-btn:hover:not(:disabled) { background: var(--accent-hover); }
 .ui-btn.g { background: transparent; color: var(--text); border-color: var(--border-strong); }
 .ui-btn.g:hover:not(:disabled) { background: var(--surface-2); }
@@ -97,11 +97,11 @@ table.ui-t { width: 100%; border-collapse: collapse; font-size: 12px; }
   flex: 1; min-height: 240px; margin: 0 22px 22px;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 10px; text-align: center; padding: 28px;
-  border: 1px dashed var(--border); border-radius: var(--radius-lg); background: var(--surface);
+  border: 1px dashed var(--border); border-radius: var(--radius-xl); background: var(--surface);
 }
 .ui-vazio.compact { min-height: 0; margin: 0; padding: 20px; flex: none; }
 .ui-vazio-ic {
-  width: 38px; height: 38px; border-radius: var(--radius-lg); display: grid; place-items: center;
+  width: 38px; height: 38px; border-radius: 8px; display: grid; place-items: center;
   background: var(--surface-2); color: var(--text-2);
 }
 .ui-vazio h3 { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--text); }

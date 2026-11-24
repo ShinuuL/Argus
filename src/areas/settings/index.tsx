@@ -140,9 +140,10 @@ function useSideStatus(project: Path | null) {
 function ThemePage() {
   const theme = useTheme((s) => s.theme);
   const setTheme = useTheme((s) => s.setTheme);
-  const { uiScale, setUiScale, codeFont, setCodeFont } = useTheme();
+  const { uiScale, setUiScale, codeFont, setCodeFont, accentColor, setAccentColor } = useTheme();
   return (
     <PageBody title="Aparência" lead="Tema, tamanho da interface e fonte do código. Vale para toda a interface, o editor e os terminais; a escolha fica lembrada.">
+      <p className="sa-group-h">Tema de cores</p>
       <div className="set-themes" role="radiogroup" aria-label="Tema de cores">
         {THEMES.map((t) => (
           <button
@@ -169,6 +170,32 @@ function ThemePage() {
         ))}
       </div>
       <div className="set-appear-rows">
+        {theme === "bento" && (
+          <div className="set-appear-row">
+            <div>
+              <b>Cor de destaque</b>
+              <p className="small">Troca o violeta dos botões, da seleção e do foco. Vale só no Bento e fica lembrada.</p>
+            </div>
+            <div className="set-accent-actions">
+              <input
+                type="color"
+                className="set-accent-input"
+                aria-label="Cor de destaque do tema Bento"
+                title="Escolher cor de destaque"
+                value={accentColor ?? "#7c6df2"}
+                onChange={(e) => setAccentColor(e.target.value)}
+              />
+              <button
+                type="button"
+                className="ui-btn g sm"
+                disabled={!accentColor}
+                onClick={() => setAccentColor(null)}
+              >
+                Restaurar
+              </button>
+            </div>
+          </div>
+        )}
         <div className="set-appear-row">
           <div>
             <b>Tamanho da interface</b>
@@ -198,24 +225,34 @@ function ThemePage() {
   );
 }
 
-const SHORTCUTS: [string, string][] = [
-  ["Ctrl+K", "Abrir a paleta de comandos"],
-  ["Ctrl+.", "Mostrar ou esconder o inspetor"],
-  ["Ctrl+N", "Nova conversa"],
-  ["Ctrl+B", "Mostrar ou esconder a lista de projetos"],
-  ["Ctrl+J", "Mostrar ou esconder o painel inferior"],
-  ["Ctrl+Tab", "Próxima aba (Ctrl+Shift+Tab volta)"],
-  ["Ctrl+W", "Fechar a aba"],
-  ["Ctrl+\\", "Dividir o editor"],
-  ["/", "Buscar configuração (nesta tela)"],
+const SHORTCUT_GROUPS: { title: string; items: [string, string][] }[] = [
+  {
+    title: "Paleta e painéis",
+    items: [
+      ["Ctrl+K", "Abrir a paleta de comandos"],
+      ["Ctrl+.", "Mostrar ou esconder o inspetor"],
+      ["Ctrl+B", "Mostrar ou esconder a lista de projetos"],
+      ["Ctrl+J", "Mostrar ou esconder o painel inferior"],
+      ["/", "Buscar configuração (nesta tela)"],
+    ],
+  },
+  {
+    title: "Conversas, abas e editor",
+    items: [
+      ["Ctrl+N", "Nova conversa"],
+      ["Ctrl+Tab", "Próxima aba (Ctrl+Shift+Tab volta)"],
+      ["Ctrl+W", "Fechar a aba"],
+      ["Ctrl+\\", "Dividir o editor"],
+    ],
+  },
 ];
 
-const COMPACT_OPTIONS: { value: number; label: string }[] = [
-  { value: 100_000, label: "100 mil tokens" },
-  { value: 150_000, label: "150 mil tokens (padrão)" },
-  { value: 200_000, label: "200 mil tokens" },
-  { value: 400_000, label: "400 mil tokens" },
-  { value: 0, label: "Nunca" },
+const COMPACT_OPTIONS: { value: number; label: string; hint: string }[] = [
+  { value: 100_000, label: "100 mil tokens", hint: "Recorta mais cedo: o resumo vem antes de a conversa encher." },
+  { value: 150_000, label: "150 mil tokens (padrão)", hint: "Nem cedo demais nem tarde demais." },
+  { value: 200_000, label: "200 mil tokens", hint: "Deixa a conversa crescer mais antes de resumir." },
+  { value: 400_000, label: "400 mil tokens", hint: "Só para quem precisa de muito histórico de uma vez." },
+  { value: 0, label: "Nunca", hint: "Desliga os dois: por limite e por cache expirado." },
 ];
 
 function ContextPage() {
@@ -234,14 +271,20 @@ function ContextPage() {
       lead="Quando a conversa passa do limite, o Argus compacta antes do próximo turno: o agente segue com um resumo, e cada ferramenta deixa de reler o histórico inteiro. Também compacta quando a conversa ficou parada mais de 60 minutos com mais de 60 mil tokens: o cache já expirou e o próximo turno regravaria tudo. Vale para o Claude Code. “Nunca” desliga os dois."
     >
       {err && <div className="err" role="alert">{err}</div>}
-      <div className="set-radio" role="radiogroup" aria-label="Compactar a conversa a partir de">
-        {COMPACT_OPTIONS.map((o) => (
-          <label key={o.value} className="set-radio-it">
-            <input type="radio" name="autocompact" checked={limit === o.value} disabled={limit == null} onChange={() => choose(o.value)} />
-            {o.label}
-          </label>
-        ))}
-        {limit != null && !COMPACT_OPTIONS.some((o) => o.value === limit) && <span className="small">Atual: {limit} tokens</span>}
+      <div className="ui-card sa-card sa-group">
+        <p className="sa-group-h">Compactar a conversa a partir de</p>
+        <div className="set-radio wide" role="radiogroup" aria-label="Compactar a conversa a partir de">
+          {COMPACT_OPTIONS.map((o) => (
+            <label key={o.value} className="set-radio-it">
+              <input type="radio" name="autocompact" checked={limit === o.value} disabled={limit == null} onChange={() => choose(o.value)} />
+              <span>
+                {o.label}
+                <span className="small"> — {o.hint}</span>
+              </span>
+            </label>
+          ))}
+          {limit != null && !COMPACT_OPTIONS.some((o) => o.value === limit) && <span className="small">Atual: {limit} tokens</span>}
+        </div>
       </div>
     </PageBody>
   );
@@ -274,27 +317,32 @@ function PolishPage() {
       lead="Reescreve o rascunho da caixa antes de ele ir ao agente: objetivo, o que muda, onde, o que não mexer e como saber que ficou pronto. O que estiver ambíguo vira uma lista “Em aberto” em vez de palpite. O texto volta para a caixa — nada é enviado sem você ver, e o Desfazer devolve o original."
     >
       {err && <div className="err" role="alert">{err}</div>}
-      <div className="set-radio" role="radiogroup" aria-label="Quando melhorar o pedido">
-        {POLISH_OPTIONS.map((o) => (
-          <label key={o.value} className="set-radio-it">
-            <input type="radio" name="polish" checked={mode === o.value} disabled={mode == null} onChange={() => choose(o.value)} />
-            <span>
-              {o.label}
-              <span className="small"> — {o.hint}</span>
-            </span>
-          </label>
-        ))}
+      <div className="ui-card sa-card sa-group">
+        <p className="sa-group-h">Quando melhorar o pedido</p>
+        <div className="set-radio wide" role="radiogroup" aria-label="Quando melhorar o pedido">
+          {POLISH_OPTIONS.map((o) => (
+            <label key={o.value} className="set-radio-it">
+              <input type="radio" name="polish" checked={mode === o.value} disabled={mode == null} onChange={() => choose(o.value)} />
+              <span>
+                {o.label}
+                <span className="small"> — {o.hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
       </div>
-      <p className="small">
-        A reescrita roda um <code>claude -p</code> curto no modelo mais barato (haiku), fora da pasta do projeto e sem
-        nenhuma ferramenta: ela não lê arquivo, não roda comando e não grava sessão. Texto colado de fora entra
-        delimitado e marcado como dado, não como instrução. O custo aparece normalmente nas Métricas.
-      </p>
-      <p className="small">
-        Em projeto novo, a primeira conversa oferece a <b>entrevista de briefing</b>: o agente lê o que já existe,
-        pergunta em blocos e grava o <code>BRIEFING.md</code> com escopo, restrições e critério de pronto, sem alterar
-        nada. Também dá para chamar a qualquer momento com <code>/briefing</code>.
-      </p>
+      <div className="sa-note">
+        <p>
+          A reescrita roda um <code>claude -p</code> curto no modelo mais barato (haiku), fora da pasta do projeto e sem
+          nenhuma ferramenta: ela não lê arquivo, não roda comando e não grava sessão. Texto colado de fora entra
+          delimitado e marcado como dado, não como instrução. O custo aparece normalmente nas Métricas.
+        </p>
+        <p>
+          Em projeto novo, a primeira conversa oferece a <b>entrevista de briefing</b>: o agente lê o que já existe,
+          pergunta em blocos e grava o <code>BRIEFING.md</code> com escopo, restrições e critério de pronto, sem alterar
+          nada. Também dá para chamar a qualquer momento com <code>/briefing</code>.
+        </p>
+      </div>
     </PageBody>
   );
 }
@@ -320,12 +368,14 @@ function StartupPage() {
       lead="As tarefas agendadas só rodam com o Argus aberto. Para não depender de lembrar de abri-lo, ele pode iniciar junto com o Windows, minimizado."
     >
       {err && <div className="err" role="alert">{err}</div>}
-      <label className="sa-check">
-        <input type="checkbox" checked={info?.enabled ?? false} disabled={!info?.available || busy} onChange={(e) => toggle(e.target.checked)} />
-        Iniciar com o Windows
-      </label>
-      {info && !info.available && info.reason && <p className="ui-sm ui-mut">{info.reason}</p>}
-      <p className="ui-sm ui-mut sa-lead">Vale só para o seu usuário do Windows e não pede permissão de administrador.</p>
+      <div className="ui-card sa-card sa-init">
+        <label className="sa-check">
+          <input type="checkbox" checked={info?.enabled ?? false} disabled={!info?.available || busy} onChange={(e) => toggle(e.target.checked)} />
+          Iniciar com o Windows
+        </label>
+        {info && !info.available && info.reason && <p className="ui-sm ui-mut">{info.reason}</p>}
+        <p className="ui-sm ui-mut sa-lead">Vale só para o seu usuário do Windows e não pede permissão de administrador.</p>
+      </div>
     </PageBody>
   );
 }
@@ -333,24 +383,31 @@ function StartupPage() {
 function ShortcutsPage() {
   return (
     <PageBody title="Atalhos" lead="Atalhos de teclado do Argus. Ainda não dá para trocar as teclas.">
-      <table className="ui-t sa-narrow">
-        <thead>
-          <tr>
-            <th style={{ width: 140 }}>Tecla</th>
-            <th>Ação</th>
-          </tr>
-        </thead>
-        <tbody>
-          {SHORTCUTS.map(([k, d]) => (
-            <tr key={k}>
-              <td>
-                <span className="kbd">{k}</span>
-              </td>
-              <td>{d}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="set-shortcuts">
+        {SHORTCUT_GROUPS.map((g) => (
+          <div className="ui-card sa-card sa-group" key={g.title}>
+            <p className="sa-group-h">{g.title}</p>
+            <table className="ui-t">
+              <thead>
+                <tr>
+                  <th style={{ width: 110 }}>Tecla</th>
+                  <th>Ação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {g.items.map(([k, d]) => (
+                  <tr key={k}>
+                    <td>
+                      <span className="kbd">{k}</span>
+                    </td>
+                    <td>{d}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
     </PageBody>
   );
 }
@@ -366,7 +423,7 @@ function McpPage() {
   return (
     <PageBody title="Ferramentas MCP" lead="Servidores MCP das conversas de agente: o do Argus (celular) e os da CLI do Claude.">
       {err && <div className="err small">{err}</div>}
-      <table className="ui-t sa-narrow">
+      <table className="ui-t">
         <thead>
           <tr>
             <th>Servidor</th>
@@ -499,7 +556,7 @@ export default function SettingsArea() {
       {page === "permissoes" ? (
         <PermissionsPage />
       ) : (
-        <div className="ui-area-main sa-main" aria-label={label}>
+        <div className="ui-area-main sa-main sa-page" aria-label={label}>
           {page === "aparencia" && <ThemePage />}
           {page === "atalhos" && <ShortcutsPage />}
           {page === "provedores" && (

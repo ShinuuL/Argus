@@ -10,7 +10,7 @@
 .hm-dot { opacity: 0.5; }
 .hm-sp { flex: 1; }
 .hm-cols { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; align-items: start; }
-.hm-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px; color: var(--text); }
+.hm-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl); padding: 12px; color: var(--text); }
 .hm-list { display: grid; gap: 2px; align-content: start; max-height: 60vh; overflow-y: auto; }
 .hm-ttl { margin: 0 0 6px; font-size: 12px; font-weight: 500; color: var(--text-2); }
 .hm-it { border-radius: var(--radius); padding: 5px 8px; }

@@ -5,7 +5,7 @@
  * As funções `*In` são puras (recebem e devolvem os grupos) e o store as aplica.
  */
 import { create } from "zustand";
-import { useLayout, type Area } from "./layout";
+import { AREAS, useLayout, type Area } from "./layout";
 import { useApp } from "./app";
 import { api, baseName, samePath, type CmdSpec, type CommandSpec, type Path, type TaskId } from "@/api";
 
@@ -25,6 +25,8 @@ export type TabKind =
   | { type: "diff"; task: TaskId }
   /** Espelhamento do celular (Screen-Mirror) ao lado da conversa. */
   | { type: "mirror" }
+  /** Tela de uma área (Início, Git, Servidores…) aberta como aba no workbench. */
+  | { type: "area"; area: Area }
   /** Telas que abrem como aba pelo rodapé da barra esquerda. */
   | { type: "page"; page: PageId };
 
@@ -52,7 +54,6 @@ export function normalizeKind(kind: TabKind): TabKind {
   return kind;
 }
 
-/** Páginas que agora abrem como área em tela cheia (barra de ícones). */
 /** Abrir algo no workbench traz a área de conversas para a frente. */
 function toChat(): void {
   const l = useLayout.getState();
@@ -93,6 +94,7 @@ export function sameKind(a: TabKind, b: TabKind): boolean {
   if (a.type === "chat" && b.type === "chat") return a.task === b.task;
   if (a.type === "agentmap" && b.type === "agentmap") return a.task === b.task;
   if (a.type === "diff" && b.type === "diff") return a.task === b.task;
+  if (a.type === "area" && b.type === "area") return a.area === b.area;
   if (a.type === "page" && b.type === "page") return a.page === b.page;
   if (a.type === "terminal" || b.type === "terminal") return false;
   return a.type === b.type;
@@ -114,6 +116,8 @@ export function tabTitle(kind: TabKind): string {
       return `Alterações #${kind.task}`;
     case "mirror":
       return "Celular";
+    case "area":
+      return AREAS.find((a) => a.id === kind.area)?.label ?? kind.area;
     case "page":
       return PAGES.find((p) => p.id === (normalizeKind(kind) as typeof kind).page)?.label ?? kind.page;
   }
@@ -123,6 +127,7 @@ export function tabTooltip(kind: TabKind): string {
   if (kind.type === "file") return kind.path;
   if (kind.type === "terminal") return `Terminal em ${kind.cwd ?? "pasta atual"}`;
   if (kind.type === "mirror") return "Espelhamento do celular (Screen-Mirror)";
+  if (kind.type === "area") return `${tabTitle(kind)} como aba`;
   return tabTitle(kind);
 }
 
@@ -244,6 +249,10 @@ export interface WorkbenchState {
   setChatProject(tab: number, project: Path | null): void;
   /** Abre uma tela; "providers" abre Configurações › Provedores. */
   openPage(page: PageId | LegacyPageId): void;
+  /** Abre (ou foca) uma área do rail como aba, sem sair da conversa. */
+  openAreaTab(area: Area): void;
+  /** Abre (ou foca) uma tela extra como aba, mesmo quando `openPage` navega em tela cheia. */
+  openPageTab(page: PageId): void;
   /** Seção visível em Configurações. */
   settingsSection: SettingsSection;
   setSettingsSection(section: SettingsSection): void;
@@ -381,6 +390,13 @@ export const useWorkbench = create<WorkbenchState>()((set, get) => {
       if (area) return useLayout.getState().setArea(area);
       get().open({ type: "page", page });
     },
+    openAreaTab: (area) => {
+      if (area === "chat") return get().openNewChat();
+      // Terminal já tem aba própria, com processo e chave de persistência.
+      if (area === "terminal") return get().openTerminal({ title: "Terminal" });
+      get().open({ type: "area", area });
+    },
+    openPageTab: (page) => get().open({ type: "page", page }),
     setSettingsSection: (settingsSection) => set({ settingsSection }),
     openSettings: (section) => {
       if (section) set({ settingsSection: section });

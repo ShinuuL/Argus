@@ -40,6 +40,9 @@
 .cv-ctx-alert.warn { background: var(--warn-bg); color: var(--warn); }
 .cv-ctx-alert.err { background: var(--err-bg); color: var(--err); }
 .cv-total { flex: none; white-space: nowrap; font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; cursor: default; }
+/* Custo de hoje saiu da pílula e virou informação do cabeçalho. */
+.cv-head .chat-usage { flex: none; font-size: 11px; color: var(--text-2); white-space: nowrap; }
+@container (max-width: 800px) { .cv-head .chat-usage { display: none; } }
 @container (max-width: 620px) { .cv-total-tok { display: none; } }
 @container (max-width: 520px) { .cv-state { display: none; } .chat-pill-label { display: none; } }
 
@@ -94,11 +97,24 @@
 @keyframes cv-wave { 0%, 100% { opacity: .35; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
 @keyframes cv-wave-fade { 0%, 100% { opacity: .35; } 40% { opacity: 1; } }
 .cv-working-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-2); }
+/* Fora da transcrição (logo acima da pílula) não há tl-dot: a onda anima sempre. */
+.chat-composer .cv-working { padding: 0 2px; }
+.chat-composer .cv-working-wave i { animation: cv-wave 1.2s ease-in-out infinite; }
+.chat-composer .cv-working-wave i:nth-child(2) { animation-delay: .15s; }
+.chat-composer .cv-working-wave i:nth-child(3) { animation-delay: .3s; }
+.cv-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cv-status:empty { display: none; }
 /* Movimento reduzido: a onda só pulsa a opacidade, sem subir. */
 @media (prefers-reduced-motion: reduce) {
-  .cv-log:not(:has(.tl-dot.running)) .cv-working-wave i { animation-name: cv-wave-fade; }
+  .cv-log:not(:has(.tl-dot.running)) .cv-working-wave i,
+  .chat-composer .cv-working-wave i { animation-name: cv-wave-fade; }
 }
-.cv-usage { font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.cv-usage { font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; outline: none; }
+/* Telemetria por turno: discreta por padrão, legível no hover ou com foco. */
+.tl-usage .cv-usage { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
+.tl-usage:hover .cv-usage, .tl-usage:focus-within .cv-usage { opacity: 1; }
+@media (hover: none) { .tl-usage .cv-usage { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .tl-usage .cv-usage { transition: none; } }
 .cv-fail { display: flex; gap: 8px; align-items: flex-start; padding: 6px 10px; border: 1px solid var(--border); border-left: 2px solid var(--err); border-radius: var(--radius); background: var(--surface); color: var(--err); font-size: 12.5px; }
 .cv-fail-text { color: var(--text); overflow-wrap: anywhere; white-space: pre-wrap; }
 
@@ -116,7 +132,7 @@
 .cv-denied > button { flex: none; align-self: center; padding: 3px 10px; font-size: 12px; }
 
 /* Aviso que segura o envio (modo isolado sem o que o pedido precisa; segunda sessão direta). */
-.cv-hold { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--warn); border-radius: var(--radius-lg); background: var(--surface); font-size: 12.5px; }
+.cv-hold { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--warn); border-radius: var(--radius-xl); background: var(--surface); font-size: 12.5px; }
 .cv-hold-head { display: flex; align-items: center; gap: 8px; }
 .cv-hold-head > .ic { flex: none; color: var(--warn); }
 .cv-hold-head b { flex: 1; min-width: 0; }
@@ -370,7 +386,7 @@ button.tl-diff-no:hover, button.tl-diff-no:focus-visible { opacity: 1; color: va
 .cv .tl { gap: 14px; }
 
 /* Pergunta do agente: abas por pergunta, opções com marcador, "Outra" e enviar. */
-.ses-ask { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+.ses-ask { display: flex; flex-direction: column; gap: 10px; padding: 10px 12px 12px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); }
 .ses-ask.live { border-color: color-mix(in srgb, var(--warn) 50%, var(--border)); }
 .ses-ask:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .ses-ask-bar { display: flex; align-items: center; gap: 6px; min-width: 0; }

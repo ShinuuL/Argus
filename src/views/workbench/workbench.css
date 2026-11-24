@@ -19,7 +19,7 @@
 @media (prefers-reduced-motion: reduce) { .wb-drop-mark { transition: none; } }
 
 /* Menu de contexto das abas. */
-.wb-menu { position: fixed; z-index: 1000; min-width: 190px; background: var(--bg-raised); border: 1px solid var(--border-control); border-radius: var(--radius); padding: 4px; box-shadow: 0 8px 24px var(--shadow); display: flex; flex-direction: column; }
+.wb-menu { position: fixed; z-index: 1000; min-width: 190px; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius-panel); padding: 4px; box-shadow: 0 8px 24px var(--shadow); display: flex; flex-direction: column; }
 .wb-menu button { background: none; border: 0; border-radius: var(--radius-sm); text-align: left; padding: 5px 10px; color: var(--text); font-size: 12px; display: flex; justify-content: space-between; gap: 16px; }
 .wb-menu button:hover:not(:disabled), .wb-menu button:focus-visible { background: var(--bg-selected); color: var(--text-strong); outline: none; }
 .wb-menu button:disabled { opacity: .45; }
@@ -27,3 +27,9 @@
 .wb-menu hr { border: 0; border-top: 1px solid var(--border-control); margin: 4px 0; width: 100%; }
 
 .grid tbody tr.dash-sel { background: var(--bg-selected); }
+
+/* Área em tela cheia aberta como aba: ocupa o painel inteiro do grupo.
+   Fora da Shell o `.ui-area` não tem `flex: 1` de um pai flexível, por isso
+   o host dá a altura e o display que faltam. */
+.wb-area-tab { height: 100%; display: flex; min-width: 0; min-height: 0; }
+.wb-area-tab > .ui-area { flex: 1; min-width: 0; min-height: 0; }

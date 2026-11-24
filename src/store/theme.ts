@@ -4,9 +4,10 @@
  */
 import { create } from "zustand";
 
-export type ThemeId = "oceano" | "ciano" | "ambar" | "violeta";
+export type ThemeId = "bento" | "oceano" | "ciano" | "ambar" | "violeta";
 
 export const THEMES: { id: ThemeId; label: string; hint: string }[] = [
+  { id: "bento", label: "Bento", hint: "cinza e violeta" },
   { id: "oceano", label: "Oceano", hint: "azul" },
   { id: "ciano", label: "Ardósia", hint: "ardósia e ciano" },
   { id: "ambar", label: "Grafite", hint: "grafite e âmbar" },
@@ -14,7 +15,8 @@ export const THEMES: { id: ThemeId; label: string; hint: string }[] = [
 ];
 
 const STORAGE_KEY = "argus.tema";
-const DEFAULT_THEME: ThemeId = "oceano";
+/* Quem já tem tema salvo no localStorage mantém a escolha; só quem nunca escolheu cai no Bento. */
+const DEFAULT_THEME: ThemeId = "bento";
 
 function isTheme(v: unknown): v is ThemeId {
   return THEMES.some((t) => t.id === v);
@@ -27,6 +29,45 @@ function stored(): ThemeId {
   } catch {
     return DEFAULT_THEME;
   }
+}
+
+const ACCENT_KEY = "argus.acento";
+const HEX = /^#[0-9a-f]{6}$/i;
+/** Cores sobrescritas no Bento; --accent-soft e --bg-selected derivam delas. */
+const ACCENT_VARS = ["--accent", "--accent-hover", "--accent-text", "--on-accent", "--selection", "--focus"] as const;
+
+function storedAccent(): string | null {
+  try {
+    const v = localStorage.getItem(ACCENT_KEY);
+    return v && HEX.test(v) ? v.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Texto escuro sobre acentos claros, texto claro sobre acentos escuros. */
+function onAccent(hex: string): string {
+  const linear = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+  return luminance > 0.42 ? "#0d0d10" : "#ececf1";
+}
+
+/** Só o Bento aceita acento livre; nos outros temas os valores vêm do CSS. */
+function applyAccent(theme: ThemeId, hex: string | null): void {
+  const style = document.documentElement.style;
+  if (theme !== "bento" || !hex) {
+    for (const v of ACCENT_VARS) style.removeProperty(v);
+    return;
+  }
+  style.setProperty("--accent", hex);
+  style.setProperty("--accent-hover", `color-mix(in srgb, ${hex} 70%, var(--text))`);
+  style.setProperty("--accent-text", `color-mix(in srgb, ${hex} 55%, var(--text))`);
+  style.setProperty("--on-accent", onAccent(hex));
+  style.setProperty("--selection", `color-mix(in srgb, ${hex} 25%, var(--surface-2))`);
+  style.setProperty("--focus", `color-mix(in srgb, ${hex} 85%, var(--text))`);
 }
 
 function apply(theme: ThemeId): void {
@@ -67,22 +108,38 @@ function applyScale(scale: UiScale): void {
 export interface ThemeState {
   theme: ThemeId;
   setTheme(theme: ThemeId): void;
+  /** Acento escolhido no Bento; null é o violeta aprovado no mockup. */
+  accentColor: string | null;
+  setAccentColor(hex: string | null): void;
   uiScale: UiScale;
   setUiScale(v: UiScale): void;
   codeFont: CodeFont;
   setCodeFont(v: CodeFont): void;
 }
 
-export const useTheme = create<ThemeState>()((set) => ({
+export const useTheme = create<ThemeState>()((set, get) => ({
   theme: stored(),
+  accentColor: storedAccent(),
   setTheme: (theme) => {
     apply(theme);
+    applyAccent(theme, get().accentColor);
     try {
       localStorage.setItem(STORAGE_KEY, theme);
     } catch {
       // sem armazenamento: o tema vale só nesta abertura
     }
     set({ theme });
+  },
+  setAccentColor: (hex) => {
+    const valid = hex && HEX.test(hex) ? hex.toLowerCase() : null;
+    applyAccent(get().theme, valid);
+    try {
+      if (valid) localStorage.setItem(ACCENT_KEY, valid);
+      else localStorage.removeItem(ACCENT_KEY);
+    } catch {
+      // sem armazenamento: a cor vale só nesta abertura
+    }
+    set({ accentColor: valid });
   },
   uiScale: storedNum("argus.escala", UI_SCALES, 100),
   setUiScale: (uiScale) => {
@@ -99,6 +156,7 @@ export const useTheme = create<ThemeState>()((set) => ({
 
 // Aplica antes da primeira renderização.
 apply(useTheme.getState().theme);
+applyAccent(useTheme.getState().theme, useTheme.getState().accentColor);
 applyScale(useTheme.getState().uiScale);
 
 let probe: HTMLSpanElement | null = null;

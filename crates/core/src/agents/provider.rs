@@ -367,6 +367,32 @@ pub trait AgentProvider: Send + Sync {
     /// Comando de um turno. O prompt vai em `CommandSpec::stdin`.
     /// Com `session` = Some, continua a conversa existente.
     fn task_command(&self, prompt: &str, cwd: &Path, session: Option<&str>, opts: &TurnOptions) -> CommandSpec;
+    /// Comando de um host que fica vivo entre turnos. `None` (padrão) = um
+    /// processo por turno, como sempre. Quando há host, o prompt NÃO vai em
+    /// `stdin`: cada turno é uma mensagem enviada por [`Self::host_message`].
+    fn host_command(&self, _cwd: &Path, _session: Option<&str>, _opts: &TurnOptions) -> Option<CommandSpec> {
+        None
+    }
+    /// Linha enviada ao host para começar um turno. `id` correlaciona a mensagem
+    /// (a CLI do claude aceita `uuid` e o devolve no `result` quando o campo vem).
+    fn host_message(&self, prompt: &str, id: &str) -> String {
+        serde_json::json!({
+            "type": "user",
+            "uuid": id,
+            "message": { "role": "user", "content": prompt },
+            "parent_tool_use_id": null
+        })
+        .to_string()
+    }
+    /// Verdadeiro quando uma linha do host fecha o turno atual.
+    fn host_turn_ended(&self, _line: &str) -> bool {
+        false
+    }
+    /// Aquece o que a CLI carrega ao iniciar (flags do `--help`, lista de
+    /// modelos). Roda em background na abertura do app. Falha nunca atrapalha
+    /// o turno: é só precaução de latência, não parte da conversa.
+    fn warmup(&self) {}
+
     /// Modelo inicial das conversas novas deste provedor (None = padrão da CLI).
     fn default_model(&self) -> Option<String> {
         None

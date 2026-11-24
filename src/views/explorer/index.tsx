@@ -28,16 +28,81 @@ const STATUS_MARKS: Record<FileStatus, StatusMark> = {
   Conflicted: { letter: "!", cls: "st-conf", title: "em conflito" },
 };
 
+/**
+ * Ícones de arquivo do mockup (mesma ideia dos ícones do VS Code): uma plaqueta
+ * colorida com a sigla da linguagem. A extensão decide a cor e o rótulo.
+ */
+function fileIcon(name: string): { cls: string; glyph: string } {
+  const dot = name.lastIndexOf(".");
+  const ext = dot < 0 ? "" : name.slice(dot + 1).toLowerCase();
+  switch (ext) {
+    case "ts":
+    case "tsx":
+      return { cls: "ts", glyph: "TS" };
+    case "js":
+    case "jsx":
+    case "mjs":
+    case "cjs":
+      return { cls: "js", glyph: "JS" };
+    case "css":
+    case "scss":
+    case "sass":
+    case "less":
+      return { cls: "css", glyph: "#" };
+    case "html":
+    case "htm":
+    case "xml":
+    case "svg":
+      return { cls: "html", glyph: "<>" };
+    case "rs":
+      return { cls: "rs", glyph: "RS" };
+    case "md":
+    case "mdx":
+      return { cls: "md", glyph: "M↓" };
+    case "json":
+    case "jsonc":
+    case "toml":
+    case "yaml":
+    case "yml":
+    case "lock":
+      return { cls: "json", glyph: "{}" };
+    case "py":
+      return { cls: "py", glyph: "PY" };
+    case "go":
+      return { cls: "go", glyph: "GO" };
+    case "sh":
+    case "ps1":
+    case "bat":
+      return { cls: "sh", glyph: "$_" };
+    case "png":
+    case "jpg":
+    case "jpeg":
+    case "gif":
+    case "webp":
+    case "ico":
+      return { cls: "img", glyph: "▣" };
+    default:
+      return { cls: "gen", glyph: name.slice(0, 1).toUpperCase() || "•" };
+  }
+}
+
+function FileIcon({ name }: { name: string }) {
+  const { cls, glyph } = fileIcon(name);
+  return (
+    <span className={`vsc-ico`}>
+      <i className={`vsc-fi fi ${cls}`} aria-hidden="true">
+        {glyph}
+      </i>
+    </span>
+  );
+}
+
 interface TreeContext {
-  /** Muda a cada evento do monitor de arquivos: as pastas abertas relistam. */
+  /** Muda a cada evento do monitor de arquivos ou a cada atualização manual. */
   rev: unknown;
-  /** Status git por arquivo (caminho normalizado). */
   files: Map<string, FileStatus>;
-  /** Pastas que contêm algum arquivo alterado. */
   touchedDirs: Set<string>;
-  /** Arquivo da aba ativa do workbench. */
   current: string | null;
-  /** Pasta do projeto, com barras normais e sem a barra final. */
   base: string;
 }
 
@@ -60,6 +125,17 @@ function onActivateKey(e: KeyboardEvent, action: () => void) {
     e.preventDefault();
     action();
   }
+}
+
+/** Uma barra vertical por nível: o guia de indentação do explorer do VS Code. */
+function Guides({ depth }: { depth: number }) {
+  return (
+    <>
+      {Array.from({ length: depth }, (_, i) => (
+        <span key={i} className="vsc-g" aria-hidden="true" />
+      ))}
+    </>
+  );
 }
 
 /** Conteúdo de uma pasta: lista preguiçosa, relida quando o monitor avisa. */
@@ -85,30 +161,25 @@ function DirChildren({ path, depth }: { path: Path; depth: number }) {
     };
   }, [path, rev]);
 
-  const pad = { paddingLeft: depth * 12 + 4 };
   if (error) {
     return (
-      <div className="tree-note small err" style={pad}>
-        {error}
+      <div className="vsc-note err">
+        <Guides depth={depth} /> {error}
       </div>
     );
   }
   if (!entries) return null;
   if (entries.length === 0) {
     return (
-      <div className="tree-note small muted" style={pad}>
-        (vazia)
+      <div className="vsc-note muted">
+        <Guides depth={depth} /> (vazia)
       </div>
     );
   }
   return (
     <>
       {entries.map((e) =>
-        e.is_dir ? (
-          <DirNode key={e.path} entry={e} depth={depth} />
-        ) : (
-          <FileNode key={e.path} entry={e} depth={depth} />
-        ),
+        e.is_dir ? <DirNode key={e.path} entry={e} depth={depth} /> : <FileNode key={e.path} entry={e} depth={depth} />,
       )}
     </>
   );
@@ -129,8 +200,7 @@ function DirNode({ entry, depth }: { entry: DirEntry; depth: number }) {
   return (
     <>
       <div
-        className={touched ? "node dir touched" : "node dir"}
-        style={{ paddingLeft: depth * 12 + 4 }}
+        className={touched ? "vsc-row folder touched" : "vsc-row folder"}
         role="treeitem"
         aria-expanded={open}
         tabIndex={0}
@@ -138,10 +208,14 @@ function DirNode({ entry, depth }: { entry: DirEntry; depth: number }) {
         onClick={toggle}
         onKeyDown={(e) => onActivateKey(e, toggle)}
       >
-        <span className="arrow">{open ? "▾" : "▸"}</span>
-        <span className="label">{entry.name}</span>
+        <span className="vsc-tw">{open ? "▾" : "▸"}</span>
+        <Guides depth={depth} />
+        <span className="vsc-ico">
+          <Icon name={open ? "folderOpen" : "folder"} filled size={15} className="vsc-folder" />
+        </span>
+        <span className="vsc-name">{entry.name}</span>
         {touched && (
-          <span className="badge" title="contém alterações">
+          <span className="vsc-mod" title="contém alterações">
             ●
           </span>
         )}
@@ -157,11 +231,10 @@ function FileNode({ entry, depth }: { entry: DirEntry; depth: number }) {
   const id = norm(entry.path);
   const status = files.get(id);
   const mark = status ? STATUS_MARKS[status] : undefined;
-  const cls = ["node", "file", mark?.cls, current === id ? "current" : ""].filter(Boolean).join(" ");
+  const cls = ["vsc-row", "file", mark?.cls, current === id ? "on" : ""].filter(Boolean).join(" ");
   return (
     <div
       className={cls}
-      style={{ paddingLeft: depth * 12 + 18 }}
       role="treeitem"
       tabIndex={0}
       draggable
@@ -178,60 +251,239 @@ function FileNode({ entry, depth }: { entry: DirEntry; depth: number }) {
       onDoubleClick={() => openFile(entry.path, false)}
       onKeyDown={(e) => onActivateKey(e, () => openFile(entry.path, false))}
     >
-      <span className="label">{entry.name}</span>
-      {mark && <span className="badge">{mark.letter}</span>}
+      <span className="vsc-tw" />
+      <Guides depth={depth} />
+      <FileIcon name={entry.name} />
+      <span className="vsc-name">{entry.name}</span>
+      {mark && (
+        <span className={`vsc-mod ${mark.cls}`} title={mark.title}>
+          {mark.letter}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function SectionHead({ label, open, onClick }: { label: string; open: boolean; onClick: () => void }) {
+  return (
+    <div className="vsc-sec-h">
+      <button type="button" className="vsc-sec-btn" aria-expanded={open} onClick={onClick}>
+        <span className="vsc-tw">{open ? "▾" : "▸"}</span>
+        {label}
+      </button>
     </div>
   );
 }
 
 /**
- * Arquivos (aba do painel direito): a árvore do projeto ativo, com o status git
- * por arquivo. Arrastar um arquivo para a caixa do chat o anexa.
+ * Aba Arquivos do inspetor no estilo do explorer do VS Code (mockup Bento):
+ * barra EXPLORER, seção ABERTOS, árvore do projeto com ícones de pasta e de
+ * linguagem, guias de indentação e rodapé de status.
+ *
+ * Ações que continuam funcionando: abrir arquivo (clique/duplo clique/teclado),
+ * arrastar para o chat, status git, abrir terminal, atualizar e recolher pastas.
  */
 export default function ExplorerView() {
   const statuses = useApp((s) => s.statuses);
   const selected = useApp((s) => s.selected);
   const openTerminal = useTerminals((s) => s.open);
+  const groups = useWorkbench((s) => s.groups);
+  const dirty = useWorkbench((s) => s.dirty);
+  const openFile = useWorkbench((s) => s.openFile);
+  const closeTab = useWorkbench((s) => s.closeTab);
   const currentFile = useWorkbench((s) => {
     const tab = activeTab(s.groups.find((g) => g.id === s.activeGroup));
     return tab?.kind.type === "file" ? tab.kind.path : null;
   });
+  const [reload, setReload] = useState(0);
+  const [treeKey, setTreeKey] = useState(0);
+  const [openEditorsOpen, setOpenEditorsOpen] = useState(true);
+  const [rootOpen, setRootOpen] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const selectedStatus = selected ? statuses[selected] : undefined;
   // Cada evento do monitor traz um objeto de status novo; sem git, vale a troca do mapa inteiro.
-  const rev: unknown = selectedStatus ?? statuses;
+  const rev = useMemo<unknown>(() => ({ status: selectedStatus ?? statuses, reload }), [selectedStatus, statuses, reload]);
+  const index = useMemo(() => gitIndex(selected ?? "", selectedStatus), [selected, selectedStatus]);
   const tree = useMemo<TreeContext>(
     () => ({
       rev,
-      ...gitIndex(selected ?? "", selectedStatus),
+      ...index,
       current: currentFile ? norm(currentFile) : null,
       base: (selected ?? "").replace(/[\\/]+/g, "/").replace(/\/$/, ""),
     }),
-    [selected, selectedStatus, rev, currentFile],
+    [rev, index, currentFile, selected],
   );
 
+  const openFiles = useMemo(() => {
+    const out: { gid: number; tab: number; path: Path }[] = [];
+    const seen = new Set<string>();
+    for (const g of groups) {
+      for (const t of g.tabs) {
+        if (t.kind.type !== "file") continue;
+        const id = norm(t.kind.path);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push({ gid: g.id, tab: t.id, path: t.kind.path });
+      }
+    }
+    return out;
+  }, [groups]);
+  const dirtySet = useMemo(() => new Set(dirty.map(norm)), [dirty]);
+
+  const refresh = () => setReload((v) => v + 1);
+  const collapse = () => {
+    expandedDirs.clear();
+    setTreeKey((v) => v + 1);
+  };
+  const createFile = async () => {
+    const name = newName.trim();
+    if (!selected) return;
+    if (!name || /[\\/:*?"<>|]/.test(name)) {
+      setCreateError("Use um nome de arquivo válido, sem barras.");
+      return;
+    }
+    const root = selected.replace(/[\\/]+$/g, "").replace(/\\/g, "/");
+    const path = `${root}/${name}`;
+    try {
+      const exists = await api.fsStat(path);
+      if (exists.exists) {
+        setCreateError("Já existe um arquivo ou pasta com esse nome.");
+        return;
+      }
+      await api.fsWriteFile(path, "");
+      setCreating(false);
+      setNewName("");
+      setCreateError(null);
+      refresh();
+      openFile(path, false);
+    } catch (e) {
+      setCreateError(errorMessage(e));
+    }
+  };
+
   if (!selected) {
-    return <p className="rp-empty">Escolha um projeto na barra esquerda para ver os arquivos.</p>;
+    return (
+      <div className="explorer vsc">
+        <p className="rp-empty">Escolha um projeto na barra esquerda para ver os arquivos.</p>
+      </div>
+    );
   }
+
+  const changed = index.files.size;
+  const statusText = `${changed} ${changed === 1 ? "arquivo modificado" : "arquivos modificados"} · ${openFiles.length} ${
+    openFiles.length === 1 ? "aberto" : "abertos"
+  }`;
+
   return (
-    <div className="explorer">
-      <div className="rp-head">
-        <b className="ellipsis" title={selected}>
-          {baseName(selected)}
-        </b>
-        <button
-          className="wb-sbtn"
-          title="Abrir um terminal na pasta do projeto"
-          onClick={() => openTerminal({ title: baseName(selected), cwd: selected })}
-        >
-          <Icon name="terminal" size={14} /> Terminal
-        </button>
+    <div className="explorer vsc">
+      <div className="vsc-title">
+        <span>EXPLORER</span>
+        <span className="vsc-acts">
+          <button type="button" title="Novo arquivo" aria-label="Novo arquivo" onClick={() => setCreating((v) => !v)}>
+            <Icon name="plus" size={15} />
+          </button>
+          <button type="button" title="Nova pasta (ainda não disponível)" aria-label="Nova pasta" disabled>
+            <Icon name="folder" size={15} />
+          </button>
+          <button type="button" title="Atualizar" aria-label="Atualizar" onClick={refresh}>
+            <Icon name="refresh" size={15} />
+          </button>
+          <button type="button" title="Recolher pastas" aria-label="Recolher pastas" onClick={collapse}>
+            <Icon name="collapse" size={15} />
+          </button>
+          <button
+            type="button"
+            title="Abrir um terminal na pasta do projeto"
+            aria-label="Abrir terminal na pasta do projeto"
+            onClick={() => openTerminal({ title: baseName(selected), cwd: selected })}
+          >
+            <Icon name="terminal" size={15} />
+          </button>
+        </span>
       </div>
-      <div className="tree" role="tree" aria-label={`Arquivos de ${baseName(selected)}`}>
-        <TreeCtx.Provider value={tree}>
-          <DirChildren key={selected} path={selected} depth={0} />
-        </TreeCtx.Provider>
-      </div>
+
+      {creating && (
+        <div className="vsc-new">
+          <input
+            autoFocus
+            aria-label="Nome do novo arquivo"
+            placeholder="nome-do-arquivo.ts"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void createFile();
+              if (e.key === "Escape") setCreating(false);
+            }}
+          />
+          <button type="button" title="Criar arquivo" onClick={() => void createFile()}>
+            ✓
+          </button>
+        </div>
+      )}
+      {createError && <div className="vsc-err">{createError}</div>}
+
+      <SectionHead label="ABERTOS" open={openEditorsOpen} onClick={() => setOpenEditorsOpen((v) => !v)} />
+      {openEditorsOpen &&
+        openFiles.map(({ gid, tab, path }) => {
+          const id = norm(path);
+          const status = index.files.get(id);
+          const mark = status ? STATUS_MARKS[status] : undefined;
+          const isCurrent = currentFile ? norm(currentFile) === id : false;
+          const cls = ["vsc-row", "file", isCurrent ? "on" : "", mark?.cls].filter(Boolean).join(" ");
+          return (
+            <div
+              key={`${gid}:${tab}`}
+              className={cls}
+              role="treeitem"
+              aria-selected={isCurrent}
+              tabIndex={0}
+              title={path}
+              onClick={() => openFile(path, false)}
+              onKeyDown={(e) => onActivateKey(e, () => openFile(path, false))}
+            >
+              <span className="vsc-tw" />
+              <FileIcon name={baseName(path)} />
+              <span className="vsc-name">{baseName(path)}</span>
+              {dirtySet.has(id) && (
+                <span className="vsc-mod" title="alterado">
+                  ●
+                </span>
+              )}
+              {mark && (
+                <span className={`vsc-mod ${mark.cls}`} title={mark.title}>
+                  {mark.letter}
+                </span>
+              )}
+              <button
+                type="button"
+                className="vsc-x"
+                title="Fechar aba"
+                aria-label={`Fechar ${baseName(path)}`}
+                onKeyDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeTab(gid, tab);
+                }}
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
+
+      <SectionHead label={baseName(selected).toUpperCase()} open={rootOpen} onClick={() => setRootOpen((v) => !v)} />
+      {rootOpen && (
+        <div className="vsc-tree" role="tree" aria-label={`Arquivos de ${baseName(selected)}`}>
+          <TreeCtx.Provider value={tree}>
+            <DirChildren key={`${selected}:${treeKey}`} path={selected} depth={0} />
+          </TreeCtx.Provider>
+        </div>
+      )}
+
+      <div className="vsc-status">{statusText}</div>
     </div>
   );
 }

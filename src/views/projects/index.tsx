@@ -1,8 +1,9 @@
 /**
  * Barra esquerda: os projetos da pasta raiz, cada um expandido nas suas
  * sessões (conversas com agentes). Busca no topo; cada sessão mostra o modelo
- * à direita e a selecionada fica num cartão. No rodapé, só ícones (com tooltip
- * e aria-label) que abrem as telas de apoio como abas.
+ * à direita e a selecionada fica num cartão. Ramos (forks do Claude) aparecem
+ * com o chip "ramo"; no rodapé, "Selecionar" liga a seleção múltipla para
+ * arquivar várias de uma vez e "Arquivadas" mostra o que foi guardado.
  */
 import { useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
 import {
@@ -79,18 +80,32 @@ function shortModel(task: Task): string {
 interface SessionRowProps {
   task: Task;
   current: boolean;
+  /** Modo de seleção múltipla: o clique marca em vez de abrir. */
+  picking: boolean;
+  picked: boolean;
+  onToggle(id: number): void;
   onMenu(e: MouseEvent, task: Task): void;
 }
 
-function SessionRow({ task, current, onMenu }: SessionRowProps) {
+function SessionRow({ task, current, picking, picked, onToggle, onMenu }: SessionRowProps) {
   const unread = useApp((s) => !!s.unread[task.id]);
   const auto = useApp((s) => s.autowork[task.id]);
   const denied = useApp((s) => s.attention[task.id]);
   const servers = useApp((s) => s.servers.filter((x) => x.owner.kind === "Session" && x.owner.id === task.id).length);
-  const open = () => useWorkbench.getState().openSession(task.id);
+  const open = () => (picking ? onToggle(task.id) : useWorkbench.getState().openSession(task.id));
   const { kind } = variantOf(task.state);
   const closed = kind === "Applied" || kind === "Discarded";
-  const cls = ["pj-session", current && "sel", unread && "unread", closed && "closed"].filter(Boolean).join(" ");
+  const cls = [
+    "pj-session",
+    current && "sel",
+    unread && "unread",
+    closed && "closed",
+    picking && "picking",
+    picking && picked && "picked",
+    task.archived && "archived",
+  ]
+    .filter(Boolean)
+    .join(" ");
   const autoKind = auto ? variantOf(auto.status).kind : null;
   return (
     <div
@@ -98,13 +113,29 @@ function SessionRow({ task, current, onMenu }: SessionRowProps) {
       role="treeitem"
       tabIndex={0}
       aria-current={current}
-      title={`#${task.id} · ${agentStateTitle(agentStateOf(task.state, denied), task.state, denied)}\n${task.provider}${task.model ? ` · ${task.model}` : ""}\n${task.prompt}`}
+      aria-selected={picking ? picked : undefined}
+      title={`#${task.id} · ${agentStateTitle(agentStateOf(task.state, denied), task.state, denied)}${task.fork_of != null ? ` · ramo de #${task.fork_of}` : ""}${task.archived ? " · arquivada" : ""}\n${task.provider}${task.model ? ` · ${task.model}` : ""}\n${task.prompt}`}
       onClick={open}
       onKeyDown={(e) => onActivateKey(e, open)}
       onContextMenu={(e) => onMenu(e, task)}
     >
+      {picking && (
+        <span className={picked ? "pj-check on" : "pj-check"} aria-hidden="true">
+          {picked && <Icon name="check" size={10} />}
+        </span>
+      )}
       <StatusDot tone={DOT_TONE[agentStateOf(task.state, denied)]} title={agentStateLabel(agentStateOf(task.state, denied))} />
       <span className="pj-session-title ellipsis">{sessionTitle(task.prompt)}</span>
+      {task.fork_of != null && (
+        <span className="pj-tag fork" title={`Ramo da sessão #${task.fork_of}`}>
+          ramo
+        </span>
+      )}
+      {task.archived && (
+        <span className="pj-tag arch" title="Sessão arquivada">
+          <Icon name="archive" size={10} />
+        </span>
+      )}
       {auto && (
         <span
           className={autoKind === "Running" ? "pj-tag run" : "pj-tag"}
@@ -141,6 +172,11 @@ export default function ProjectsView() {
   /** Projetos recolhidos (por caminho); o padrão é expandido. */
   const [collapsed, setCollapsed] = useState<Record<Path, boolean>>({});
   const [hideClosed, setHideClosed] = useState(false);
+  /** Mostrar as sessões arquivadas (padrão: ficam escondidas da lista). */
+  const [showArchived, setShowArchived] = useState(false);
+  /** Modo de seleção múltipla (para arquivar várias de uma vez). */
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
 
   const q = query.trim().toLowerCase();
@@ -152,18 +188,57 @@ export default function ProjectsView() {
         const sessions = all.filter((t) => {
           const kind = variantOf(t.state).kind;
           if (hideClosed && (kind === "Applied" || kind === "Discarded")) return false;
+          if (!showArchived && t.archived) return false;
           return nameHit || t.prompt.toLowerCase().includes(q) || `#${t.id}` === q;
         });
         return { project: p, sessions, total: all.length, show: nameHit || sessions.length > 0 };
       })
       .filter((r) => r.show);
-  }, [projects, tasks, q, hideClosed]);
+  }, [projects, tasks, q, hideClosed, showArchived]);
 
   const allCollapsed = projects.length > 0 && projects.every((p) => collapsed[p.path]);
   const toggleAll = () =>
     setCollapsed(allCollapsed ? {} : Object.fromEntries(projects.map((p) => [p.path, true])));
 
+  const archivedCount = useMemo(() => tasks.filter((t) => t.archived).length, [tasks]);
+  const pickedTasks = tasks.filter((t) => picked.has(t.id));
+  const canArchive = pickedTasks.some((t) => !t.archived);
+  const canUnarchive = pickedTasks.some((t) => !!t.archived);
+
   const fail = (e: unknown) => useApp.getState().setError(errorMessage(e));
+
+  const togglePick = (id: number) =>
+    setPicked((p) => {
+      const next = new Set(p);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const leavePicking = () => {
+    setPicking(false);
+    setPicked(new Set());
+  };
+
+  /**
+   * Arquiva/desarquiva as sessões marcadas. A lista é atualizada pelo
+   * `refreshTasks` (o backend é a fonte da verdade); em caso de erro, a barra
+   * de erro do app avisa e nada muda na tela.
+   */
+  const archiveIds = async (ids: number[], value: boolean) => {
+    const todo = ids.filter((id) => {
+      const t = tasks.find((x) => x.id === id);
+      return !!t && !!t.archived !== value;
+    });
+    if (todo.length === 0) return;
+    try {
+      await api.tasksArchive(todo, value);
+      setPicked(new Set());
+      await useApp.getState().refreshTasks();
+    } catch (e) {
+      fail(e);
+    }
+  };
 
   const sessionMenu = (e: MouseEvent, task: Task) => {
     e.preventDefault();
@@ -192,6 +267,10 @@ export default function ProjectsView() {
               .systemConfirm("Descartar alterações", `Descartar as alterações da sessão #${task.id}? Isso não pode ser desfeito.`)
               .then((ok) => (ok ? discardTask(task.id) : false))
               .catch(fail),
+        },
+        {
+          label: task.archived ? "Desarquivar sessão" : "Arquivar sessão",
+          onSelect: () => void archiveIds([task.id], !task.archived),
         },
         {
           label: "Excluir sessão…",
@@ -240,7 +319,17 @@ export default function ProjectsView() {
   };
 
   return (
-    <aside className="pj side" aria-label="Sessões por projeto">
+    <aside
+      className="pj side"
+      aria-label="Sessões por projeto"
+      onKeyDown={(e) => {
+        // Esc sai da seleção em lote (com o menu aberto, o menu fecha primeiro).
+        if (e.key === "Escape" && picking && !menu) {
+          e.stopPropagation();
+          leavePicking();
+        }
+      }}
+    >
       <div className="pj-search">
         <Icon name="search" size={12} />
         <input
@@ -301,7 +390,15 @@ export default function ProjectsView() {
           </div>
         )}
         {root && projects.length === 0 && <div className="pj-empty">Nenhum projeto encontrado nesta pasta.</div>}
-        {root && projects.length > 0 && rows.length === 0 && <div className="pj-empty">Nada encontrado para “{query}”.</div>}
+        {root && projects.length > 0 && rows.length === 0 && (
+          <div className="pj-empty">
+            {q
+              ? `Nada encontrado para “${query}”.`
+              : showArchived
+                ? "Nenhuma sessão arquivada."
+                : "Nenhuma sessão neste filtro."}
+          </div>
+        )}
         {rows.map(({ project: p, sessions, total }) => {
           const open = q ? true : !collapsed[p.path];
           const isSel = samePath(p.path, selected);
@@ -343,7 +440,15 @@ export default function ProjectsView() {
               {open && (
                 <div className="pj-sessions" role="group">
                   {sessions.map((t) => (
-                    <SessionRow key={t.id} task={t} current={t.id === currentTask} onMenu={sessionMenu} />
+                    <SessionRow
+                      key={t.id}
+                      task={t}
+                      current={t.id === currentTask}
+                      picking={picking}
+                      picked={picked.has(t.id)}
+                      onToggle={togglePick}
+                      onMenu={sessionMenu}
+                    />
                   ))}
                   {/* Projeto sem nenhuma sessão: só o cabeçalho (o "+" dele começa uma conversa). */}
                   {sessions.length === 0 && total > 0 && !p.missing && (
@@ -357,6 +462,48 @@ export default function ProjectsView() {
           );
         })}
       </div>
+      {(root && projects.length > 0) || picking ? (
+        <div className="pj-foot" role="toolbar" aria-label={picking ? "Seleção de sessões" : "Filtros da lista"}>
+          {/* `key` nos botões: ao trocar de modo o React não reaproveita o nó e não
+              herda o `data-tip` que o Tooltips deixou em "Arquivadas". */}
+          {picking ? (
+            <>
+              <span className="pj-foot-count">{picked.size === 1 ? "1 marcada" : `${picked.size} marcadas`}</span>
+              <button key="pick-archive" className="pj-foot-btn" disabled={!canArchive} onClick={() => void archiveIds([...picked], true)}>
+                Arquivar
+              </button>
+              <button key="pick-unarchive" className="pj-foot-btn" disabled={!canUnarchive} onClick={() => void archiveIds([...picked], false)}>
+                Desarquivar
+              </button>
+              <button key="pick-cancel" className="pj-foot-btn ghost" onClick={leavePicking}>
+                Cancelar
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                key="filter-select"
+                className="pj-foot-btn"
+                title="Selecionar várias sessões e arquivar de uma vez"
+                onClick={() => setPicking(true)}
+              >
+                <Icon name="listChecks" size={12} />
+                Selecionar
+              </button>
+              <button
+                key="filter-archived"
+                className="pj-foot-btn"
+                aria-pressed={showArchived}
+                title={showArchived ? "Voltar às sessões ativas" : "Mostrar as sessões arquivadas"}
+                onClick={() => setShowArchived((v) => !v)}
+              >
+                <Icon name="archive" size={12} />
+                Arquivadas{archivedCount > 0 ? ` (${archivedCount})` : ""}
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
     </aside>
   );

@@ -181,7 +181,7 @@ impl Pricing {
 
 /// Modelo gratuito (OpenCode `...-free`, OpenRouter `...:free`): custo zero,
 /// nunca o fallback da tabela. `m` já em minúsculas.
-fn is_free_model(m: &str) -> bool {
+pub fn is_free_model(m: &str) -> bool {
     m.ends_with("-free") || m.ends_with(":free") || m.ends_with("/free")
 }
 

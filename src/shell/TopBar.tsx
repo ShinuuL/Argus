@@ -12,7 +12,7 @@ import { baseName, isTaskActive } from "@/api";
 import { Chip } from "@/ui";
 import { sessionTitle } from "@/views/session/events";
 import { activeTab, AREAS, tabTitle, useApp, useLayout, useWorkbench } from "@/store";
-import { Icon } from "./icons";
+import { ArgusMark, Icon } from "./icons";
 import { useActiveContext } from "./useActiveContext";
 
 /** A janela do Tauri, ou null fora dele (ex.: navegador comum no `vite`). */
@@ -84,7 +84,7 @@ export function TopBar() {
 
   return (
     <header className="tb" data-tauri-drag-region>
-      <span className="tb-logo" aria-hidden="true" />
+      <ArgusMark className="tb-logo" />
       <span className="tb-app" data-tauri-drag-region title={root ?? undefined}>
         Argus
       </span>

@@ -11,20 +11,13 @@
  * inferior é expandido em tela cheia. As demais áreas montam
  * src/areas/<area>/index.tsx.
  */
-import { useEffect, type ComponentType } from "react";
-import { useApp, useLayout, useWorkbench, type Area } from "@/store";
+import { useEffect } from "react";
+import { useApp, useLayout, useWorkbench } from "@/store";
+import { AREA_VIEWS } from "@/areas/registry";
+import TerminalArea from "@/areas/terminal";
 import { InstallPrompt } from "@/views/deps";
 import ProjectsView from "@/views/projects";
 import WorkbenchView from "@/views/workbench";
-import HomeArea from "@/areas/home";
-import GitArea from "@/areas/git";
-import ServersArea from "@/areas/servers";
-import DevicesArea from "@/areas/devices";
-import MetricsArea from "@/areas/metrics";
-import TerminalArea from "@/areas/terminal";
-import SettingsArea from "@/areas/settings";
-import TasksArea from "@/areas/tasks";
-import AgentsArea from "@/areas/agents";
 import { Tooltips } from "./Tooltips";
 import { BottomPanel } from "./BottomPanel";
 import { CommandPalette } from "./CommandPalette";
@@ -35,18 +28,6 @@ import { StatusBar } from "./StatusBar";
 import { TopBar } from "./TopBar";
 import { useSyncActiveProject } from "./useActiveContext";
 import { useGlobalShortcuts } from "./useGlobalShortcuts";
-
-/** Áreas em tela cheia ("chat" e "terminal" usam o layout da conversa). */
-const FULL: Partial<Record<Area, ComponentType>> = {
-  home: HomeArea,
-  git: GitArea,
-  servers: ServersArea,
-  devices: DevicesArea,
-  metrics: MetricsArea,
-  tasks: TasksArea,
-  settings: SettingsArea,
-  agents: AgentsArea,
-};
 
 export function Shell() {
   const error = useApp((s) => s.error);
@@ -65,7 +46,8 @@ export function Shell() {
     if (wb.groups.every((g) => g.tabs.length === 0)) wb.openNewChat(useApp.getState().selected);
   }, [ready]);
 
-  const Full = FULL[area];
+  // "chat" e "terminal" usam o layout da conversa; as demais vêm do registry.
+  const Full = AREA_VIEWS[area];
   const chatVisible = area === "chat" || area === "terminal";
   const termFull = area === "terminal";
 

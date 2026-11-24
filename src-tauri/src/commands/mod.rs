@@ -19,6 +19,7 @@ pub mod runs;
 pub mod schedules;
 pub mod servers;
 pub mod system;
+pub mod usage_window;
 pub mod workspace;
 
 /// Converte qualquer erro em mensagem para a interface.

@@ -13,8 +13,8 @@ import { Icon, type IconName } from "./icons";
 import { areaIcon } from "./NavRail";
 import "./CommandPalette.css";
 
-type Group = "Abas abertas" | "Sessões" | "Projetos" | "Arquivos" | "Portas" | "Ações" | "Ir para";
-const GROUPS: Group[] = ["Abas abertas", "Portas", "Sessões", "Projetos", "Arquivos", "Ações", "Ir para"];
+type Group = "Abas abertas" | "Sessões" | "Projetos" | "Arquivos" | "Portas" | "Ações" | "Abrir como aba" | "Ir para";
+const GROUPS: Group[] = ["Abas abertas", "Portas", "Sessões", "Projetos", "Arquivos", "Ações", "Abrir como aba", "Ir para"];
 
 interface Cmd {
   id: string;
@@ -33,6 +33,7 @@ const GROUP_ICON: Record<string, IconName> = {
   Projetos: "folder",
   Arquivos: "file",
   Ações: "plus",
+  "Abrir como aba": "plus",
   "Ir para": "gear",
 };
 
@@ -135,6 +136,40 @@ function commands(): Cmd[] {
     { id: "mirror", group: "Ações", lead: <Icon name="phone" size={14} className="pal-ic" />, label: "Espelhar celular como aba", keys: "celular espelhamento screen mirror android", run: () => wb.openMirror() },
   );
 
+  // Quase todas as telas podem virar aba. "chat" já é aba por padrão; o
+  // terminal reaproveita a aba de terminal existente (com processo próprio).
+  for (const a of AREAS) {
+    if (a.id === "chat") continue;
+    const A = areaIcon(a.id);
+    const lead = A ? <A size={14} className="pal-ic" aria-hidden="true" /> : undefined;
+    list.push({
+      id: `tabarea-${a.id}`,
+      group: "Abrir como aba",
+      label: a.label,
+      keys: `${a.label} tela area aba`,
+      lead,
+      run: () => wb.openAreaTab(a.id),
+    });
+  }
+  // Extras que não são áreas do rail. `openPageTab` não navega em tela cheia.
+  for (const p of PAGES.filter((p) => ["deps", "builds", "connections", "remote"].includes(p.id))) {
+    list.push({
+      id: `tabpage-${p.id}`,
+      group: "Abrir como aba",
+      label: p.label,
+      keys: `${p.title} aba`,
+      meta: <span className="pal-meta">extras</span>,
+      run: () => wb.openPageTab(p.id),
+    });
+  }
+  list.push({
+    id: "tabarea-dashboard",
+    group: "Abrir como aba",
+    label: "Painel",
+    lead: <Icon name="grid" size={14} className="pal-ic" />,
+    run: () => wb.openDashboard(),
+  });
+
   for (const a of AREAS) {
     const I = areaIcon(a.id);
     list.push({ id: `area-${a.id}`, group: "Ir para", label: a.label, keys: "tela area", lead: I ? <I size={14} className="pal-ic" aria-hidden="true" /> : undefined, run: go(a.id) });
@@ -189,7 +224,7 @@ function Palette() {
     return GROUPS.filter((g) => !filter || g === filter)
       .map((g) => {
         const items = all.filter((c) => c.group === g && hit(c));
-        return { g, items: filter || words.length ? items.slice(0, filter ? 50 : LIMIT * 2) : items.slice(0, g === "Ir para" || g === "Ações" ? 40 : 4) };
+        return { g, items: filter || words.length ? items.slice(0, filter ? 50 : LIMIT * 2) : items.slice(0, g === "Ir para" || g === "Ações" || g === "Abrir como aba" ? 40 : 4) };
       })
       .filter((x) => x.items.length > 0);
   }, [all, q, filter]);

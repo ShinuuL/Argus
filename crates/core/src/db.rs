@@ -36,9 +36,15 @@ pub struct TaskRecord {
     /// Modo de acesso da conversa ("normal", "plan" ou "bypass"). None = normal.
     #[serde(default)]
     pub access: Option<String>,
+    /// Sessão arquivada: some da lista de sessões até o usuário mostrar as arquivadas.
+    #[serde(default)]
+    pub archived: bool,
+    /// Id da tarefa da qual esta é um ramo (fork); None nas conversas originais.
+    #[serde(default)]
+    pub fork_of: Option<i64>,
 }
 
-const TASK_COLS: &str = "id, project, provider, prompt, state, created_at, workdir, session_id, model, mode, provider_state, handoff, context, access";
+const TASK_COLS: &str = "id, project, provider, prompt, state, created_at, workdir, session_id, model, mode, provider_state, handoff, context, access, archived, fork_of";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventRecord {
@@ -231,7 +237,19 @@ impl Db {
                 data TEXT NOT NULL);",
         )?;
         // Migração de bancos antigos: colunas novas em `tasks`.
-        for col in ["workdir TEXT", "session_id TEXT", "model TEXT", "mode TEXT", "provider_state TEXT", "handoff INTEGER NOT NULL DEFAULT 0", "context TEXT", "access TEXT"] {
+        for col in [
+            "workdir TEXT",
+            "session_id TEXT",
+            "model TEXT",
+            "mode TEXT",
+            "provider_state TEXT",
+            "handoff INTEGER NOT NULL DEFAULT 0",
+            "context TEXT",
+            "access TEXT",
+            // Sessão arquivada (some da lista) e id da tarefa da qual esta é um ramo.
+            "archived INTEGER NOT NULL DEFAULT 0",
+            "fork_of INTEGER",
+        ] {
             let name = col.split_whitespace().next().unwrap();
             let exists: bool = conn
                 .prepare("SELECT 1 FROM pragma_table_info('tasks') WHERE name=?1")?
@@ -329,6 +347,25 @@ impl Db {
 
     pub fn set_task_handoff(&self, id: i64, handoff: bool) -> rusqlite::Result<()> {
         self.c().execute("UPDATE tasks SET handoff=?2 WHERE id=?1", params![id, handoff])?;
+        Ok(())
+    }
+
+    /// Arquiva/desarquiva várias sessões de uma vez (a lista some/mostra).
+    /// Devolve quantas linhas mudaram.
+    pub fn set_tasks_archived(&self, ids: &[i64], archived: bool) -> rusqlite::Result<usize> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let mut args: Vec<i64> = ids.to_vec();
+        args.push(i64::from(archived));
+        let marks = (1..=ids.len()).map(|i| format!("?{i}")).collect::<Vec<_>>().join(",");
+        let sql = format!("UPDATE tasks SET archived=?{} WHERE id IN ({})", ids.len() + 1, marks);
+        self.c().execute(&sql, rusqlite::params_from_iter(args.iter()))
+    }
+
+    /// Id da tarefa da qual esta é um ramo (None apaga a marca).
+    pub fn set_task_fork_of(&self, id: i64, fork_of: Option<i64>) -> rusqlite::Result<()> {
+        self.c().execute("UPDATE tasks SET fork_of=?2 WHERE id=?1", params![id, fork_of])?;
         Ok(())
     }
 
@@ -679,6 +716,8 @@ fn task_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TaskRecord> {
         handoff: r.get::<_, Option<i64>>(11)?.unwrap_or(0) != 0,
         context: r.get(12)?,
         access: r.get(13)?,
+        archived: r.get::<_, Option<i64>>(14)?.unwrap_or(0) != 0,
+        fork_of: r.get(15)?,
     })
 }
 
@@ -863,6 +902,30 @@ mod tests {
     }
 
     #[test]
+    fn archiving_is_batched_and_keeps_fork_mark() {
+        let db = Db::open_in_memory().unwrap();
+        let a = db.insert_task(None, "/p", "claude", "um", "Completed").unwrap();
+        let b = db.insert_task(None, "/p", "claude", "dois", "Completed").unwrap();
+        let c = db.insert_task(None, "/p", "claude", "três", "Completed").unwrap();
+        // Tarefa nova nunca nasce arquivada nem como ramo.
+        assert!(!db.get_task(a).unwrap().unwrap().archived);
+        assert_eq!(db.get_task(a).unwrap().unwrap().fork_of, None);
+        // Lote inteiro numa chamada; lista vazia não escreve nada.
+        assert_eq!(db.set_tasks_archived(&[a, b], true).unwrap(), 2);
+        assert_eq!(db.set_tasks_archived(&[], true).unwrap(), 0);
+        let flag = |id: i64| db.get_task(id).unwrap().unwrap().archived;
+        assert_eq!((flag(a), flag(b), flag(c)), (true, true, false));
+        // Desarquivar o mesmo lote desfaz tudo.
+        assert_eq!(db.set_tasks_archived(&[a, b], false).unwrap(), 2);
+        assert_eq!((flag(a), flag(b)), (false, false));
+        // O ramo guarda a tarefa de origem; as demais ficam sem marca.
+        db.set_task_fork_of(b, Some(a)).unwrap();
+        assert_eq!(db.get_task(b).unwrap().unwrap().fork_of, Some(a));
+        assert_eq!(db.get_task(c).unwrap().unwrap().fork_of, None);
+        assert_eq!(db.list_tasks().unwrap().len(), 3);
+    }
+
+    #[test]
     fn migrates_old_schema() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("h.db");
@@ -890,6 +953,9 @@ mod tests {
         assert_eq!((t.provider.as_str(), t.model.as_deref(), t.mode.as_deref()), ("opencode", Some("a/b"), Some("Direct")));
         assert_eq!((t.session_id.clone(), t.provider_state.as_deref(), t.handoff), (None, Some("{\"claude\":{}}"), true));
         assert_eq!(t.access, None);
+        // Colunas novas da migração: a tarefa antiga não nasce arquivada nem como ramo.
+        assert!(!t.archived);
+        assert_eq!(t.fork_of, None);
         db.set_task_access(1, "bypass").unwrap();
         assert_eq!(db.get_task(1).unwrap().unwrap().access.as_deref(), Some("bypass"));
         db.set_task_handoff(1, false).unwrap();

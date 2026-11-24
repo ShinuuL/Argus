@@ -7,16 +7,174 @@
 .explorer .projects .changed { color: var(--warn); }
 .explorer .link { background: none; border: 0; padding: 0 2px; color: var(--accent-text); font-size: 11px; cursor: pointer; text-transform: none; letter-spacing: 0; }
 .explorer .link:hover { text-decoration: underline; background: none; }
-.tree { font-size: 13px; }
-.tree .node { display: flex; align-items: center; gap: 4px; border-radius: var(--radius-sm); }
-.tree .node .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.tree .node .arrow { width: 10px; flex: none; opacity: .7; font-size: 10px; }
-.tree .node .badge { flex: none; font: 600 10px var(--font-mono-family); padding-right: 4px; }
-.tree .node.current { background: var(--bg-selected); }
-.tree .node:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
-.tree .st-mod .label, .tree .st-mod .badge { color: var(--warn); }
-.tree .st-new .label, .tree .st-new .badge { color: var(--ok); }
-.tree .st-del .label, .tree .st-del .badge { color: var(--err); }
-.tree .st-conf .label, .tree .st-conf .badge { color: var(--err); }
-.tree .node.touched > .badge { color: var(--warn); }
-.tree .tree-note { padding: 2px 4px; }
+/* -------------------------------------------------------------------------
+   Inspetor → aba Arquivos: explorer do VS Code (mockup Bento). Cores locais;
+   o resto do Bento continua com os tokens do tema.
+   ------------------------------------------------------------------------- */
+.explorer.vsc {
+  --vsc-bg: #1f1f1f;
+  --vsc-head: #181818;
+  --vsc-line: #2b2b2b;
+  --vsc-fg: #cccccc;
+  --vsc-dim: #9d9d9d;
+  --vsc-hover: #2a2d2e;
+  --vsc-sel: #04395e;
+  --vsc-focus: #007fd4;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 100%;
+  padding: 0;
+  background: var(--vsc-bg);
+  color: var(--vsc-fg);
+  font: 12px/22px "Segoe UI", system-ui, sans-serif;
+}
+
+.rp .explorer.vsc { padding: 0; }
+.explorer.vsc * { box-sizing: border-box; }
+
+.vsc-title {
+  height: 35px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px 0 20px;
+  background: var(--vsc-head);
+  border-bottom: 1px solid var(--vsc-line);
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  color: var(--vsc-dim);
+}
+
+.vsc-acts { display: flex; gap: 1px; }
+.vsc-acts button {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #c5c5c5;
+  cursor: pointer;
+}
+.vsc-acts button:hover:not(:disabled) { background: #303030; color: #fff; }
+.vsc-acts button:disabled { opacity: 0.35; cursor: default; }
+.vsc-acts svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+
+.vsc-sec-h {
+  height: 22px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #bbb;
+}
+.vsc-sec-btn { display: flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.vsc-sec-btn:hover { color: #fff; }
+.vsc-sec-btn .vsc-tw { width: 12px; text-align: center; font-size: 9px; color: #ccc; }
+
+.vsc-row {
+  height: 22px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-right: 8px;
+  color: var(--vsc-fg);
+  white-space: nowrap;
+  cursor: default;
+}
+.vsc-row:hover { background: var(--vsc-hover); }
+.vsc-row.on { background: var(--vsc-sel); color: #fff; }
+.vsc-row.on:focus-visible { box-shadow: inset 0 0 0 1px var(--vsc-focus); }
+.vsc-row:focus-visible { outline: 1px solid var(--vsc-focus); outline-offset: -1px; }
+.vsc-row .vsc-tw { width: 12px; flex: none; text-align: center; font-size: 9px; color: #aaa; }
+.vsc-row .vsc-g { width: 13px; height: 22px; flex: none; border-left: 1px solid #333; }
+.vsc-row .vsc-ico { width: 15px; height: 15px; flex: none; display: grid; place-items: center; }
+.vsc-row .vsc-folder { color: #dcb67a; fill: currentColor; }
+.vsc-row .vsc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.vsc-row .vsc-mod { flex: none; margin-left: auto; color: #e2c08d; font-size: 11px; }
+.vsc-row .vsc-mod.st-new { color: #5fd391; }
+.vsc-row .vsc-mod.st-del,
+.vsc-row .vsc-mod.st-conf { color: #f14c4c; }
+.vsc-row .vsc-x {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #a0a0a0;
+  font-size: 13px;
+  line-height: 14px;
+  opacity: 0;
+}
+.vsc-row:hover .vsc-x,
+.vsc-row.on .vsc-x,
+.vsc-x:focus-visible { opacity: 1; }
+.vsc-x:hover { background: #3a3d3d; color: #fff; }
+
+.vsc-fi {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border-radius: 2px;
+  display: grid;
+  place-items: center;
+  color: #1b1b1b;
+  font: 700 7px/1 "Segoe UI", sans-serif;
+  letter-spacing: -0.04em;
+}
+.vsc-fi.ts, .vsc-fi.tsx, .vsc-fi.md { background: #519aba; color: #fff; }
+.vsc-fi.css { background: #42a5f5; }
+.vsc-fi.html { background: #e34c26; color: #fff; }
+.vsc-fi.rs { background: #dea584; }
+.vsc-fi.json, .vsc-fi.js, .vsc-fi.sh { background: #cbcb41; }
+.vsc-fi.py { background: #3572a5; color: #fff; }
+.vsc-fi.go { background: #00add8; color: #fff; }
+.vsc-fi.img { background: #a074c4; color: #fff; }
+.vsc-fi.gen { background: #7f7f7f; color: #fff; }
+
+.vsc-note { display: flex; align-items: center; gap: 5px; padding-left: 12px; color: var(--vsc-dim); font-size: 11px; }
+.vsc-note.err { color: #f14c4c; }
+.vsc-new { display: flex; gap: 4px; padding: 4px 8px; flex: none; }
+.vsc-new input {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid #333;
+  border-radius: 2px;
+  background: #2b2b2b;
+  color: var(--vsc-fg);
+  font: inherit;
+}
+.vsc-new input:focus { outline: 1px solid var(--vsc-focus); border-color: var(--vsc-focus); }
+.vsc-new button {
+  width: 24px;
+  height: 22px;
+  border: 1px solid #333;
+  border-radius: 2px;
+  background: #2b2b2b;
+  color: var(--vsc-fg);
+  cursor: pointer;
+}
+.vsc-err { flex: none; padding: 2px 8px 4px; color: #f14c4c; font-size: 11px; }
+.vsc-status {
+  height: 22px;
+  flex: none;
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-top: 1px solid var(--vsc-line);
+  font-size: 10.5px;
+  color: var(--vsc-dim);
+}

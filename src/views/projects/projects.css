@@ -5,7 +5,7 @@
 .pj-ibtn[aria-pressed="true"] { color: var(--accent-text); }
 .pj-ibtn:disabled { opacity: .5; cursor: default; }
 
-.pj-search { display: flex; align-items: center; gap: 4px; flex: none; margin: 10px 10px 2px; padding: 0 4px 0 8px; height: 24px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text-2); }
+.pj-search { display: flex; align-items: center; gap: 4px; flex: none; margin: 8px 10px 4px; padding: 0 4px 0 12px; height: 28px; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius-pill); color: var(--text-2); }
 .pj-search:focus-within { border-color: var(--focus); }
 .pj-search input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: none; color: var(--text); font-size: 11.5px; }
 .pj-search .pj-ibtn { opacity: .7; }
@@ -17,6 +17,9 @@
 
 /* Cabeçalho do projeto: h4 em caixa alta, discreto. */
 .pj-project { display: flex; align-items: center; gap: 6px; margin: 0; padding: 12px 8px 6px 12px; font-size: 12.5px; color: var(--text-2); font-weight: 600; cursor: pointer; min-width: 0; }
+/* Ponto do grupo: o projeto ativo ganha a cor de execução, os outros ficam neutros. */
+.pj-project::before { content: ""; width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--text-2); }
+.pj-project.sel::before { background: var(--run); }
 .pj-project:hover, .pj-project.sel { color: var(--text); }
 .pj-project:focus-visible, .pj-session:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .pj-name { flex: 0 1 auto; }
@@ -27,10 +30,10 @@
 .pj-project:hover .pj-add, .pj-project:focus-within .pj-add, .pj-add:focus-visible { visibility: visible; }
 
 /* Sessão: linha .it do mockup (ponto de status + título). */
-.pj-sessions { display: flex; flex-direction: column; }
-.pj-session { display: flex; align-items: center; gap: 8px; padding: 5px 12px; cursor: pointer; min-width: 0; color: var(--text-2); }
+.pj-sessions { display: flex; flex-direction: column; gap: 1px; }
+.pj-session { display: flex; align-items: center; gap: 8px; margin: 0 6px; padding: 5px 8px; border-radius: var(--radius-lg); cursor: pointer; min-width: 0; color: var(--text-2); }
 .pj-session:hover { color: var(--text); background: color-mix(in srgb, var(--selection) 50%, transparent); }
-.pj-session.sel { background: var(--selection); color: var(--text); }
+.pj-session.sel { background: color-mix(in srgb, var(--selection) 72%, transparent); color: var(--text); }
 .pj-session.unread { color: var(--text); font-weight: 600; }
 .pj-session.closed .pj-session-title { text-decoration: line-through; text-decoration-color: var(--border-strong); }
 .pj-session-title { flex: 1; min-width: 0; }
@@ -51,3 +54,30 @@
 /* Tela 03: com o inspetor aberto em janela estreita, a lista recolhe para a conversa não espremer. */
 @media (max-width: 1280px) { .sh-chat:has(.rp) .pj { display: none; } }
 .pj-empty-note { color: var(--text-2); font-size: 12px; }
+
+/* Sessão ramificada (fork): chip "ramo" ligado ao acento; a arquivada ganha um
+   selo discreto e some da lista até o botão "Arquivadas" ser ligado. */
+.pj-tag.fork { color: var(--accent-text); border-color: color-mix(in srgb, var(--accent-text) 45%, transparent); }
+.pj-tag.arch { padding: 0 4px; color: var(--text-2); }
+/* Sem `opacity`: esmaecer a linha inteira derrubava o texto abaixo do AA e o
+   selo quase desaparecia. O itálico distingue a arquivada sem perder contraste. */
+.pj-session.archived .pj-session-title { font-style: italic; }
+
+/* Seleção múltipla: quadrinho à esquerda em vez de abrir a conversa. */
+.pj-check { display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px; flex: none; border: 1px solid var(--border-strong); border-radius: 3px; color: var(--on-accent); }
+.pj-check.on { background: var(--accent); border-color: var(--accent); }
+.pj-session.picked { background: var(--accent-soft); color: var(--text); }
+
+/* Rodapé: entrada da seleção e do filtro de arquivadas; no modo seleção, vira
+   a barra de ação em lote (quebra a linha quando não cabe tudo). */
+.pj-foot { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; flex: none; padding: 6px 8px; border-top: 1px solid var(--border); }
+.pj-foot-count { margin-right: auto; color: var(--text-2); font-size: 11px; font-variant-numeric: tabular-nums; }
+.pj-foot-btn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; background: none; border: 1px solid var(--border-strong); border-radius: var(--radius-pill); color: var(--text-2); font-size: 11px; line-height: 1.4; cursor: pointer; }
+.pj-foot-btn:hover { background: var(--selection); color: var(--text); }
+.pj-foot-btn[aria-pressed="true"] { color: var(--accent-text); border-color: color-mix(in srgb, var(--accent-text) 50%, transparent); }
+.pj-foot-btn:disabled { opacity: .5; cursor: default; }
+/* Quando a barra em lote quebra linha na sidebar estreita, "Cancelar" fica
+   alinhado à direita em vez de pendurado sozinho no início da linha. */
+.pj-foot-btn.ghost { margin-left: auto; }
+.pj-foot-btn.ghost { border-color: transparent; }
+.pj-foot-btn.ghost:hover { border-color: var(--border-strong); }
