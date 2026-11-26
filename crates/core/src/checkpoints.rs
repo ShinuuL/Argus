@@ -19,8 +19,18 @@ fn ref_name(task: u64, n: u32) -> String {
 }
 
 fn git_raw(dir: &Path, args: &[&str], index: Option<&Path>) -> Option<Vec<u8>> {
+    git_stdin(dir, args, index, None)
+}
+
+/// Como `git_raw`, mas com a entrada escrita no stdin do git (para `--stdin`).
+fn git_stdin(dir: &Path, args: &[&str], index: Option<&Path>, input: Option<&[u8]>) -> Option<Vec<u8>> {
+    use std::io::Write;
     let mut cmd = Command::new(crate::agents::orchestrator::resolve_program("git"));
-    cmd.args(args).current_dir(dir).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    cmd.args(args)
+        .current_dir(dir)
+        .stdin(if input.is_some() { std::process::Stdio::piped() } else { std::process::Stdio::null() })
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
     if let Some(i) = index {
         cmd.env("GIT_INDEX_FILE", i);
     }
@@ -29,7 +39,13 @@ fn git_raw(dir: &Path, args: &[&str], index: Option<&Path>) -> Option<Vec<u8>> {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
-    let out = cmd.output().ok()?;
+    let Some(input) = input else {
+        let out = cmd.output().ok()?;
+        return out.status.success().then_some(out.stdout);
+    };
+    let mut child = cmd.spawn().ok()?;
+    child.stdin.take()?.write_all(input).ok()?;
+    let out = child.wait_with_output().ok()?;
     out.status.success().then_some(out.stdout)
 }
 
@@ -65,11 +81,20 @@ fn changed_paths(dir: &Path, has_head: bool) -> Option<std::collections::BTreeSe
 /// rehasheados — no `git add -A` original todo o repositório era percorrido a
 /// cada turno, o que dominava `prepare_ms` em pastas grandes.
 fn apply_changes(dir: &Path, index: &Path, paths: &std::collections::BTreeSet<String>) -> Option<()> {
-    for p in paths {
-        let exists = std::fs::symlink_metadata(dir.join(p)).is_ok();
-        let flag = if exists { "--add" } else { "--force-remove" };
-        git(dir, &["update-index", flag, "--", p], Some(index))?;
+    if paths.is_empty() {
+        return Some(());
     }
+    // Uma chamada só, com os caminhos pelo stdin. Um `update-index` por arquivo
+    // custava um processo por arquivo: numa pasta com algumas dezenas de
+    // mudanças isso sozinho era a maior parte do `snapshot_ms` de cada turno.
+    // `--add --remove` cobre os dois casos: entra o que existe, sai do índice o
+    // que foi apagado. `-z` preserva nomes com espaço e acento.
+    let mut input = Vec::new();
+    for p in paths {
+        input.extend_from_slice(p.as_bytes());
+        input.push(0);
+    }
+    git_stdin(dir, &["update-index", "--add", "--remove", "-z", "--stdin"], Some(index), Some(&input))?;
     Some(())
 }
 

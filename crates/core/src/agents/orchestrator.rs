@@ -1160,8 +1160,12 @@ impl Orchestrator {
         // Só uma conversa que terminou bem — ou cujo cancelamento a CLI confirmou
         // sem encerrar o processo — mantém a CLI viva para o próximo turno.
         if !matches!(st, TaskState::Completed) {
-            let preserved = matches!(st, TaskState::Cancelled)
-                && (self.take_keep_on_cancel(id) || self.take_acp_keep(id));
+            // Os dois sinais são consumidos sempre: com `||` o curto-circuito
+            // deixava a marca do ACP para trás e ela valia num cancelamento
+            // seguinte, preservando um host que devia ter sido descartado.
+            let keep_cli = self.take_keep_on_cancel(id);
+            let keep_acp = self.take_acp_keep(id);
+            let preserved = matches!(st, TaskState::Cancelled) && (keep_cli || keep_acp);
             if !preserved {
                 self.discard_host(id);
                 self.discard_acp_host(id);
@@ -1463,7 +1467,14 @@ impl Orchestrator {
                         Some(s) => acp::load_session_line(&open_id, s, workdir, &dirs),
                         None => acp::new_session_line(&open_id, workdir, &dirs),
                     };
-                    h.write_line(&line).await.map_err(OrchestratorError::Io)?;
+                    // Sair daqui com `?` deixava o processo do opencode vivo e
+                    // sem leitor (o `rx` já saiu do host): a conversa ficava
+                    // presa e o host só morria quando o Argus fechasse.
+                    if let Err(e) = h.write_line(&line).await {
+                        drop(h);
+                        self.discard_acp_host(id);
+                        return Err(OrchestratorError::Io(e));
+                    }
                     (Some(open_id), session.is_some())
                 }
             }
@@ -1483,7 +1494,13 @@ impl Orchestrator {
                 self.discard_acp_host(id);
                 return Err(OrchestratorError::Io(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "host ACP sem sessão")));
             }
-            let (mid, pid) = Self::acp_send_prompt(&host, &sid, prompt, opts.model.as_deref()).await?;
+            let (mid, pid) = match Self::acp_send_prompt(&host, &sid, prompt, opts.model.as_deref()).await {
+                Ok(v) => v,
+                Err(e) => {
+                    self.discard_acp_host(id);
+                    return Err(e);
+                }
+            };
             model_id = mid;
             prompt_id = Some(pid);
         }
@@ -1612,7 +1629,13 @@ impl Orchestrator {
                             h.initialized = true;
                         }
                         this.record_turn_event(id, &t, turn, AgentEvent::Session(sid.clone()), model_out.as_deref(), &used);
-                        let (mid, pline) = Self::acp_send_prompt(&host, &sid, prompt, opts.model.as_deref()).await?;
+                        let (mid, pline) = match Self::acp_send_prompt(&host, &sid, prompt, opts.model.as_deref()).await {
+                            Ok(v) => v,
+                            Err(e) => {
+                                this.discard_acp_host(id);
+                                return Err(e);
+                            }
+                        };
                         model_id = mid;
                         prompt_id = Some(pline);
                         if cancelled {
