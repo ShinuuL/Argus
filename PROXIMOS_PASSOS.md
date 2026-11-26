@@ -872,7 +872,8 @@ Escopo fechado: só o claude. `--input-format stream-json` existe na CLI do clau
 - [ ] Fazer login do claude (`claude auth login`) e rodar dois turnos reais no mesmo host; conferir `host_ms` e a queda de `first_event_ms` no log bruto.
 - [ ] Conferir o ganho na interface com o app aberto (não foi feito nesta fase).
 - [x] Decidir como correlacionar `result` tardio na 2.1.220 (2026-11-24): usar `user_message_uuids` quando houver; sem ele, usar o `command_uuid` do `command_lifecycle`. Implementado e nos gates.
-- [ ] Gerar novo instalador NSIS com esta correção e confirmar numa sessão real que o host do Claude continua vivo entre turnos (não foi feito: o build antigo não tem a mudança, e `claude auth status` segue sem login nesta máquina).
+- [x] (2026-11-26) Gerar novo instalador NSIS com esta correção: `npm run app:instalador` produziu `target\release\bundle\nsis\Argus_0.1.4_x64-setup.exe` (9 019 929 bytes, SHA256 `AFC8B23CC9627312D9CA63E3EDBA7D6CF15E180FBEA430DA7D71DBA10FE70204`), publicado como release `v0.1.4` em https://github.com/ShinuuL/Argus/releases/tag/v0.1.4. Commit `544404d`, tag `v0.1.4`, `main` enviado para `origin`.
+- [ ] Confirmar numa sessão real que o host do Claude continua vivo entre turnos (`claude auth status` segue sem login nesta máquina).
 - [x] (2026-11-26) Preservar o host no cancelamento: usuário autorizou a crate `windows`. Implementado com `CTRL_BREAK_EVENT` (não `CTRL_C_EVENT`, que iria para todo o console, inclusive o Argus) em grupo de processo próprio. Ver a seção abaixo.
 - [x] (2026-11-26) Decisão do OpenCode fechada em favor do serviço compartilhado (Fase 2). A CLI 2.3.0 não tem host persistente por conversa, mas os processos em segundo plano já sobrevivem ao `run` (sonda com HTTP 200 na porta 4199). Cliente ACP existe, mas exige handshake e `session/request_permission`; ficou como opção futura, não implementada nesta rodada.
 - [ ] Validar em aparelho físico: não havia dispositivo Android conectado nesta sessão (`list_devices` → "Nenhum aparelho conectado").
@@ -902,7 +903,7 @@ Escopo fechado: só o claude. `--input-format stream-json` existe na CLI do clau
 
 **Gates (2026-11-26, na ordem do `AGENTS.md`, raiz do repo):** `npm run typecheck` → exit 0; `cargo test --workspace` → 297 + 23 passados, 0 falhas, 6 ignorados (2 do core, 4 `live`); `cargo check -p argus-desktop` → exit 0 (só o aviso antigo de `sanitize_name`); `npm run teste:celular` → tudo certo; `npm run build` → exit 0; `node --check crates/core/assets/remote/app.js` → exit 0.
 
-**Não feito nesta rodada:** nenhum instalador NSIS, nenhum commit ou push, nenhum turno real do Claude, nenhum teste em aparelho, nenhum cliente ACP.
+**Entregue depois dos gates:** commit `544404d`, push em `main`, tag `v0.1.4`, instalador NSIS e release `v0.1.4` no GitHub (link acima). **Ainda não feito:** turno real do Claude, teste em aparelho e cliente ACP.
 
 ---
 
