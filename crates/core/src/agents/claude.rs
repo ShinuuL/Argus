@@ -1188,6 +1188,13 @@ mod tests {
         assert!(p.host_turn_ended(r#"{"type":"result","subtype":"success"}"#));
         assert!(!p.host_turn_ended(r#"{"type":"system","subtype":"init"}"#));
         assert!(!p.host_turn_ended("texto que não é json"));
+        // CLI 2.1.220: sem `user_message_uuids`, mas o lifecycle devolve o uuid
+        // enviado. É o que permite manter o host vivo depois do `result`.
+        assert_eq!(p.host_result_message_ids(r#"{"type":"result","uuid":"x","num_turns":1}"#), None);
+        assert_eq!(
+            p.host_ack_id(r#"{"type":"command_lifecycle","command_uuid":"msg-7","state":"started"}"#).as_deref(),
+            Some("msg-7")
+        );
     }
 
     #[test]

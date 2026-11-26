@@ -146,7 +146,7 @@ pub const PLAN_NOTE: &str = "Modo Planejar: não altere nenhum arquivo e não te
 /// inchavam a conversa. Texto fixo, como o resto do aviso (cache).
 pub const SHELL_NOTE: &str = "Para rodar git em outra pasta use git -C pasta comando, sem encadear cd com git: a CLI nega essa combinação. \
 Limite a saída dos comandos (head, tail, --quiet, git status -s, git log --oneline -n 20) e leia arquivos grandes por trechos (offset e limit) em vez de inteiros: tudo o que volta fica no contexto e encarece cada passo seguinte. \
-Comandos em segundo plano (run_in_background) são encerrados quando o turno termina: servidor que precisa continuar no ar depois da resposta deve ser iniciado como processo independente (no Windows, PowerShell Start-Process com -WindowStyle Hidden), e diga ao usuário o PID e como parar.";
+Comandos e subagentes em segundo plano (run_in_background) seguem vivos entre turnos da mesma conversa, porque a CLI fica aberta; morrem se a conversa for cancelada, encerrada ou se o app fechar. Servidor que precisa continuar no ar mesmo assim deve ser iniciado como processo independente (no Windows, PowerShell Start-Process com -WindowStyle Hidden), e diga ao usuário o PID e como parar.";
 pub const ASK_NOTE: &str = "Quando precisar que o usuário escolha entre opções antes de continuar, termine a resposta com um bloco de código de linguagem argus-ask contendo um objeto JSON com a chave questions: uma lista de perguntas, cada uma com header (rótulo curto), question (a pergunta completa), multiSelect (true ou false) e options (de 2 a 4, cada uma com label e description). Pare logo depois do bloco: a interface mostra as opções e a escolha volta como a próxima mensagem. Pergunta aberta vai em texto normal.";
 
 /// Aviso de sistema completo: isolamento (se for o caso), preferências e memória
@@ -358,6 +358,14 @@ struct AgentHost {
     /// receiver e devolve ao terminar: a conversa só roda um turno por vez.
     lines: Mutex<Option<mpsc::UnboundedReceiver<HostLine>>>,
     key: HostKey,
+    /// A CLI já mandou `command_lifecycle` neste processo? Quando sim, um
+    /// `result` sem confirmação do comando atual é trabalho de segundo plano e
+    /// não pode fechar o turno. CLI antiga sem esse campo mantém o fallback.
+    ack_capable: bool,
+    /// Cancelamento confirmado pela CLI (lifecycle `cancelled` do comando ou
+    /// `result` correlacionado): o turno parou, mas a conversa continua no host.
+    /// `finish` consulta e limpa este sinal antes de descartar o processo.
+    keep_on_cancel: bool,
 }
 
 /// Chave da preferência de um nível de git ("local" ou "remote") no banco.
@@ -1103,11 +1111,26 @@ impl Orchestrator {
         }
         // Agente parado não segura arquivo: o mural só fala do que roda agora.
         crate::mural::global().clear_task(id as i64);
-        // Só uma conversa que terminou bem mantém a CLI viva para o próximo turno.
+        // Só uma conversa que terminou bem — ou cujo cancelamento a CLI confirmou
+        // sem encerrar o processo — mantém a CLI viva para o próximo turno.
         if !matches!(st, TaskState::Completed) {
-            self.discard_host(id);
+            let preserved = matches!(st, TaskState::Cancelled) && self.take_keep_on_cancel(id);
+            if !preserved {
+                self.discard_host(id);
+            }
         }
         self.set_state(id, st);
+    }
+
+    /// Consome o sinal de que o cancelamento deste host foi confirmado. Chamado
+    /// uma vez por `finish`: um cancelamento posterior não herda a decisão.
+    fn take_keep_on_cancel(&self, id: TaskId) -> bool {
+        let hosts = self.inner.hosts.lock().unwrap();
+        let Some(h) = hosts.get(&id) else { return false };
+        let mut guard = h.lock().unwrap_or_else(|e| e.into_inner());
+        let keep = guard.keep_on_cancel;
+        guard.keep_on_cancel = false;
+        keep
     }
 
     async fn first_turn(&self, task: &Task, prov: Arc<dyn AgentProvider>, cancel: &Notify) -> Result<TaskState, OrchestratorError> {
@@ -1276,6 +1299,10 @@ impl Orchestrator {
         let mut cmd = build_command(spec, Some(workdir));
         #[cfg(unix)]
         cmd.process_group(0);
+        // Grupo próprio no Windows permite interromper só a CLI com
+        // CTRL_BREAK_EVENT, sem derrubar o console do Argus junto.
+        #[cfg(windows)]
+        cmd.creation_flags(0x0000_0200); // CREATE_NEW_PROCESS_GROUP
         let mut child = cmd
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -1321,6 +1348,8 @@ impl Orchestrator {
             stdin: Arc::new(tokio::sync::Mutex::new(stdin)),
             lines: Mutex::new(Some(rx)),
             key,
+            ack_capable: false,
+            keep_on_cancel: false,
         })
     }
 
@@ -1390,7 +1419,16 @@ impl Orchestrator {
             let h = host.lock().unwrap_or_else(|e| e.into_inner());
             h.stdin.clone()
         };
-        let line = prov.host_message(prompt, &host_message_id(id, turn));
+        let ack_capable = {
+            let h = host.lock().unwrap_or_else(|e| e.into_inner());
+            h.ack_capable
+        };
+        let host_pid = {
+            let h = host.lock().unwrap_or_else(|e| e.into_inner());
+            h.child.id()
+        };
+        let message_id = host_message_id(id, turn);
+        let line = prov.host_message(prompt, &message_id);
         {
             let mut sin = stdin.lock().await;
             if let Err(e) = sin.write_all(format!("{line}\n").as_bytes()).await {
@@ -1418,12 +1456,48 @@ impl Orchestrator {
         let mut cancelled = false;
         let mut stopped = false;
         let mut eof = false;
+        let mut cancel_acknowledged = false;
+        let mut cancel_deadline: Option<std::time::Instant> = None;
+        // Só reutiliza o host com prova de que o `result` é deste comando:
+        // `user_message_uuids` (CLI que correlaciona) ou o `command_uuid`
+        // devolvido no `command_lifecycle` (claude 2.1.220). Sem prova, um
+        // result de segundo plano poderia fechar o próximo turno.
+        let mut correlated = false;
+        let mut acknowledged = false;
+        let mut saw_lifecycle = ack_capable;
 
         loop {
-            let msg = tokio::select! {
-                m = rx.recv() => m,
-                _ = cancel.notified() => { cancelled = true; break; }
-                _ = looped_out.notified() => { stopped = true; break; }
+            let msg = if cancelled {
+                // Depois do interrupt, continua lendo só até a CLI confirmar que
+                // parou o comando (ou dar timeout). O host continua vivo se houver
+                // confirmação: encerrar o processo aqui mataria os subagentes.
+                let Some(deadline) = cancel_deadline else { break };
+                let rest = deadline.saturating_duration_since(std::time::Instant::now());
+                if rest.is_zero() {
+                    log_out.line("meta", "cancel sem ack da CLI: host sera descartado");
+                    break;
+                }
+                match tokio::time::timeout(rest, rx.recv()).await {
+                    Ok(m) => m,
+                    Err(_) => {
+                        log_out.line("meta", "cancel sem ack da CLI (timeout): host sera descartado");
+                        break;
+                    }
+                }
+            } else {
+                tokio::select! {
+                    m = rx.recv() => m,
+                    _ = cancel.notified() => {
+                        cancelled = true;
+                        log_out.line("meta", "cancel: interrompendo o comando deste turno");
+                        if let Some(pid) = host_pid {
+                            interrupt_host(pid).await;
+                        }
+                        cancel_deadline = Some(std::time::Instant::now() + std::time::Duration::from_secs(5));
+                        continue;
+                    }
+                    _ = looped_out.notified() => { stopped = true; break; }
+                }
             };
             let Some(msg) = msg else { eof = true; break; };
             let raw = match msg {
@@ -1435,6 +1509,52 @@ impl Orchestrator {
                 log_out.latency("first_event", timer_out.elapsed_ms());
             }
             log_out.line("out", &raw);
+            if let Some(id) = prov_out.host_ack_id(&raw) {
+                saw_lifecycle = true;
+                if id == message_id {
+                    acknowledged = true;
+                } else {
+                    log_out.line("ack_stale", &raw);
+                }
+                let mut h = host.lock().unwrap_or_else(|e| e.into_inner());
+                h.ack_capable = true;
+            }
+            if let Some(id) = prov_out.host_cancel_ack_id(&raw) {
+                if id == message_id {
+                    cancel_acknowledged = true;
+                    log_out.line("cancel_acknowledged", &raw);
+                } else {
+                    log_out.line("cancel_ack_stale", &raw);
+                }
+            }
+            let ends_turn = prov_out.host_turn_ended(&raw);
+            if ends_turn {
+                match prov_out.host_result_message_ids(&raw) {
+                    // Result de outro prompt (background ou atrasado): não
+                    // pode virar evento do turno atual.
+                    Some(ids) if !ids.iter().any(|x| x == &message_id) => {
+                        log_out.line("out_stale", &raw);
+                        continue;
+                    }
+                    Some(_) => correlated = true,
+                    // A CLI fala lifecycle mas não confirmou este comando:
+                    // é result de segundo plano, não fecha o turno.
+                    None if saw_lifecycle && !acknowledged => {
+                        log_out.line("out_stale_no_ack", &raw);
+                        continue;
+                    }
+                    // CLI antiga sem `user_message_uuids` nem lifecycle: aceita
+                    // o result para não travar, mas não reutiliza o host.
+                    None if !acknowledged => {
+                        log_out.line("out_no_correlation", &raw);
+                    }
+                    // O lifecycle confirmou o comando: o result é deste turno.
+                    None => {
+                        correlated = true;
+                        log_out.line("out_acknowledged", &raw);
+                    }
+                }
+            }
             let evs = prov_out.parse_line(&raw);
             let evs = {
                 let mut tr = tracker_out.lock().unwrap_or_else(|e| e.into_inner());
@@ -1449,31 +1569,47 @@ impl Orchestrator {
                     looped_out.notify_one();
                 }
             }
-            if prov_out.host_turn_ended(&raw) {
+            if ends_turn {
                 ended = true;
+                break;
+            }
+            if cancelled && cancel_acknowledged {
                 break;
             }
         }
         // A CLI pode acordar sozinha depois do result (trabalho em segundo plano)
-        // e imprimir outro. Drena o que já chegou para não confundir com o próximo
-        // turno. Limitação registrada no plano: sem uuid devolvido não há como
-        // distinguir um result tardio de um result novo nesta versão da CLI.
+        // e imprimir outro. Drena o que já chegou: se o host ficar vivo, o
+        // próximo turno não pode ler esse result como se fosse dele.
         while let Ok(extra) = rx.try_recv() {
             match extra {
                 HostLine::Line(l) => log_out.line("out_extra", &l),
                 HostLine::Eof => { eof = true; break; }
             }
         }
-        let keep = ended && !eof && !cancelled && !stopped;
+        let cancel_confirmed = cancelled && host_survives_cancel(cancel_acknowledged, ended, correlated, eof);
+        if cancelled && !cancel_confirmed {
+            log.line("meta", "cancel sem confirmacao: host descartado");
+        }
+        let keep = (ended && !eof && !cancelled && !stopped && correlated) || cancel_confirmed;
+        if ended && !correlated && !cancel_confirmed {
+            log.line("meta", "result sem correlacao: host descartado");
+        }
         if keep {
-            let h = host.lock().unwrap_or_else(|e| e.into_inner());
-            let mut lines = h.lines.lock().unwrap_or_else(|e| e.into_inner());
-            if lines.is_none() {
-                *lines = Some(rx);
+            {
+                let h = host.lock().unwrap_or_else(|e| e.into_inner());
+                let mut lines = h.lines.lock().unwrap_or_else(|e| e.into_inner());
+                if lines.is_none() {
+                    *lines = Some(rx);
+                }
+            }
+            if cancel_confirmed {
+                let mut h = host.lock().unwrap_or_else(|e| e.into_inner());
+                h.keep_on_cancel = true;
+                log.line("meta", "cancel confirmado: host preservado");
             }
         } else {
-            // Cancelamento e loop preso não deixam o turno da CLI terminar: mata
-            // o host. O próximo turno retoma a sessão com `--resume`.
+            // Sem prova de que a CLI parou o comando, o host não é confiável:
+            // mata a árvore e o próximo turno retoma com `--resume`.
             self.discard_host(id);
         }
         log.latency("result", timer.elapsed_ms());
@@ -1547,7 +1683,31 @@ impl Orchestrator {
         let spec = host_spec.unwrap_or_else(|| prov.task_command(prompt, workdir, session, opts));
         // Comandos de shell liberados: o padrão (git de leitura, inspeção), os níveis
         // de git do projeto neste modo e a lista "Comandos permitidos" do projeto.
-        let spec = crate::permissions::apply_for(spec, &task.project, self.git_levels(&task.project, task.mode), self.permission_mode(&task.project), opts.access);
+        let levels = self.git_levels(&task.project, task.mode);
+        let mode = self.permission_mode(&task.project);
+        let mut spec = crate::permissions::apply_for(spec, &task.project, levels, mode, opts.access);
+        // O opencode roda no serviço compartilhado: as regras vão na sessão, não
+        // numa config que o serviço já iniciado não leria. A sessão nova é criada
+        // aqui para que o `--session` vá no comando; a CLI oficial cuida do token.
+        // Sem regras o turno não começa: rodar seria fail open.
+        if !using_host && super::opencode_session::applies(&spec) {
+            let rules = crate::permissions::opencode_session_rules(&task.project, levels, mode, opts.access);
+            let t_session = std::time::Instant::now();
+            match super::opencode_session::ensure_session(session, workdir, &rules) {
+                Ok(sid) => {
+                    log.latency("session", t_session.elapsed().as_millis());
+                    if !spec.args.iter().any(|a| a == "--session") {
+                        spec.args.push("--session".into());
+                        spec.args.push(sid);
+                    }
+                }
+                Err(e) => {
+                    let msg = format!("não foi possível preparar a sessão do opencode: {e}");
+                    log.line("err", &msg);
+                    return Err(OrchestratorError::Io(std::io::Error::other(msg)));
+                }
+            }
+        }
         // Os anexos do chat ficam fora da pasta de trabalho: libera a leitura deles.
         let mut dirs = crate::attachments::dirs_for(&crate::attachments::root(), id, &[&task.prompt, prompt]);
         // Preferências, memória e notas de projeto: o aviso de sistema aponta
@@ -1697,8 +1857,8 @@ impl Orchestrator {
             return direct_diff(&t.project).await;
         }
         let wt = self.worktree_of(id)?;
-        git(&wt, &["add", "-A", "-N"]).await?;
-        git(&wt, &["diff", "HEAD"]).await
+        git_index_safe(&wt, &["add", "-A", "-N"]).await?;
+        git_index_safe(&wt, &["diff", "HEAD"]).await
     }
 
     /// Pasta onde a tarefa altera arquivos: o worktree (isolado) ou o projeto (direto).
@@ -2073,8 +2233,34 @@ async fn git(dir: &Path, args: &[&str]) -> Result<String, OrchestratorError> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// `git add -N` e um `git status` paralelo disputam o índice do worktree e
+/// deixam um `index.lock` que some sozinho em segundos. Repete só esse erro
+/// transitório; qualquer outra falha continua indo para a interface.
+async fn git_index_safe(dir: &Path, args: &[&str]) -> Result<String, OrchestratorError> {
+    for attempt in 0..4 {
+        match git(dir, args).await {
+            Ok(out) => return Ok(out),
+            Err(e) => {
+                let transient = e.to_string().contains("index.lock") && e.to_string().contains("File exists");
+                if !transient || attempt == 3 {
+                    return Err(e);
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(120 * (attempt as u64 + 1))).await;
+            }
+        }
+    }
+    unreachable!("o loop sempre devolve ou erra")
+}
+
 fn json(ev: &AgentEvent) -> String {
     serde_json::to_string(ev).unwrap_or_default()
+}
+
+/// O cancelamento só preserva o host com prova de que a CLI parou o comando:
+/// lifecycle `cancelled` do mesmo `command_uuid`, ou `result` correlacionado.
+/// Processo que saiu (EOF) nunca é reaproveitado.
+fn host_survives_cancel(cancel_acknowledged: bool, ended: bool, correlated: bool, eof: bool) -> bool {
+    !eof && (cancel_acknowledged || (ended && correlated))
 }
 
 /// Id no formato uuid para correlacionar a mensagem enviada ao host. Não é
@@ -2119,6 +2305,27 @@ async fn kill_pid(pid: u32) {
     #[cfg(unix)]
     let _ = tokio::process::Command::new("kill")
         .args(["-KILL", "--", &format!("-{pid}")])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await;
+}
+
+/// Interrompe só o comando atual, mantendo o host vivo para a próxima mensagem.
+/// No Windows usa `CTRL_BREAK_EVENT` no grupo próprio criado em `spawn_host`:
+/// `CTRL_C_EVENT` iria para todo o console, inclusive o Argus. No Unix manda
+/// SIGINT para o grupo (`process_group(0)` no spawn).
+async fn interrupt_host(pid: u32) {
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_BREAK_EVENT};
+        unsafe {
+            let _ = GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid);
+        }
+    }
+    #[cfg(unix)]
+    let _ = tokio::process::Command::new("kill")
+        .args(["-INT", "--", &format!("-{pid}")])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
@@ -2217,12 +2424,12 @@ mod tests {
             let c = count.to_string_lossy().replace('\\', "/");
             let body = if cfg!(windows) {
                 format!(
-                    "@echo off\r\nfor /f %%n in ('find /c /v \"\" ^< \"{}\"') do set hid=%%n\r\necho SESSION:host-%hid%\r\necho host %hid% >> \"{}\"\r\n:loop\r\nset /p linha=\r\nif errorlevel 1 exit /b\r\necho turno %hid% >> \"{}\"\r\necho {{\"type\":\"result\",\"subtype\":\"success\"}}\r\ngoto loop\r\n",
+                    "@echo off\r\nfor /f %%n in ('find /c /v \"\" ^< \"{}\"') do set hid=%%n\r\necho SESSION:host-%hid%\r\necho host %hid% >> \"{}\"\r\n:loop\r\nset /p linha=\r\nif errorlevel 1 exit /b\r\necho turno %hid% >> \"{}\"\r\necho {{\"type\":\"result\",\"subtype\":\"success\",\"user_message_uuids\":[\"%linha%\"]}}\r\ngoto loop\r\n",
                     c, c, c
                 )
             } else {
                 format!(
-                    "hid=$(wc -l < '{}'); echo SESSION:host-$hid; echo host $hid >> '{}'; while read l; do echo turno $hid >> '{}'; echo '{{\"type\":\"result\",\"subtype\":\"success\"}}'; done\n",
+                    "hid=$(wc -l < '{}'); echo SESSION:host-$hid; echo host $hid >> '{}'; while read l; do echo turno $hid >> '{}'; echo '{{\"type\":\"result\",\"subtype\":\"success\",\"user_message_uuids\":[\"$l\"]}}'; done\n",
                     c, c, c
                 )
             };
@@ -2258,6 +2465,141 @@ mod tests {
                 CommandSpec::new("sh").arg(script)
             };
             Some(c.cwd(cwd))
+        }
+        fn host_message(&self, _prompt: &str, id: &str) -> String {
+            // O script devolve este id em `user_message_uuids`.
+            id.to_string()
+        }
+        fn parse_line(&self, l: &str) -> Vec<AgentEvent> {
+            if let Some(s) = l.trim().strip_prefix("SESSION:") {
+                return vec![AgentEvent::Session(s.to_string())];
+            }
+            if l.contains("\"result\"") {
+                vec![AgentEvent::Result { ok: true, summary: "ok".into(), cost: None }]
+            } else {
+                vec![]
+            }
+        }
+        fn host_turn_ended(&self, l: &str) -> bool {
+            l.contains("\"result\"")
+        }
+    }
+
+    /// Host que reproduz o claude 2.1.220: devolve o uuid no
+    /// `command_lifecycle`, mas não põe `user_message_uuids` no `result`.
+    /// `stale` faz o script soltar um result de outro comando depois do
+    /// lifecycle e antes do result deste, para testar a filtragem.
+    struct HostAck(PathBuf);
+    impl HostAck {
+        fn new(dir: &Path, stale: bool) -> Self {
+            let count = dir.join("contagem.txt");
+            let script = dir.join(if cfg!(windows) { "ack.cmd" } else { "ack.sh" });
+            let c = count.to_string_lossy().replace('\\', "/");
+            let extra = if stale {
+                if cfg!(windows) {
+                    "echo {\"type\":\"command_lifecycle\",\"command_uuid\":\"alheio\",\"state\":\"started\"}\r\necho {\"type\":\"result\",\"subtype\":\"success\"}\r\n"
+                } else {
+                    "echo '{\"type\":\"command_lifecycle\",\"command_uuid\":\"alheio\",\"state\":\"started\"}'; echo '{\"type\":\"result\",\"subtype\":\"success\"}'; "
+                }
+            } else {
+                ""
+            };
+            let body = if cfg!(windows) {
+                format!(
+                    "@echo off\r\nfor /f %%n in ('find /c /v \"\" ^< \"{}\"') do set hid=%%n\r\necho SESSION:host-%hid%\r\necho host %hid% >> \"{}\"\r\n:loop\r\nset /p linha=\r\nif errorlevel 1 exit /b\r\necho turno %hid% >> \"{}\"\r\necho {{\"type\":\"command_lifecycle\",\"command_uuid\":\"%linha%\",\"state\":\"started\"}}\r\n{}echo {{\"type\":\"result\",\"subtype\":\"success\"}}\r\ngoto loop\r\n",
+                    c, c, c, extra
+                )
+            } else {
+                format!(
+                    "hid=$(wc -l < '{}'); echo SESSION:host-$hid; echo host $hid >> '{}'; while read l; do echo turno $hid >> '{}'; echo \"{{\\\"type\\\":\\\"command_lifecycle\\\",\\\"command_uuid\\\":\\\"$l\\\",\\\"state\\\":\\\"started\\\"}}\"; {}echo '{{\"type\":\"result\",\"subtype\":\"success\"}}'; done\n",
+                    c, c, c, extra
+                )
+            };
+            std::fs::write(&script, body).unwrap();
+            std::fs::write(&count, "").unwrap();
+            Self(script)
+        }
+    }
+    impl AgentProvider for HostAck {
+        fn id(&self) -> &str {
+            "hostack"
+        }
+        fn display_name(&self) -> &str {
+            "Host Ack"
+        }
+        fn detect(&self) -> Option<PathBuf> {
+            None
+        }
+        fn login_status(&self) -> LoginStatus {
+            LoginStatus::Unknown
+        }
+        fn login_command(&self) -> CommandSpec {
+            CommandSpec::new("cmd")
+        }
+        fn task_command(&self, prompt: &str, cwd: &Path, _s: Option<&str>, _o: &TurnOptions) -> CommandSpec {
+            CommandSpec::new(if cfg!(windows) { "cmd" } else { "sh" }).stdin(prompt).cwd(cwd)
+        }
+        fn host_command(&self, cwd: &Path, _s: Option<&str>, _o: &TurnOptions) -> Option<CommandSpec> {
+            let script = self.0.to_string_lossy().into_owned();
+            let c = if cfg!(windows) {
+                CommandSpec::new("cmd").arg("/c").arg(script)
+            } else {
+                CommandSpec::new("sh").arg(script)
+            };
+            Some(c.cwd(cwd))
+        }
+        fn host_message(&self, _prompt: &str, id: &str) -> String {
+            // O script devolve este id em `command_lifecycle.command_uuid`.
+            id.to_string()
+        }
+        fn parse_line(&self, l: &str) -> Vec<AgentEvent> {
+            if let Some(s) = l.trim().strip_prefix("SESSION:") {
+                return vec![AgentEvent::Session(s.to_string())];
+            }
+            if l.contains("\"result\"") {
+                vec![AgentEvent::Result { ok: true, summary: "ok".into(), cost: None }]
+            } else {
+                vec![]
+            }
+        }
+        fn host_turn_ended(&self, l: &str) -> bool {
+            l.contains("\"result\"")
+        }
+    }
+
+    /// Host de teste com resposta escrita pelo próprio teste. Recebe o id do
+    /// turno como linha simples e devolve o que o script imprimir.
+    struct HostScript(PathBuf);
+    impl AgentProvider for HostScript {
+        fn id(&self) -> &str {
+            "hostscript"
+        }
+        fn display_name(&self) -> &str {
+            "Host Script"
+        }
+        fn detect(&self) -> Option<PathBuf> {
+            None
+        }
+        fn login_status(&self) -> LoginStatus {
+            LoginStatus::Unknown
+        }
+        fn login_command(&self) -> CommandSpec {
+            CommandSpec::new("cmd")
+        }
+        fn task_command(&self, prompt: &str, cwd: &Path, _s: Option<&str>, _o: &TurnOptions) -> CommandSpec {
+            CommandSpec::new(if cfg!(windows) { "cmd" } else { "sh" }).stdin(prompt).cwd(cwd)
+        }
+        fn host_command(&self, cwd: &Path, _s: Option<&str>, _o: &TurnOptions) -> Option<CommandSpec> {
+            let script = self.0.to_string_lossy().into_owned();
+            let c = if cfg!(windows) {
+                CommandSpec::new("cmd").arg("/c").arg(script)
+            } else {
+                CommandSpec::new("sh").arg(script)
+            };
+            Some(c.cwd(cwd))
+        }
+        fn host_message(&self, _prompt: &str, id: &str) -> String {
+            id.to_string()
         }
         fn parse_line(&self, l: &str) -> Vec<AgentEvent> {
             if let Some(s) = l.trim().strip_prefix("SESSION:") {
@@ -2458,6 +2800,106 @@ mod tests {
         o.discard_host(id);
     }
 
+    /// O host solta um result de outro prompt antes do result deste turno.
+    /// Com `user_message_uuids`, o primeiro é descartado e o host continua.
+    #[tokio::test]
+    async fn stale_result_does_not_end_turn() {
+        let dir = tempfile::tempdir().unwrap();
+        let count = dir.path().join("contagem.txt");
+        let script = dir.path().join(if cfg!(windows) { "stale.cmd" } else { "stale.sh" });
+        let c = count.to_string_lossy().replace('\\', "/");
+        let body = if cfg!(windows) {
+            format!(
+                "@echo off\r\nfor /f %%n in ('find /c /v \"\" ^< \"{}\"') do set hid=%%n\r\necho SESSION:host-%hid%\r\necho host %hid% >> \"{}\"\r\n:loop\r\nset /p linha=\r\nif errorlevel 1 exit /b\r\necho turno %hid% >> \"{}\"\r\necho {{\"type\":\"result\",\"subtype\":\"success\",\"user_message_uuids\":[\"alheio\"]}}\r\necho {{\"type\":\"result\",\"subtype\":\"success\",\"user_message_uuids\":[\"%linha%\"]}}\r\ngoto loop\r\n",
+                c, c, c
+            )
+        } else {
+            format!(
+                "hid=$(wc -l < '{}'); echo SESSION:host-$hid; echo host $hid >> '{}'; while read l; do echo turno $hid >> '{}'; echo '{{\"type\":\"result\",\"subtype\":\"success\",\"user_message_uuids\":[\"alheio\"]}}'; echo '{{\"type\":\"result\",\"subtype\":\"success\",\"user_message_uuids\":[\"$l\"]}}'; done\n",
+                c, c, c
+            )
+        };
+        std::fs::write(&script, body).unwrap();
+        std::fs::write(&count, "").unwrap();
+        let o = Orchestrator::new(vec![Arc::new(HostScript(script))], 1);
+        let id = o.submit(dir.path(), "hostscript", "um").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        o.reply(id, "dois").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        let raw = std::fs::read_to_string(&count).unwrap();
+        assert_eq!(raw.lines().filter(|l| l.starts_with("host ")).count(), 1, "{raw}");
+        assert_eq!(raw.lines().filter(|l| l.starts_with("turno ")).count(), 2, "{raw}");
+        o.discard_host(id);
+    }
+
+    /// Sem `user_message_uuids`, um result de background poderia fechar o
+    /// próximo turno. O host é descartado: cada turno abre o seu.
+    #[tokio::test]
+    async fn host_without_correlation_is_discarded() {
+        let dir = tempfile::tempdir().unwrap();
+        let count = dir.path().join("contagem.txt");
+        let script = dir.path().join(if cfg!(windows) { "sem correlacao.cmd" } else { "sem-correlacao.sh" });
+        let c = count.to_string_lossy().replace('\\', "/");
+        let body = if cfg!(windows) {
+            format!(
+                "@echo off\r\nfor /f %%n in ('find /c /v \"\" ^< \"{}\"') do set hid=%%n\r\necho SESSION:host-%hid%\r\necho host %hid% >> \"{}\"\r\n:loop\r\nset /p linha=\r\nif errorlevel 1 exit /b\r\necho turno %hid% >> \"{}\"\r\necho {{\"type\":\"result\",\"subtype\":\"success\"}}\r\necho {{\"type\":\"result\",\"subtype\":\"success\"}}\r\ngoto loop\r\n",
+                c, c, c
+            )
+        } else {
+            format!(
+                "hid=$(wc -l < '{}'); echo SESSION:host-$hid; echo host $hid >> '{}'; while read l; do echo turno $hid >> '{}'; echo '{{\"type\":\"result\",\"subtype\":\"success\"}}'; echo '{{\"type\":\"result\",\"subtype\":\"success\"}}'; done\n",
+                c, c, c
+            )
+        };
+        std::fs::write(&script, body).unwrap();
+        std::fs::write(&count, "").unwrap();
+        let o = Orchestrator::new(vec![Arc::new(HostScript(script))], 1);
+        let id = o.submit(dir.path(), "hostscript", "um").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        o.reply(id, "dois").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        let raw = std::fs::read_to_string(&count).unwrap();
+        assert_eq!(raw.lines().filter(|l| l.starts_with("host ")).count(), 2, "{raw}");
+        assert_eq!(raw.lines().filter(|l| l.starts_with("turno ")).count(), 2, "{raw}");
+        o.discard_host(id);
+    }
+
+    /// O claude 2.1.220 não devolve `user_message_uuids`, mas confirma o uuid
+    /// no `command_lifecycle`. Isso basta para manter um host por sessão.
+    #[tokio::test]
+    async fn lifecycle_ack_keeps_host_between_turns() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = HostAck::new(dir.path(), false);
+        let count = dir.path().join("contagem.txt");
+        let o = Orchestrator::new(vec![Arc::new(fake)], 1);
+        let id = o.submit(dir.path(), "hostack", "um").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        o.reply(id, "dois").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        let raw = std::fs::read_to_string(&count).unwrap();
+        assert_eq!(raw.lines().filter(|l| l.starts_with("host ")).count(), 1, "um host por conversa: {raw}");
+        assert_eq!(raw.lines().filter(|l| l.starts_with("turno ")).count(), 2, "dois turnos no mesmo host: {raw}");
+        o.discard_host(id);
+    }
+
+    /// Result sem confirmação do comando atual é de segundo plano: não fecha
+    /// o turno, mesmo quando a CLI já mandou lifecycle antes.
+    #[tokio::test]
+    async fn result_without_current_ack_is_ignored() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = HostAck::new(dir.path(), true);
+        let count = dir.path().join("contagem.txt");
+        let o = Orchestrator::new(vec![Arc::new(fake)], 1);
+        let id = o.submit(dir.path(), "hostack", "um").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        o.reply(id, "dois").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        let raw = std::fs::read_to_string(&count).unwrap();
+        assert_eq!(raw.lines().filter(|l| l.starts_with("host ")).count(), 1, "{raw}");
+        assert_eq!(raw.lines().filter(|l| l.starts_with("turno ")).count(), 2, "{raw}");
+        o.discard_host(id);
+    }
+
     #[tokio::test]
     async fn runs_fake_and_broadcasts() {
         let dir = tempfile::tempdir().unwrap();
@@ -2487,6 +2929,36 @@ mod tests {
         o.cancel(id).unwrap();
         assert_eq!(wait_final(&o, id).await, TaskState::Cancelled);
         assert_eq!(wait_final(&o, id2).await, TaskState::Cancelled);
+    }
+
+    #[test]
+    fn cancel_preserves_host_only_with_cli_ack() {
+        // lifecycle `cancelled` do comando atual: o host volta no próximo turno.
+        assert!(host_survives_cancel(true, false, false, false));
+        // `result` correlacionado também prova que o turno parou sem sair da CLI.
+        assert!(host_survives_cancel(false, true, true, false));
+        // Sem ack, ou com result de outro comando, o host não é confiável.
+        assert!(!host_survives_cancel(false, false, false, false));
+        assert!(!host_survives_cancel(false, true, false, false));
+        // Processo que saiu nunca é reaproveitado, mesmo com ack.
+        assert!(!host_survives_cancel(true, false, false, true));
+    }
+
+    #[tokio::test]
+    async fn git_index_safe_waits_for_a_transient_lock() {
+        if which::which("git").is_err() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        git(dir.path(), &["init", "-q"]).await.unwrap();
+        let target = dir.path().to_path_buf();
+        std::fs::write(target.join(".git/index.lock"), "").unwrap();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(180)).await;
+            let _ = std::fs::remove_file(target.join(".git/index.lock"));
+        });
+        let out = git_index_safe(dir.path(), &["status", "-s"]).await.unwrap();
+        assert_eq!(out, "");
     }
 
     #[tokio::test]

@@ -99,6 +99,17 @@ formato dos dados salvos continua o mesmo da série 0.1.x.
   usuário. `node scripts/galeria.mjs`. Só entra pela ponte, só vive enquanto a janela estiver
   aberta e não grava nada. A troca passou do `__TAURI_INTERNALS__` (que o Tauri 2 injeta
   lacrado, e por isso a galeria caía calada) para o `invoke` de `src/api/commands.ts`.
+- **Conversa do Claude mantém a CLI viva entre turnos.** Antes cada resposta encerrava o processo
+  e levava junto os subagentes e os servidores que o agente tinha iniciado. O Argus agora abre um
+  host por conversa e correlaciona o fim do turno pelo `command_lifecycle.command_uuid` ou por
+  `user_message_uuids`, para um resultado de segundo plano não fechar a conversa. No cancelamento,
+  interrompe só o comando do turno (`CTRL_BREAK_EVENT` no Windows, em grupo de processo próprio)
+  e preserva o host quando a CLI confirma; sem confirmação, encerra a árvore como antes.
+- **OpenCode mantém processos em segundo plano entre turnos** com o serviço compartilhado. A CLI
+  2.3.0 não aceita vários prompts no mesmo `opencode run`; `opencode acp` existe, mas exige
+  handshake e tratamento de permissões, e ficou registrado como opção futura.
+- **Uso de CPU, memória e GPU no cabeçalho da sessão**, antes só no painel Servidores, e o cálculo
+  do `diff` no modo isolado agora tolera um `index.lock` transitório em vez de mostrar o erro cru.
 
 ## 0.1.3 (2026-11-19)
 

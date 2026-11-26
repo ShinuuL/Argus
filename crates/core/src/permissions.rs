@@ -251,35 +251,49 @@ pub fn disallowed_tools(project_cmds: &[String], levels: GitLevels) -> Vec<Strin
     ["Bash", "PowerShell"].iter().flat_map(|t| FORCE_PUSH.iter().map(move |p| format!("{t}({p})"))).collect()
 }
 
-/// Política do opencode no modo Restrito: edição liberada, shell só nos padrões
-/// liberados (os mesmos do claude) e o resto negado. Sem regra "ask": num `run`
-/// não há quem aprove (e o serviço em segundo plano aprovava sozinho).
-pub fn opencode_restricted_config(project_cmds: &[String], levels: GitLevels) -> String {
-    let mut bash = serde_json::Map::new();
-    bash.insert("*".into(), "deny".into());
-    let mut allow = |p: &str| {
+/// Padrões de shell liberados no opencode, no formato de wildcard dele. Vale
+/// para a config V1 e para as regras V2 gravadas na sessão do serviço.
+pub fn opencode_shell_allow_patterns(project_cmds: &[String], levels: GitLevels) -> Vec<String> {
+    let mut v = Vec::new();
+    let mut push = |p: &str| {
         let p = p.trim();
-        if p.is_empty() {
+        if p.is_empty() || v.iter().any(|s| s == p) {
             return;
         }
-        match p.strip_suffix(":*") {
-            Some(base) => {
-                bash.insert(base.to_string(), "allow".into());
-                bash.insert(format!("{base} *"), "allow".into());
-            }
-            None => {
-                bash.insert(p.to_string(), "allow".into());
-            }
-        }
+        v.push(p.to_string());
     };
     for p in shell_patterns(levels).into_iter().chain(INSPECT_POWERSHELL.iter().copied()) {
-        allow(p);
+        match p.strip_suffix(":*") {
+            Some(base) => {
+                push(base);
+                push(&format!("{base} *"));
+            }
+            None => push(p),
+        }
     }
     for c in project_cmds {
         // `Bash(npm test:*)` e afins: só o que está dentro dos parênteses.
         let c = c.trim();
         let inner = c.find('(').filter(|_| c.ends_with(')')).map(|i| &c[i + 1..c.len() - 1]).unwrap_or(c);
-        allow(inner);
+        match inner.strip_suffix(":*") {
+            Some(base) => {
+                push(base);
+                push(&format!("{base} *"));
+            }
+            None => push(inner),
+        }
+    }
+    v
+}
+
+/// Política do opencode no modo Restrito: edição liberada, shell só nos padrões
+/// liberados (os mesmos do claude) e o resto negado. Sem regra "ask": num `run`
+/// não há quem aprove (a CLI nega sozinha).
+pub fn opencode_restricted_config(project_cmds: &[String], levels: GitLevels) -> String {
+    let mut bash = serde_json::Map::new();
+    bash.insert("*".into(), "deny".into());
+    for p in opencode_shell_allow_patterns(project_cmds, levels) {
+        bash.insert(p, "allow".into());
     }
     if levels.remote {
         for p in FORCE_PUSH {
@@ -287,6 +301,48 @@ pub fn opencode_restricted_config(project_cmds: &[String], levels: GitLevels) ->
         }
     }
     serde_json::json!({ "permission": { "edit": "allow", "bash": bash, "external_directory": "deny" } }).to_string()
+}
+
+/// Regras V2 do opencode para a sessão criada no serviço compartilhado.
+///
+/// Num `opencode run` não-interativo uma regra `ask` é auto-rejeitada pela CLI;
+/// por isso as regras do Argus chegam como `allow`/`deny` no `POST /api/session`
+/// (ou no `PATCH` da sessão, nos turnos seguintes). A ordem importa: a última
+/// regra que casa vence.
+pub fn opencode_session_rules(project: &Path, levels: GitLevels, mode: PermissionMode, access: AccessMode) -> serde_json::Value {
+    let rule = |action: &str, resource: &str, effect: &str| {
+        serde_json::json!({ "action": action, "resource": resource, "effect": effect })
+    };
+    let mut rules = Vec::new();
+    match access {
+        // A política é desligada de propósito nesta conversa.
+        AccessMode::Bypass => rules.push(rule("*", "*", "allow")),
+        // O agente `plan` da própria CLI já traz as regras de só leitura.
+        AccessMode::Plan => {}
+        AccessMode::Normal => {
+            if mode == PermissionMode::Auto {
+                rules.push(rule("*", "*", "allow"));
+                for p in crate::harmful::opencode_session_deny_patterns() {
+                    rules.push(rule("shell", &p, "deny"));
+                }
+                rules.push(rule("external_directory", "*", "deny"));
+            } else {
+                rules.push(rule("shell", "*", "deny"));
+                let cmds = crate::procs::allowed_commands(project);
+                for p in opencode_shell_allow_patterns(&cmds, levels) {
+                    rules.push(rule("shell", &p, "allow"));
+                }
+                if levels.remote {
+                    for p in FORCE_PUSH {
+                        rules.push(rule("shell", &format!("{}*", p.trim_end_matches(":*")), "deny"));
+                    }
+                }
+                rules.push(rule("edit", "*", "allow"));
+                rules.push(rule("external_directory", "*", "deny"));
+            }
+        }
+    }
+    serde_json::Value::Array(rules)
 }
 
 /// Argumentos de permissão para a linha de comando do claude.
@@ -360,9 +416,6 @@ impl AccessMode {
     }
 }
 
-/// Configuração do opencode que libera tudo (modo Bypass da conversa).
-pub const OPENCODE_BYPASS_CONFIG: &str = r#"{"permission":"allow"}"#;
-
 fn program_is(spec: &CommandSpec, name: &str) -> bool {
     Path::new(&spec.program).file_stem().is_some_and(|s| s.to_string_lossy().eq_ignore_ascii_case(name))
 }
@@ -391,7 +444,8 @@ fn gemini_policy_file() -> Option<std::path::PathBuf> {
 ///   lista liberada e os nocivos em `--disallowedTools`;
 /// - codex (Auto): rede liberada dentro do sandbox `workspace-write`;
 /// - gemini (Auto): `--approval-mode yolo` com a política de nocivos (`--admin-policy`);
-/// - opencode (Auto): `OPENCODE_CONFIG_CONTENT` com shell liberado e nocivos negados.
+/// - opencode: nada aqui. No serviço compartilhado as regras vão na sessão
+///   (`opencode_session_rules`), gravadas por `agents::opencode_session`.
 pub fn apply(mut spec: CommandSpec, project: &Path, levels: GitLevels, mode: PermissionMode) -> CommandSpec {
     let auto = mode == PermissionMode::Auto;
     if program_is(&spec, "claude") {
@@ -429,13 +483,6 @@ pub fn apply(mut spec: CommandSpec, project: &Path, levels: GitLevels, mode: Per
             spec.args.push("--admin-policy".into());
             spec.args.push(f.to_string_lossy().into_owned());
         }
-    } else if program_is(&spec, "opencode") {
-        let cfg = if auto {
-            crate::harmful::opencode_config_json()
-        } else {
-            opencode_restricted_config(&crate::procs::allowed_commands(project), levels)
-        };
-        spec.env.push(("OPENCODE_CONFIG_CONTENT".into(), cfg));
     }
     spec
 }
@@ -612,13 +659,9 @@ mod tests {
         let c = apply(CommandSpec::new("claude").arg("-p"), dir, lv, r);
         assert_eq!(c.args[1], "--allowedTools");
         assert!(c.args.contains(&"Bash(git status:*)".to_string()));
-        assert_eq!(apply(CommandSpec::new("opencode").arg("run"), dir, lv, r).args, ["run"]);
-        // Restrito: shell negado por padrão, liberados os padrões de leitura.
-        let env = apply(CommandSpec::new("opencode").arg("run"), dir, lv, r).env;
-        let cfg: serde_json::Value = serde_json::from_str(&env[0].1).unwrap();
-        assert_eq!(cfg["permission"]["bash"]["*"], "deny");
-        assert_eq!(cfg["permission"]["bash"]["git status *"], "allow");
-        assert_eq!(cfg["permission"]["edit"], "allow");
+        let o = apply(CommandSpec::new("opencode").arg("run"), dir, lv, r);
+        assert_eq!(o.args, ["run"]);
+        assert!(o.env.is_empty()); // regras V2 vão na sessão, não no env do processo
         let g = CommandSpec::new("gemini").arg("--approval-mode").arg("auto_edit");
         assert_eq!(apply(g, dir, lv, r).args, ["--approval-mode", "auto_edit"]);
     }
@@ -652,7 +695,42 @@ mod tests {
         assert_eq!(&g.args[..3], ["--approval-mode", "yolo", "--admin-policy"]);
         assert!(std::fs::read_to_string(&g.args[3]).unwrap().contains("decision = \"deny\""));
         let o = apply(CommandSpec::new("opencode").arg("run"), dir, lv, a);
-        assert_eq!(o.env[0].0, "OPENCODE_CONFIG_CONTENT");
+        assert_eq!(o.args, ["run"]);
+        assert!(o.env.is_empty());
+    }
+
+    /// Regras V2 gravadas na sessão do serviço compartilhado. Nunca `ask`: num
+    /// `opencode run` não-interativo a CLI rejeita a si mesma.
+    #[test]
+    fn opencode_rules_v2_by_access_mode() {
+        use super::{opencode_session_rules, AccessMode};
+        let dir = Path::new("projeto-que-nao-existe");
+        let lv = GitLevels::defaults(WorkMode::Direct);
+        let rule = |action: &str, resource: &str, effect: &str| serde_json::json!({ "action": action, "resource": resource, "effect": effect });
+        let has = |rules: &serde_json::Value, r: &serde_json::Value| rules.as_array().unwrap().iter().any(|x| x == r);
+
+        // Auto: libera tudo, depois nega os nocivos e o fora da pasta.
+        let auto = opencode_session_rules(dir, lv, PermissionMode::Auto, AccessMode::Normal);
+        assert_eq!(auto[0], rule("*", "*", "allow"));
+        assert!(has(&auto, &rule("shell", "rm -rf /*", "deny")));
+        assert!(has(&auto, &rule("external_directory", "*", "deny")));
+        assert!(!auto.to_string().contains("\"ask\""));
+        // Regras V2 viajam como argumento de `opencode api --data`; no Windows
+        // um JSON grande estoura a linha de comando (issue vista em 24/11).
+        assert!(auto.to_string().len() < 16_000);
+
+        // Restrito: shell negado, padrões de leitura liberados depois.
+        let r = opencode_session_rules(dir, lv, PermissionMode::Restricted, AccessMode::Normal);
+        assert_eq!(r[0], rule("shell", "*", "deny"));
+        assert!(has(&r, &rule("shell", "git status *", "allow")));
+        assert!(has(&r, &rule("edit", "*", "allow")));
+        assert!(has(&r, &rule("external_directory", "*", "deny")));
+
+        // Bypass libera tudo; Planejar não grava regra (o agente `plan` da CLI já limita).
+        let b = opencode_session_rules(dir, lv, PermissionMode::Auto, AccessMode::Bypass);
+        assert_eq!(b, serde_json::json!([rule("*", "*", "allow")]));
+        let p = opencode_session_rules(dir, lv, PermissionMode::Auto, AccessMode::Plan);
+        assert_eq!(p, serde_json::json!([]));
     }
 
     #[test]

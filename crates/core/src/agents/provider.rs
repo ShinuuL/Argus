@@ -356,6 +356,42 @@ impl AgentEvent {
     }
 }
 
+/// Ids das mensagens de usuário respondidas por um `result` em stream-json.
+/// `None` quando a CLI não informa o campo — é o caso do claude 2.1.220,
+/// mesmo enviando `uuid` na mensagem. Sem isso não há como saber se um
+/// `result` tardio veio do turno atual ou de trabalho em segundo plano.
+pub fn result_message_ids(line: &str) -> Option<Vec<String>> {
+    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    let ids = v.get("user_message_uuids")?.as_array()?;
+    let ids: Vec<String> = ids.iter().filter_map(|x| x.as_str().map(str::to_string)).collect();
+    (!ids.is_empty()).then_some(ids)
+}
+
+/// Id do comando confirmado por uma linha `command_lifecycle` do claude.
+///
+/// O claude 2.1.220 não devolve `user_message_uuids` no `result`, mas devolve
+/// o `uuid` enviado em `command_lifecycle.command_uuid` (conferido com a CLI
+/// instalada). Com isso o host pode saber que o `result` seguinte pertence ao
+/// comando atual e continuar vivo entre turnos. `None` = a linha não é uma
+/// confirmação de comando.
+pub fn command_lifecycle_id(line: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    if v.get("type").and_then(|t| t.as_str()) != Some("command_lifecycle") {
+        return None;
+    }
+    v.get("command_uuid")?.as_str().map(str::to_string)
+}
+
+/// Estado de uma linha `command_lifecycle` (`queued`, `started`, `cancelled`).
+/// Usado para saber se a CLI confirmou a interrupção do comando deste turno.
+pub fn command_lifecycle_state(line: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    if v.get("type").and_then(|t| t.as_str()) != Some("command_lifecycle") {
+        return None;
+    }
+    v.get("state")?.as_str().map(str::to_string)
+}
+
 pub trait AgentProvider: Send + Sync {
     fn id(&self) -> &str;
     fn display_name(&self) -> &str;
@@ -387,6 +423,24 @@ pub trait AgentProvider: Send + Sync {
     /// Verdadeiro quando uma linha do host fecha o turno atual.
     fn host_turn_ended(&self, _line: &str) -> bool {
         false
+    }
+    /// Ids respondidos pelo `result`. `None` = a CLI não correlaciona por aqui;
+    /// nesse caso vale [`Self::host_ack_id`] para decidir se o host continua.
+    fn host_result_message_ids(&self, line: &str) -> Option<Vec<String>> {
+        result_message_ids(line)
+    }
+    /// Confirmação de que a CLI recebeu o comando deste turno (claude:
+    /// `command_lifecycle.command_uuid`). `None` = a CLI não informa.
+    fn host_ack_id(&self, line: &str) -> Option<String> {
+        command_lifecycle_id(line)
+    }
+    /// Confirmação de que o comando deste turno foi interrompido e o host pode
+    /// continuar vivo. `None` = a CLI não informa lifecycle ou o estado não é
+    /// `cancelled`; nesse caso o cancelamento permanece destrutivo.
+    fn host_cancel_ack_id(&self, line: &str) -> Option<String> {
+        (command_lifecycle_state(line).as_deref() == Some("cancelled"))
+            .then(|| command_lifecycle_id(line))
+            .flatten()
     }
     /// Aquece o que a CLI carrega ao iniciar (flags do `--help`, lista de
     /// modelos). Roda em background na abertura do app. Falha nunca atrapalha
@@ -561,6 +615,38 @@ pub fn strip_ansi(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn command_lifecycle_state_reads_the_cancelled_ack() {
+        let cancelled = r#"{"type":"command_lifecycle","command_uuid":"msg-7","state":"cancelled"}"#;
+        assert_eq!(command_lifecycle_state(cancelled).as_deref(), Some("cancelled"));
+        assert_eq!(command_lifecycle_id(cancelled).as_deref(), Some("msg-7"));
+        let started = r#"{"type":"command_lifecycle","command_uuid":"msg-7","state":"started"}"#;
+        assert_eq!(command_lifecycle_state(started).as_deref(), Some("started"));
+        assert_eq!(command_lifecycle_state("texto"), None);
+        assert_eq!(command_lifecycle_state(r#"{"type":"result","state":"cancelled"}"#), None);
+    }
+
+    #[test]
+    fn result_message_ids_reads_claude_correlation() {
+        let com_ids = r#"{"type":"result","user_message_uuids":["a","b"]}"#;
+        assert_eq!(result_message_ids(com_ids), Some(vec!["a".into(), "b".into()]));
+        // claude 2.1.220: tem uuid próprio e num_turns, mas não correlaciona.
+        let sem_ids = r#"{"type":"result","uuid":"x","num_turns":1}"#;
+        assert_eq!(result_message_ids(sem_ids), None);
+        // Array vazio não correlaciona nada: não pode virar "result alheio".
+        assert_eq!(result_message_ids(r#"{"type":"result","user_message_uuids":[]}"#), None);
+        assert_eq!(result_message_ids("texto"), None);
+    }
+
+    #[test]
+    fn command_lifecycle_id_reads_the_acknowledged_command() {
+        let ack = r#"{"type":"command_lifecycle","command_uuid":"ARGUS-PROBE-1","state":"started"}"#;
+        assert_eq!(command_lifecycle_id(ack).as_deref(), Some("ARGUS-PROBE-1"));
+        assert_eq!(command_lifecycle_id(r#"{"type":"result","command_uuid":"x"}"#), None);
+        assert_eq!(command_lifecycle_id(r#"{"type":"command_lifecycle","state":"queued"}"#), None);
+        assert_eq!(command_lifecycle_id("texto"), None);
+    }
 
     /// Cria `dir/arquivo` vazio.
     fn touch(dir: &Path, file: &str) -> PathBuf {

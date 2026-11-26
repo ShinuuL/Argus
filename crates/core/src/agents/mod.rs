@@ -5,6 +5,7 @@ pub mod gemini;
 pub mod handoff;
 pub mod loop_guard;
 pub mod opencode;
+pub mod opencode_session;
 pub mod orchestrator;
 pub mod provider;
 pub mod todos;

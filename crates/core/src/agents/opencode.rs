@@ -6,10 +6,11 @@
 //! no topo e os dados em `part`. `step_finish` traz `reason` ("tool-calls" nos
 //! passos intermediários, "stop" no fim), `cost` e `tokens`.
 //!
-//! Permissões no modo "Auto" (`permissions::apply`): variável
-//! `OPENCODE_CONFIG_CONTENT` só deste processo, com `permission.bash` liberando
-//! tudo menos os nocivos (`crate::harmful`), `edit` liberado e
-//! `external_directory` negado. A configuração do usuário não é alterada.
+//! Permissões no modo "Auto" (`permissions::apply`): as regras do Argus são
+//! gravadas na sessão do serviço compartilhado por `opencode_session`, com
+//! `opencode api`. Não há mais `--standalone` nem `OPENCODE_CONFIG_CONTENT`, que
+//! o serviço iniciado antes não recebia. A configuração do usuário não é
+//! alterada e o Argus nunca lê o token da CLI.
 
 use super::provider::*;
 use serde_json::Value;
@@ -64,12 +65,13 @@ impl AgentProvider for OpencodeProvider {
         // Sem argumento de mensagem, `opencode run` lê o prompt da entrada padrão.
         // A pasta da sessão é a do processo; a CLI confia na variável `PWD` quando ela
         // existe, por isso `build_command` a acerta junto com o diretório.
-        // `--print-logs` funciona com `--standalone` (o servidor é privado deste
-        // processo): os logs da CLI saem no stderr e o Argus os grava no log do
-        // turno. É a evidência que falta para os defeitos em aberto do opencode.
+        // Sem `--standalone`: o turno usa o serviço compartilhado, e o orquestrador
+        // grava as regras do Argus na sessão antes do spawn (`opencode_session`).
+        // `--print-logs` continua trazendo os logs da CLI no stderr para o arquivo
+        // de log do turno; os logs do servidor compartilhado ficam no próprio
+        // serviço e não aparecem aqui.
         let mut c = CommandSpec::new("opencode")
             .arg("run")
-            .arg("--standalone")
             .arg("--format")
             .arg("json")
             .arg("--print-logs")
@@ -84,9 +86,8 @@ impl AgentProvider for OpencodeProvider {
         match opts.access {
             // Agente embutido `plan`: só lê e propõe.
             crate::permissions::AccessMode::Plan => c = c.arg("--agent").arg("plan"),
-            // Permissões liberadas só na configuração deste turno.
-            crate::permissions::AccessMode::Bypass => c.env.push(("OPENCODE_CONFIG_CONTENT".into(), crate::permissions::OPENCODE_BYPASS_CONFIG.into())),
-            crate::permissions::AccessMode::Normal => {}
+            // Bypass é gravado como regra `allow all` na sessão, no orquestrador.
+            crate::permissions::AccessMode::Bypass | crate::permissions::AccessMode::Normal => {}
         }
         // O `opencode run` não tem opção de prompt de sistema (conferido no `--help`
         // da 2.3.0): o aviso de ambiente vai na frente do primeiro pedido da sessão.
@@ -409,7 +410,7 @@ mod tests {
         assert_eq!(p.default_model().as_deref(), Some("openai/gpt"));
         let opts = TurnOptions { model: Some("google/gemini".into()), system_note: Some("cópia isolada".into()), ..Default::default() };
         let c = p.task_command("a \"b\" %PATH%\nc", Path::new("."), Some("ses_1"), &opts);
-        assert_eq!(c.args, ["run", "--standalone", "--format", "json", "--print-logs", "--log-level", "debug", "-m", "google/gemini", "--session", "ses_1"]);
+        assert_eq!(c.args, ["run", "--format", "json", "--print-logs", "--log-level", "debug", "-m", "google/gemini", "--session", "ses_1"]);
         assert_eq!(c.cwd.as_deref(), Some(Path::new(".")));
         // Sessão existente: o aviso de ambiente já foi dado no primeiro pedido.
         assert_eq!(c.stdin.as_deref(), Some("a \"b\" %PATH%\nc"));
@@ -417,15 +418,17 @@ mod tests {
         assert_eq!(c.stdin.as_deref(), Some("[Aviso do ambiente] cópia isolada\n\noi"));
         // Sem modelo na tarefa, vale o padrão da CLI (nenhum `-m`); nome inválido é ignorado.
         let c = p.task_command("oi", Path::new("."), None, &TurnOptions::default());
-        assert_eq!(c.args, ["run", "--standalone", "--format", "json", "--print-logs", "--log-level", "debug"]);
+        assert_eq!(c.args, ["run", "--format", "json", "--print-logs", "--log-level", "debug"]);
         let bad = TurnOptions { model: Some("--auto".into()), ..Default::default() };
-        assert_eq!(p.task_command("oi", Path::new("."), None, &bad).args, ["run", "--standalone", "--format", "json", "--print-logs", "--log-level", "debug"]);
+        assert_eq!(p.task_command("oi", Path::new("."), None, &bad).args, ["run", "--format", "json", "--print-logs", "--log-level", "debug"]);
         use crate::permissions::AccessMode;
         let c = p.task_command("oi", Path::new("."), None, &TurnOptions { access: AccessMode::Plan, ..Default::default() });
-        assert_eq!(c.args, ["run", "--standalone", "--format", "json", "--print-logs", "--log-level", "debug", "--agent", "plan"]);
+        assert_eq!(c.args, ["run", "--format", "json", "--print-logs", "--log-level", "debug", "--agent", "plan"]);
+        // Regras de Planejar e Bypass vão na sessão, nunca no ambiente do processo.
         assert!(c.env.is_empty());
         let c = p.task_command("oi", Path::new("."), None, &TurnOptions { access: AccessMode::Bypass, ..Default::default() });
-        assert_eq!(c.env, [("OPENCODE_CONFIG_CONTENT".to_string(), crate::permissions::OPENCODE_BYPASS_CONFIG.to_string())]);
+        assert!(c.env.is_empty());
+        assert_eq!(c.args, ["run", "--format", "json", "--print-logs", "--log-level", "debug"]);
     }
 
     #[test]

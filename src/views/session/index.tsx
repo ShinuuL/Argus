@@ -49,7 +49,7 @@ import {
   type ComposerHandle,
   type LocalCommandName,
 } from "@/views/chat";
-import { SessionServersBadge } from "@/views/servers";
+import { SessionServersBadge, SessionUsage } from "@/views/servers";
 import { applyTask, canFork, cancelTask, deleteTask, discardTask, forkTask } from "./actions";
 import { ContextMenu, type MenuItem } from "@/shell/ContextMenu";
 import {
@@ -1009,6 +1009,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
             </span>
           )}
           {taskId != null && <SessionServersBadge taskId={taskId} />}
+          {taskId != null && <SessionUsage owner={{ kind: "Session", id: taskId }} />}
           {taskId != null && (
             <button
               className="cv-hbtn"
