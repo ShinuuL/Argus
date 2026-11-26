@@ -246,7 +246,9 @@ export type AgentEvent =
   /** A CLI negou uma ferramenta por falta de permissão (`command` vazio se não for de shell). */
   | { Denied: { tool: string; command: string } }
   /** Ocupação da janela de contexto (último pedido do agente principal). Não vai para o histórico. */
-  | { Context: ContextUsage };
+  | { Context: ContextUsage }
+  /** Usuário respondeu a uma pergunta ACP. Fecha só o cartão com esse `request`. */
+  | { AcpAnswered: { request: string } };
 
 /** Tokens do último pedido do agente principal ao modelo (o que ocupa a janela de contexto). */
 export interface ContextUsage {
@@ -608,6 +610,32 @@ export interface Pricing {
   prefer_reported: boolean;
 }
 
+// --------------------------------------------------------------------- caveman
+
+/** Estado da instalação do CLI caveman. */
+export interface CavemanStatus {
+  installed: boolean;
+  bin: string | null;
+  hint: string;
+}
+
+/** Relatório devolvido pelo CLI na stderr (JSON). */
+export interface CavemanReport {
+  bytes_in: number;
+  bytes_out: number;
+  ratio: number;
+  engine: string;
+  note: string;
+}
+
+/** Texto original e comprimido, para a escolha acontecer na interface. */
+export interface CavemanResult {
+  original: string;
+  compressed: string;
+  report: CavemanReport;
+  compressed_for_real: boolean;
+}
+
 // --------------------------------------------------------------------- remoto
 
 export type AddrKind = "Lan" | "Tailscale" | "Virtual";
@@ -667,6 +695,42 @@ export interface MusicFolder {
 
 /** Payload do evento `media-local`. */
 export type LocalMediaEvent = { type: "Error"; message: string } | { type: "Finished" };
+
+// ------------------------------------------------------ imagens (fallback)
+
+/** Origem da chave no Rust: ambiente ou tela (só nesta sessão). Nunca traz o valor. */
+export interface ImagemStatus {
+  configured: boolean;
+  source: string;
+  from_ui: boolean;
+  model: string;
+  dir: string;
+  hint: string;
+}
+
+/** Imagem recém-gerada; `data` é base64 para anexar sem reler o arquivo. */
+export interface ImagemGerada {
+  path: Path;
+  name: string;
+  bytes: number;
+  mime: string;
+  data: string;
+  text: string;
+}
+
+/** Item da galeria local. */
+export interface ImagemArquivo {
+  path: Path;
+  name: string;
+  bytes: number;
+  modified: string;
+}
+
+/** Conteúdo de uma imagem da galeria, em base64. */
+export interface ImagemDados {
+  mime: string;
+  data: string;
+}
 
 // -------------------------------------------------------------------- sistema
 
@@ -857,6 +921,8 @@ export interface SkillDef {
   description: string;
   body: string;
   scope: AgentScope;
+  /** Origem do arquivo lido: "Projeto", "Claude", "Agentes" ou "OpenCode". */
+  source: string;
   path: string;
   shadowed: boolean;
   extra: Record<string, string>;

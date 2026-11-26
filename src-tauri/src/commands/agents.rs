@@ -455,6 +455,18 @@ pub async fn task_cancel(ctx: State<'_, AppCtx>, id: TaskId) -> Result<(), Strin
     ctx.orch.cancel(id).map_err(err)
 }
 
+/// Responde a uma pergunta ACP pendente, sem criar novo turno.
+#[tauri::command]
+pub async fn task_acp_answer(
+    ctx: State<'_, AppCtx>,
+    id: TaskId,
+    request: String,
+    groups: Vec<Vec<String>>,
+    extras: Vec<String>,
+) -> Result<(), String> {
+    ctx.orch.acp_answer(id, &request, &groups, &extras).await.map_err(err)
+}
+
 /// Responde ao agente (novo turno na mesma sessão da CLI).
 #[tauri::command]
 pub async fn task_reply(ctx: State<'_, AppCtx>, id: TaskId, message: String) -> Result<(), String> {

@@ -256,6 +256,8 @@ pub fn attachments_root() -> PathBuf {
 }
 
 /// Nome de arquivo seguro (a mesma regra do core, usada também pelo celular).
+/// Hoje só os testes chamam por aqui; o caminho de produção usa o core direto.
+#[cfg(test)]
 pub fn sanitize_name(name: &str) -> String {
     argus_core::attachments::sanitize_name(name)
 }

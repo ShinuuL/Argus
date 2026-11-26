@@ -18,7 +18,7 @@ fn ref_name(task: u64, n: u32) -> String {
     format!("refs/argus/t{task}/{n}")
 }
 
-fn git(dir: &Path, args: &[&str], index: Option<&Path>) -> Option<String> {
+fn git_raw(dir: &Path, args: &[&str], index: Option<&Path>) -> Option<Vec<u8>> {
     let mut cmd = Command::new(crate::agents::orchestrator::resolve_program("git"));
     cmd.args(args).current_dir(dir).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null());
     if let Some(i) = index {
@@ -30,7 +30,47 @@ fn git(dir: &Path, args: &[&str], index: Option<&Path>) -> Option<String> {
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
     let out = cmd.output().ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    out.status.success().then_some(out.stdout)
+}
+
+fn git(dir: &Path, args: &[&str], index: Option<&Path>) -> Option<String> {
+    git_raw(dir, args, index).map(|b| String::from_utf8_lossy(&b).trim().to_string())
+}
+
+/// Caminhos que diferem do HEAD, incluindo os não versionados. `diff-index`
+/// compara o HEAD com a pasta de trabalho; `ls-files --others` completa com o
+/// que ainda não entrou no git. `-z` preserva nomes com espaços e acentos.
+/// Qualquer falha do git aborta o retrato: uma lista parcial geraria um ponto
+/// de retorno que não contém as mudanças do usuário.
+fn changed_paths(dir: &Path, has_head: bool) -> Option<std::collections::BTreeSet<String>> {
+    let mut out = std::collections::BTreeSet::new();
+    let mut commands: Vec<&[&str]> = Vec::new();
+    // Repositório sem commit não tem HEAD para comparar: o `ls-files` abaixo
+    // já devolve todos os arquivos fora do .gitignore.
+    if has_head {
+        commands.push(&["diff-index", "--no-renames", "--name-only", "-z", "HEAD", "--"]);
+    }
+    commands.push(&["ls-files", "--others", "--exclude-standard", "-z"]);
+    for args in commands {
+        let bytes = git_raw(dir, args, None)?;
+        for p in bytes.split(|b| *b == 0).filter(|p| !p.is_empty()) {
+            out.insert(String::from_utf8_lossy(p).into_owned());
+        }
+    }
+    Some(out)
+}
+
+/// Reescreve no índice temporário só os caminhos que mudaram. O índice já veio
+/// do HEAD (`read-tree`), então os arquivos intactos não são relidos nem
+/// rehasheados — no `git add -A` original todo o repositório era percorrido a
+/// cada turno, o que dominava `prepare_ms` em pastas grandes.
+fn apply_changes(dir: &Path, index: &Path, paths: &std::collections::BTreeSet<String>) -> Option<()> {
+    for p in paths {
+        let exists = std::fs::symlink_metadata(dir.join(p)).is_ok();
+        let flag = if exists { "--add" } else { "--force-remove" };
+        git(dir, &["update-index", flag, "--", p], Some(index))?;
+    }
+    Some(())
 }
 
 struct Cleanup(std::path::PathBuf);
@@ -54,7 +94,7 @@ pub fn snapshot(dir: &Path, task: u64, n: u32) -> Option<String> {
     if head.is_some() {
         git(dir, &["read-tree", "HEAD"], Some(index))?;
     }
-    git(dir, &["add", "-A", "."], Some(index))?;
+    apply_changes(dir, index, &changed_paths(dir, head.is_some())?)?;
     let tree = git(dir, &["write-tree"], Some(index))?;
     let mut args = vec!["-c", "user.name=Argus", "-c", "user.email=argus@localhost", "commit-tree", tree.as_str(), "-m", "argus: ponto de retorno"];
     if let Some(h) = head.as_deref() {
@@ -148,5 +188,48 @@ mod tests {
     fn not_git_is_none() {
         let d = tempfile::tempdir().unwrap();
         assert!(snapshot(d.path(), 1, 1).is_none());
+    }
+
+    /// O retrato incremental tem de produzir exatamente a mesma árvore do
+    /// `git add -A` de antes: editar, apagar, criar com espaço no nome e deixar
+    /// o ignorado de fora. Sem esta prova, a otimização mudaria o "Voltar".
+    #[test]
+    fn incremental_snapshot_matches_full_add() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path();
+        sh(p, &["init", "-q"]);
+        std::fs::write(p.join("a.txt"), "1").unwrap();
+        std::fs::write(p.join("b.txt"), "2").unwrap();
+        std::fs::write(p.join(".gitignore"), "ign/\n").unwrap();
+        sh(p, &["add", "-A"]);
+        sh(p, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x"]);
+        std::fs::write(p.join("a.txt"), "3").unwrap();
+        std::fs::remove_file(p.join("b.txt")).unwrap();
+        std::fs::write(p.join("novo arquivo.txt"), "n").unwrap();
+        std::fs::create_dir(p.join("ign")).unwrap();
+        std::fs::write(p.join("ign/x.txt"), "x").unwrap();
+
+        let commit = snapshot(p, 9, 1).unwrap();
+        let tree = git(p, &["rev-parse", &format!("{commit}^{{tree}}")], None).unwrap();
+
+        let index = std::env::temp_dir().join(format!("argus-ponto-teste-{}-9-1.idx", std::process::id()));
+        let _cleanup = Cleanup(index.clone());
+        git(p, &["read-tree", "HEAD"], Some(&index)).unwrap();
+        git(p, &["add", "-A", "."], Some(&index)).unwrap();
+        let full = git(p, &["write-tree"], Some(&index)).unwrap();
+        assert_eq!(tree, full);
+    }
+
+    /// Pasta git sem nenhum commit ainda: não há HEAD para `diff-index`, mas o
+    /// retrato precisa capturar os arquivos como antes.
+    #[test]
+    fn snapshot_without_commit_still_captures_files() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path();
+        sh(p, &["init", "-q"]);
+        std::fs::write(p.join("a.txt"), "1").unwrap();
+        let commit = snapshot(p, 10, 1).unwrap();
+        let tree = git(p, &["rev-parse", &format!("{commit}^{{tree}}")], None).unwrap();
+        assert_eq!(git(p, &["ls-tree", "--name-only", &tree], None).unwrap(), "a.txt");
     }
 }

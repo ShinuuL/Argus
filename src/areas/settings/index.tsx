@@ -20,6 +20,8 @@ import PermissionsPage from "./Permissions";
 import MemoryPage from "./Memory";
 import { McpServers, Plugins } from "./McpServers";
 import { PageBody } from "./PageBody";
+import { ImagensContent } from "@/views/settings/imagens";
+import { UpdatesContent } from "@/views/settings/updates";
 import "@/views/settings/settings.css";
 import "./settings-area.css";
 
@@ -40,6 +42,8 @@ type Page =
   | "auditoria"
   | "pet"
   | "player"
+  | "imagens"
+  | "updates"
   | "autowork";
 
 import { polishModeSet } from "@/views/chat/backend";
@@ -77,12 +81,18 @@ const GROUPS: { label: string; items: Item[] }[] = [
       // agente faz sozinho na sua pasta não é penduricalho — e o nome em
       // inglês escondia o assunto de quem lia a lista procurando por ele.
       { id: "autowork", label: "Trabalho automático", keywords: "autowork automático pendências sozinho fila trabalho" },
+      {
+        id: "imagens",
+        label: "Imagens",
+        keywords: "imagem gemini google ai studio chave api fallback gerar galeria plano free pago",
+      },
     ],
   },
   {
     label: "Este computador",
     items: [
       { id: "inicializacao", label: "Inicialização", keywords: "iniciar com o windows login abrir sozinho minimizado tarefas agendadas" },
+      { id: "updates", label: "Atualizações", keywords: "update atualizar versão release github instalador nsis reiniciar" },
       { id: "deps", label: "Dependências", keywords: "node npm instalar" },
       { id: "auxiliares", label: "Auxiliares", keywords: "helper elevado uac" },
       { id: "remoto", label: "Acesso remoto", keywords: "celular qr pareamento rede" },
@@ -101,7 +111,7 @@ const GROUPS: { label: string; items: Item[] }[] = [
 const ALL = GROUPS.flatMap((g) => g.items);
 
 /** Seção antiga do store (openSettings) → página nova. */
-const FROM_SECTION: Record<string, Page> = { theme: "aparencia", agents: "permissoes", providers: "provedores", project: "permissoes" };
+const FROM_SECTION: Record<string, Page> = { theme: "aparencia", agents: "permissoes", providers: "provedores", imagens: "imagens", updates: "updates", project: "permissoes" };
 
 const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
@@ -601,6 +611,22 @@ export default function SettingsArea() {
             </PageBody>
           )}
           {page === "autowork" && <AutoworkPage />}
+          {page === "imagens" && (
+            <PageBody
+              title="Imagens"
+              lead="Fallback pago para quando o plano free do agente não cobre imagem. A chave do Google AI Studio vem do ambiente ou da tela (só nesta sessão); os agentes seguem com o login das CLIs oficiais."
+            >
+              <ImagensContent />
+            </PageBody>
+          )}
+          {page === "updates" && (
+            <PageBody
+              title="Atualizações"
+              lead="Verifica novas versões publicadas no GitHub Releases e instala a atualização com assinatura verificada."
+            >
+              <UpdatesContent />
+            </PageBody>
+          )}
           {/* Preferências e memória tem Salvar manual: ali o rodapé não promete salvamento automático. */}
           {page !== "memoria" && <AreaStatus>salvo automaticamente</AreaStatus>}
         </div>

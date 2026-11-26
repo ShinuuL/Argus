@@ -7,10 +7,11 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { api, errorMessage, formatTokensPt, formatUsdPt, type Path, type Pricing, type TokenUsage } from "@/api";
 import { Icon } from "@/shell/icons";
 import { MessageView } from "@/views/chat";
-import { isAskTool, parseAsk, splitAskBlock } from "./ask";
+import { acpAskRef, isAskTool, parseAsk, splitAskBlock } from "./ask";
 import { AskCard } from "./AskCard";
 import { allowAndRetry } from "./actions";
 import { QuoteButton, useQuoteSelection } from "./quote";
+import { CavemanButton } from "./caveman";
 import { Dot, ThinkingRow, TimelineItem, ToolRow, toolSummary } from "./ToolRow";
 import {
   noticeSummary,
@@ -236,6 +237,8 @@ export interface TranscriptProps {
    * subagente, histórico) os cartões de pergunta ficam só de leitura.
    */
   onAnswer?(text: string): Promise<void> | void;
+  /** Responde a uma pergunta ACP pelo protocolo (sem criar novo turno). */
+  onAcpAnswer?(request: string, groups: string[][], extras: string[]): Promise<void> | void;
   /** Pedidos com ponto de retorno (1 = o primeiro) e a ação de voltar a um deles. */
   checkpoints?: number[];
   onRestore?(n: number): void;
@@ -290,6 +293,10 @@ export function Transcript(props: TranscriptProps) {
 
   const [spot, limparSpot] = useQuoteSelection(ref, !!props.onQuote);
 
+  // Perguntas ACP já respondidas vêm como evento `AcpAnswered` no histórico
+  // (`events.ts` fecha o cartão do pedido certo). Nada de estado local: um
+  // recarregamento não pode reabrir uma pergunta que já foi enviada.
+
   const onScroll = () => {
     const el = ref.current;
     if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
@@ -326,10 +333,21 @@ export function Transcript(props: TranscriptProps) {
       case "tool": {
         // Pergunta de múltipla escolha: cartão com as opções, não linha de ferramenta.
         const ask = isAskTool(entry.name) ? parseAsk(entry.input) : null;
+        const acp = acpAskRef(entry.input);
+        if (ask && acp) {
+          return (
+            <AskCard
+              key={key}
+              questions={ask}
+              pending={entry.result == null && (live || openAsk)}
+              onPick={(groups, extras) => props.onAcpAnswer?.(acp, groups, extras) ?? Promise.resolve()}
+            />
+          );
+        }
         if (ask) {
           // No modo sem terminal a CLI recusa a pergunta na hora e o turno termina;
           // a última pergunta do último turno continua respondível (vira mensagem nova).
-          return <AskCard key={key} questions={ask} pending={(entry.result == null && live) || openAsk} onAnswer={props.onAnswer} />;
+          return <AskCard key={key} questions={ask} pending={entry.result == null && (live || openAsk)} onAnswer={props.onAnswer} />;
         }
         // Plano entregue pelo modo plan da CLI: o texto do plano, não o JSON.
         if (entry.name === "ExitPlanMode") {
@@ -438,8 +456,8 @@ export function Transcript(props: TranscriptProps) {
           // recolhe, para a conversa não virar uma lista sem fim.
           // Última pergunta do último turno, com o agente parado: segue clicável e à vista.
           const openAsk =
-            t === turns.length - 1 && !taskActive && props.onAnswer
-              ? turn.items.map((e) => e.type === "tool" && isAskTool(e.name) && parseAsk(e.input) != null).lastIndexOf(true)
+            t === turns.length - 1 && !taskActive && (props.onAnswer || props.onAcpAnswer)
+              ? turn.items.map((e) => e.type === "tool" && e.result == null && isAskTool(e.name) && parseAsk(e.input) != null).lastIndexOf(true)
               : -1;
           const cut0 = group ? (finished ? stepsCut(turn.items) : liveCut(turn.items)) : -1;
           const cut = openAsk >= 0 && cut0 > openAsk ? openAsk : cut0;
@@ -497,6 +515,9 @@ export function Transcript(props: TranscriptProps) {
         {after}
       </div>
       {spot && props.onQuote && <QuoteButton spot={spot} onQuote={props.onQuote} onClose={limparSpot} />}
+      {spot && props.onQuote && (
+        <CavemanButton spot={spot} onPick={props.onQuote} onClose={limparSpot} />
+      )}
     </div>
   );
 }

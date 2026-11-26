@@ -19,6 +19,7 @@ import {
   isTaskActive,
   onTaskEvent,
   samePath,
+  taskAcpAnswer,
   totalTokens,
   variantOf,
   type Path,
@@ -31,6 +32,7 @@ import {
   type TaskId,
   type WorkMode,
 } from "@/api";
+import { chatAttachmentSave } from "@/views/chat/backend";
 import { Icon } from "@/shell/icons";
 import { useApp, useLayout, useWorkbench } from "@/store";
 import { useProviders } from "@/views/agents";
@@ -591,8 +593,12 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
     if (taskId != null) useApp.getState().selectSubagent(taskId, id);
   };
 
+  const cancelInFlight = useRef(false);
   const cancel = async () => {
-    if (taskId == null) return;
+    // Três cliques rápidos chegavam antes da confirmação nativa terminar; só o
+    // primeiro virava comando no core, os outros ficavam sem efeito e sem log.
+    if (taskId == null || cancelInFlight.current) return;
+    cancelInFlight.current = true;
     setCancelling(true);
     try {
       await cancelTask(taskId);
@@ -600,6 +606,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
     } catch (e) {
       setError(errorMessage(e));
     } finally {
+      cancelInFlight.current = false;
       setCancelling(false);
     }
   };
@@ -775,6 +782,24 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
           return;
         await discardTask(taskId);
         return;
+      case "imagem": {
+        const pedido = args.trim();
+        if (!pedido) throw new Error("Escreva /imagem e o pedido. Exemplo: /imagem um gato astronauta");
+        const status = await api.imagemStatus();
+        if (!status.configured) throw new Error(status.hint);
+        const img = await api.imagemGerar(pedido);
+        const saved = await chatAttachmentSave(taskId, draftId, img.name, img.data);
+        useChat.getState().addAttachment(chatKey(taskId, draftId), {
+          id: `img-${Date.now()}`,
+          kind: "image",
+          name: img.name,
+          size: img.bytes,
+          path: saved.path,
+          status: "ready",
+          previewUrl: `data:${img.mime};base64,${img.data}`,
+        });
+        return true;
+      }
       default:
         return false;
     }
@@ -986,7 +1011,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
           {task && canFork(task) && (
             <button
               className="cv-hbtn"
-              title="Ramificar: abre uma cópia desta conversa em outra aba para testar outro caminho. A original continua como está (a pasta é a mesma)."
+              title="Ramificar: abre uma cópia desta conversa em outra aba para testar outro caminho. A original continua como está (a pasta é a mesma). No Claude a CLI ramifica a sessão; nos outros provedores o ramo tem sessão nova e recebe um resumo do histórico no primeiro pedido."
               aria-label="Ramificar a conversa"
               onClick={() => void forkTask(task).catch((err) => setError(errorMessage(err)))}
             >
@@ -1061,6 +1086,12 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
               current || closed || noSession
                 ? undefined
                 : (text) => send(text).catch((e) => setError(errorMessage(e)))
+            }
+            onAcpAnswer={
+              current || closed || taskId == null
+                ? undefined
+                : (request, groups, extras) =>
+                    taskAcpAnswer(taskId, request, groups, extras).catch((e) => setError(errorMessage(e)))
             }
             group={!current}
             resetKey={current ? current.id : "main"}

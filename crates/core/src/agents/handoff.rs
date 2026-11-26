@@ -54,8 +54,28 @@ pub fn build_context(
     changed_files: &[String],
     max_chars: usize,
 ) -> String {
+    let intro = if resumed {
+        format!(
+            "[Contexto montado pelo Argus. Enquanto você esteve fora desta conversa, outro agente ({from_name}) a atendeu, na mesma pasta de trabalho. Abaixo, o que aconteceu nesse intervalo. Não responda a este bloco: responda ao pedido que vem depois dele.]"
+        )
+    } else {
+        format!(
+            "[Contexto montado pelo Argus. Esta conversa vinha sendo atendida por outro agente ({from_name}); você continua a partir daqui, na mesma pasta de trabalho. Abaixo, o resumo da conversa até aqui: pedidos do usuário e respostas do agente, sem a saída das ferramentas. Não responda a este bloco: responda ao pedido que vem depois dele.]"
+        )
+    };
+    build(relevant(events, to, resumed), intro, changed_files, max_chars, resumed)
+}
+
+/// Contexto para um ramo criado pelo Argus em provedores sem fork na CLI.
+/// Diz ao agente que é uma cópia da conversa, não uma troca de agente.
+pub fn build_fork_context(events: &[AgentEvent], changed_files: &[String], max_chars: usize) -> String {
+    let intro = "[Contexto montado pelo Argus. Este é um ramo da conversa original: o histórico foi copiado, mas a sessão da CLI é nova. Abaixo, o resumo do que aconteceu até aqui: pedidos do usuário e respostas do agente, sem a saída das ferramentas. Não responda a este bloco: responda ao pedido que vem depois dele.]";
+    build(events, intro.to_string(), changed_files, max_chars, false)
+}
+
+fn build(events: &[AgentEvent], intro: String, changed_files: &[String], max_chars: usize, resumed: bool) -> String {
     let mut lines: Vec<String> = Vec::new();
-    for ev in relevant(events, to, resumed) {
+    for ev in events {
         match ev {
             // Só o agente principal: eventos de subagente (`Scoped`) ficam de fora.
             AgentEvent::User(t) if !t.trim().is_empty() => lines.push(format!("Usuário: {}", t.trim())),
@@ -67,15 +87,6 @@ pub fn build_context(
     if lines.is_empty() && (resumed || changed_files.is_empty()) {
         return String::new();
     }
-    let intro = if resumed {
-        format!(
-            "[Contexto montado pelo Argus. Enquanto você esteve fora desta conversa, outro agente ({from_name}) a atendeu, na mesma pasta de trabalho. Abaixo, o que aconteceu nesse intervalo. Não responda a este bloco: responda ao pedido que vem depois dele.]"
-        )
-    } else {
-        format!(
-            "[Contexto montado pelo Argus. Esta conversa vinha sendo atendida por outro agente ({from_name}); você continua a partir daqui, na mesma pasta de trabalho. Abaixo, o resumo da conversa até aqui: pedidos do usuário e respostas do agente, sem a saída das ferramentas. Não responda a este bloco: responda ao pedido que vem depois dele.]"
-        )
-    };
     let mut out = intro;
     if !lines.is_empty() {
         out.push_str("\n\n");
@@ -126,6 +137,20 @@ mod tests {
             assert!(!c.contains(absent), "{absent} não devia entrar: {c}");
         }
         assert_eq!(build_context(&[], "opencode", "Claude Code", false, &[], MAX_CHARS), "");
+    }
+
+    #[test]
+    fn fork_context_says_it_is_a_copy_with_a_new_session() {
+        let events = vec![
+            AgentEvent::User("pedido original".into()),
+            AgentEvent::Text("resposta original".into()),
+        ];
+        let c = build_fork_context(&events, &[], MAX_CHARS);
+        assert!(c.contains("ramo da conversa original"), "{c}");
+        assert!(c.contains("sessão da CLI é nova"), "{c}");
+        assert!(c.contains("Usuário: pedido original") && c.contains("Agente: resposta original"));
+        assert!(!c.contains("outro agente"), "{c}");
+        assert_eq!(build_fork_context(&[], &[], MAX_CHARS), "");
     }
 
     #[test]

@@ -87,9 +87,13 @@ export async function allowAndRetry(project: Path, tool: string, command: string
   await send(retryDeniedText(command));
 }
 
-/** Ramificar só vale para o Claude, em "Direto na pasta", com sessão e parado. */
+/**
+ * Ramificar vale em "Direto na pasta", com sessão e parado. No Claude a CLI
+ * faz o fork da sessão; nos outros provedores o Argus cria a cópia e manda um
+ * resumo do histórico no primeiro turno (a CLI não tem fork utilizável).
+ */
 export function canFork(t: Task): boolean {
-  return t.provider === "claude" && t.mode === "Direct" && t.session_id != null && !isTaskActive(t.state) && t.state !== "Applied" && t.state !== "Discarded";
+  return t.mode === "Direct" && t.session_id != null && !isTaskActive(t.state) && t.state !== "Applied" && t.state !== "Discarded";
 }
 
 /** Ramifica a conversa e abre o ramo numa aba. */

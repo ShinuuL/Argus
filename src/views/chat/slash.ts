@@ -1,10 +1,15 @@
 /**
- * Comandos de barra da caixa de mensagem. Duas fontes:
+ * Comandos de barra da caixa de mensagem. Três fontes:
  *
  * - locais do Argus: executam uma ação da IDE e NÃO vão ao agente;
  * - da CLI (skills, plugins, /compact...): vão como texto do turno. A lista vem
- *   de `chatAgentCapabilities` (só o claude informa).
+ *   de `chatAgentCapabilities` (só o claude informa);
+ * - skills em arquivo na máquina (`.claude`, `.agents`, `.config/opencode`):
+ *   lidas pelo comando `agentdefs_skills`, entram no mesmo menu para qualquer
+ *   provedor, inclusive quando a CLI não informa a própria lista.
  */
+
+import type { SkillDef } from "@/api";
 
 export type LocalCommandName =
   | "nova"
@@ -16,6 +21,7 @@ export type LocalCommandName =
   | "modelo"
   | "melhorar"
   | "briefing"
+  | "imagem"
   | "ajuda";
 
 export interface LocalCommand {
@@ -42,6 +48,12 @@ export const LOCAL_COMMANDS: LocalCommand[] = [
     description: "Reescreve o rascunho da caixa (não envia)",
   },
   { name: "briefing", aliases: ["entrevista", "brief"], description: "Entrevista de briefing do projeto" },
+  {
+    name: "imagem",
+    aliases: ["image"],
+    description: "Gera imagem com a chave do Google AI Studio (pago) e anexa ao chat",
+    args: "<pedido>",
+  },
   { name: "ajuda", aliases: ["help", "?"], description: "Lista os comandos" },
 ];
 
@@ -109,10 +121,18 @@ export interface SlashItem {
   name: string;
   description: string;
   local: boolean;
+  /** Preenchido quando o item veio de um SKILL.md lido do disco. */
+  source?: string;
 }
 
-/** Junta locais e os da CLI, sem repetir nomes nem os que só existem no terminal. */
-export function allSlashItems(cliCommands: string[]): SlashItem[] {
+const resumo = (text: string, limite = 160) => (text.length > limite ? `${text.slice(0, limite - 1)}…` : text);
+
+/**
+ * Junta locais, da CLI e skills do disco, sem repetir nomes nem trazer os que
+ * só existem no terminal. Um mesmo nome aparece uma vez: o local vence, e a
+ * skill do disco ganha a descrição do item da CLI (que costuma ser só "da CLI").
+ */
+export function allSlashItems(cliCommands: string[], skills: SkillDef[] = []): SlashItem[] {
   const local: SlashItem[] = LOCAL_COMMANDS.map((c) => ({
     name: c.name,
     description: c.args ? `${c.description} · ${c.args}` : c.description,
@@ -124,7 +144,24 @@ export function allSlashItems(cliCommands: string[]): SlashItem[] {
     .filter((c) => c && !c.startsWith("__") && !TERMINAL_ONLY.has(c.toLowerCase()) && !taken.has(c.toLowerCase()))
     .sort((a, b) => a.localeCompare(b))
     .map((c) => ({ name: c, description: c.includes(":") ? `da CLI · ${c.split(":")[0]}` : "da CLI", local: false }));
-  return [...local, ...cli];
+  const byName = new Map(cli.map((c) => [c.name.toLowerCase(), c]));
+
+  for (const skill of skills) {
+    // `shadowed` é o mesmo nome em outra raiz; a raiz de maior prioridade já
+    // entrou primeiro. Nomes com espaço ou barra não podem virar `/comando`.
+    if (skill.shadowed || !/^[^\s/\\]+$/.test(skill.name)) continue;
+    const key = skill.name.toLowerCase();
+    if (taken.has(key)) continue;
+    const origem = skill.source || "skill";
+    byName.set(key, {
+      name: skill.name,
+      description: skill.description ? `${origem} · ${resumo(skill.description)}` : `${origem} · skill local`,
+      local: false,
+      source: origem,
+    });
+  }
+
+  return [...local, ...[...byName.values()].sort((a, b) => a.name.localeCompare(b.name))];
 }
 
 export interface SlashToken {

@@ -11,13 +11,18 @@
 //! existe nos dois, o do projeto é o que a CLI usa; o global fica marcado como
 //! `shadowed`.
 //!
+//! Skills também são lidas de `~/.agents/skills` e `~/.config/opencode/skills`
+//! (além de `~/.claude/skills`): são os caminhos que as CLIs da máquina já
+//! usam. O Argus apenas lê e rotula a origem; não copia nem regrava esses
+//! arquivos.
+//!
 //! O parse do frontmatter é deliberadamente pequeno: escalares e listas
 //! simples, que é o que esses arquivos usam. Campos que o Argus não conhece
 //! são preservados na regravação, para não apagar o que outra ferramenta
 //! escreveu.
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// Onde o arquivo mora.
@@ -77,6 +82,10 @@ pub struct SkillDef {
     #[serde(default)]
     pub body: String,
     pub scope: Scope,
+    /// De onde veio o arquivo: `Projeto`, `Claude`, `Agentes` ou `OpenCode`.
+    /// É só rótulo para a interface; a gravação continua indo para `.claude`.
+    #[serde(default)]
+    pub source: String,
     #[serde(default)]
     pub path: String,
     #[serde(default)]
@@ -105,6 +114,19 @@ pub fn agents_dir(scope: Scope, project: Option<&Path>) -> Result<PathBuf> {
 
 pub fn skills_dir(scope: Scope, project: Option<&Path>) -> Result<PathBuf> {
     Ok(claude_dir(scope, project)?.join("skills"))
+}
+
+/// Pastas globais de skills já instaladas na máquina. A ordem é a prioridade
+/// quando dois arquivos têm o mesmo nome: Claude, Agentes, OpenCode (config
+/// nova e a antiga). Nada é copiado: o Argus só lê o que a CLI também leria.
+fn global_skill_dirs() -> Vec<(&'static str, PathBuf)> {
+    let Some(home) = home() else { return Vec::new() };
+    vec![
+        ("Claude", home.join(".claude").join("skills")),
+        ("Agentes", home.join(".agents").join("skills")),
+        ("OpenCode", home.join(".config").join("opencode").join("skills")),
+        ("OpenCode", home.join(".opencode").join("skills")),
+    ]
 }
 
 /// Nome de arquivo seguro: minúsculas, números e hífen. Barra a travessia de
@@ -356,7 +378,7 @@ impl Scope {
     }
 }
 
-fn read_skills_in(dir: &Path, scope: Scope) -> Vec<SkillDef> {
+fn read_skills_in(dir: &Path, scope: Scope, source: &str) -> Vec<SkillDef> {
     let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
     let mut out = Vec::new();
     for e in entries.flatten() {
@@ -374,6 +396,7 @@ fn read_skills_in(dir: &Path, scope: Scope) -> Vec<SkillDef> {
             description,
             body: front.body,
             scope,
+            source: source.to_string(),
             path: path.to_string_lossy().to_string(),
             shadowed: false,
             extra: front.fields,
@@ -383,20 +406,37 @@ fn read_skills_in(dir: &Path, scope: Scope) -> Vec<SkillDef> {
     out
 }
 
-/// Skills dos dois escopos, com a mesma regra de prioridade dos agentes.
-pub fn list_skills(project: Option<&Path>) -> Vec<SkillDef> {
-    let mut global = skills_dir(Scope::Global, None).map(|d| read_skills_in(&d, Scope::Global)).unwrap_or_default();
-    let local = project
-        .and_then(|p| skills_dir(Scope::Project, Some(p)).ok())
-        .map(|d| read_skills_in(&d, Scope::Project))
-        .unwrap_or_default();
-    for g in &mut global {
-        g.shadowed = local.iter().any(|l| l.name == g.name);
+/// Junta skills de várias raízes. A primeira raiz que traz um nome vence; as
+/// seguintes voltam marcadas como `shadowed` para a interface não duplicar o
+/// menu `/`. `sort_by` é estável, então a ordem das raízes decide o empate.
+pub fn merge_skills(roots: Vec<(PathBuf, Scope, String)>) -> Vec<SkillDef> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for (dir, scope, source) in roots {
+        for mut skill in read_skills_in(&dir, scope, &source) {
+            if !seen.insert(skill.name.clone()) {
+                skill.shadowed = true;
+            }
+            out.push(skill);
+        }
     }
-    let mut out = local;
-    out.extend(global);
-    out.sort_by(|a, b| a.name.cmp(&b.name).then(b.scope.cmp_key().cmp(&a.scope.cmp_key())));
+    out.sort_by(|a, b| a.name.cmp(&b.name));
     out
+}
+
+/// Skills do projeto e das CLIs instaladas na máquina. O do projeto tem
+/// prioridade; depois vem Claude, Agentes e OpenCode, nessa ordem.
+pub fn list_skills(project: Option<&Path>) -> Vec<SkillDef> {
+    let mut roots: Vec<(PathBuf, Scope, String)> = Vec::new();
+    if let Some(p) = project {
+        if let Ok(dir) = skills_dir(Scope::Project, Some(p)) {
+            roots.push((dir, Scope::Project, "Projeto".to_string()));
+        }
+    }
+    for (source, dir) in global_skill_dirs() {
+        roots.push((dir, Scope::Global, source.to_string()));
+    }
+    merge_skills(roots)
 }
 
 // ----------------------------------------------------------------- escrita
@@ -664,18 +704,50 @@ x");
             description: "Backup do banco".into(),
             body: "## Quando usar".into(),
             scope: Scope::Project,
+            source: "Projeto".into(),
             path: String::new(),
             shadowed: false,
             extra: BTreeMap::new(),
         };
         let path = save_skill(&def, Some(dir.path())).unwrap();
         assert!(path.ends_with("SKILL.md"));
-        let list = read_skills_in(&dir.path().join(".claude/skills"), Scope::Project);
+        let list = read_skills_in(&dir.path().join(".claude/skills"), Scope::Project, "Projeto");
         assert_eq!(list[0].name, "backup-firebird");
         assert_eq!(list[0].description, "Backup do banco");
 
         delete_skill("backup-firebird", Scope::Project, Some(dir.path())).unwrap();
-        assert!(read_skills_in(&dir.path().join(".claude/skills"), Scope::Project).is_empty());
+        assert!(read_skills_in(&dir.path().join(".claude/skills"), Scope::Project, "Projeto").is_empty());
+    }
+
+    fn escreve_skill(dir: &Path, name: &str, description: &str) {
+        let path = dir.join(name).join("SKILL.md");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, format!("---\nname: {name}\ndescription: {description}\n---\nCorpo.\n")).unwrap();
+    }
+
+    #[test]
+    fn skills_de_varias_raizes_nao_duplicam_o_menu() {
+        let dir = tempfile::tempdir().unwrap();
+        let claude = dir.path().join("claude");
+        let agents = dir.path().join("agents");
+        escreve_skill(&claude, "comum", "Do Claude");
+        escreve_skill(&claude, "so-claude", "Só no Claude");
+        escreve_skill(&agents, "comum", "Dos Agentes");
+        escreve_skill(&agents, "so-agentes", "Só nos Agentes");
+
+        let list = merge_skills(vec![
+            (claude, Scope::Global, "Claude".to_string()),
+            (agents, Scope::Global, "Agentes".to_string()),
+        ]);
+        assert_eq!(list.len(), 4);
+        let comum: Vec<_> = list.iter().filter(|s| s.name == "comum").collect();
+        assert_eq!(comum.len(), 2);
+        assert_eq!(comum[0].source, "Claude");
+        assert!(!comum[0].shadowed);
+        assert_eq!(comum[1].source, "Agentes");
+        assert!(comum[1].shadowed);
+        assert_eq!(list.iter().find(|s| s.name == "so-claude").unwrap().source, "Claude");
+        assert_eq!(list.iter().find(|s| s.name == "so-agentes").unwrap().source, "Agentes");
     }
 
     #[test]

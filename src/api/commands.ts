@@ -79,6 +79,8 @@ import type {
   WorkMode,
   WorkModeInfo,
   Checklist,
+  CavemanResult,
+  CavemanStatus,
 } from "./types";
 
 // ------------------------------------------------------------------ workspace
@@ -347,8 +349,44 @@ export const isolationCheck = (project: Path, prompt: string): Promise<Isolation
 /** Cancela o turno em andamento da tarefa. */
 export const taskCancel = (id: TaskId): Promise<void> => invoke("task_cancel", { id });
 
+/** Responde a uma pergunta ACP pendente, sem criar novo turno. */
+export const taskAcpAnswer = (
+  id: TaskId,
+  request: string,
+  groups: string[][],
+  extras: string[],
+): Promise<void> => invoke("task_acp_answer", { id, request, groups, extras });
+
 /** Responde ao agente: novo turno na mesma sessão da CLI. */
 export const taskReply = (id: TaskId, message: string): Promise<void> => invoke("task_reply", { id, message });
+
+/** O caveman está instalado? */
+export const cavemanStatus = (): Promise<CavemanStatus> => invoke("caveman_status");
+
+/** Comprime um trecho com o CLI real e devolve original + comprimido. */
+export const cavemanCompress = (text: string): Promise<CavemanResult> =>
+  invoke("caveman_compress", { text });
+
+// ------------------------------------------------ imagens (Google AI Studio)
+
+/** A chave está no ambiente ou na tela? Nunca devolve o valor da chave. */
+export const imagemStatus = (): Promise<import("./types").ImagemStatus> => invoke("imagem_status");
+
+/** Guarda a chave colada na tela só na memória, até o Argus reiniciar. */
+export const imagemChaveDefinir = (key: string): Promise<void> => invoke("imagem_chave_definir", { key });
+
+/** Esquece a chave da tela; a variável de ambiente continua valendo. */
+export const imagemChaveLimpar = (): Promise<void> => invoke("imagem_chave_limpar");
+
+/** Gera uma imagem com a chave do Google AI Studio (fallback pago, só sob pedido). */
+export const imagemGerar = (prompt: string): Promise<import("./types").ImagemGerada> =>
+  invoke("imagem_gerar", { prompt });
+
+/** Galeria local, mais recente primeiro. */
+export const imagemListar = (): Promise<import("./types").ImagemArquivo[]> => invoke("imagem_listar");
+
+/** Lê uma imagem da galeria para miniatura/lightbox (caminho validado no Rust). */
+export const imagemLer = (path: Path): Promise<import("./types").ImagemDados> => invoke("imagem_ler", { path });
 
 /** Eventos gravados da tarefa (vazio se o histórico estiver desligado). */
 export const taskHistory = (id: TaskId): Promise<AgentEvent[]> => invoke("task_history", { id });

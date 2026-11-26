@@ -1,4 +1,5 @@
 //! Estado global do backend, registrado com `app.manage` e lido pelos comandos.
+use argus_core::agents::acp::AcpProvider;
 use argus_core::agents::claude::ClaudeProvider;
 use argus_core::agents::codex::CodexProvider;
 use argus_core::agents::gemini::GeminiProvider;
@@ -83,6 +84,7 @@ impl AppCtx {
         let providers: Vec<Arc<dyn AgentProvider>> = vec![
             Arc::new(ClaudeProvider::new()),
             Arc::new(opencode),
+            Arc::new(AcpProvider::new()),
             Arc::new(CodexProvider::new()),
             Arc::new(GeminiProvider::new()),
         ];

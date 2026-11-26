@@ -97,6 +97,27 @@ export function chatEntries(events: AgentEvent[], owner: string | null): ChatEnt
     }
     if ("SubagentEnd" in event || "SubagentStats" in event) continue;
     if (evOwner !== owner) continue;
+    // Resposta ACP: fecha o cartão do pedido, não o próximo da fila. Vai ao
+    // histórico para o cartão não voltar clicável depois de recarregar a janela.
+    if ("AcpAnswered" in event) {
+      const request = event.AcpAnswered.request;
+      const at = out.findIndex(
+        (e) =>
+          e.type === "tool" &&
+          !!e.input &&
+          typeof e.input === "object" &&
+          (e.input as Record<string, unknown>).acp_request === request,
+      );
+      const card = at >= 0 ? out[at] : null;
+      if (card && card.type === "tool") {
+        card.result = { ok: true, output: "" };
+        // O cartão é um ToolUse sintético: tirá-lo da fila evita que o próximo
+        // ToolResult real seja atribuído a ele.
+        const q = pending.indexOf(card);
+        if (q >= 0) pending.splice(q, 1);
+      }
+      continue;
+    }
     // Um turno novo descarta saídas que nunca vieram (turno interrompido).
     if ("User" in event) pending.length = 0;
     if ("Denied" in event) {

@@ -3,12 +3,14 @@
 pub mod agentdefs;
 pub mod agents;
 pub mod autowork;
+pub mod caveman;
 pub mod connections;
 pub mod deps;
 pub mod devices;
 pub mod extra_agents;
 pub mod extra_chat;
 pub mod fs;
+pub mod imagem;
 pub mod media;
 pub mod memory;
 pub mod metrics;

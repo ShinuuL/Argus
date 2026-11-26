@@ -18,19 +18,24 @@ export interface AskCardProps {
   pending: boolean;
   /** Envia a resposta; indefinido deixa o cartão só de leitura. */
   onAnswer?: (text: string) => Promise<void> | void;
+  /**
+   * Resposta ACP: leva as opções escolhidas (por pergunta) de volta ao
+   * protocolo, sem transformar a escolha em nova mensagem do usuário.
+   */
+  onPick?: (picked: string[][], extras: string[]) => Promise<void> | void;
 }
 
 /** Rótulo da aba: o título curto da CLI, ou "Pergunta N". */
 const tabLabel = (q: AskQuestion, i: number) => q.header ?? `Pergunta ${i + 1}`;
 
-export function AskCard({ questions, pending, onAnswer }: AskCardProps) {
+export function AskCard({ questions, pending, onAnswer, onPick }: AskCardProps) {
   const [picked, setPicked] = useState<string[][]>(() => questions.map(() => []));
   /** Texto de "Outra" por pergunta; `null` = "Outra" desmarcada. */
   const [other, setOther] = useState<(string | null)[]>(() => questions.map(() => null));
   const [tab, setTab] = useState(0);
   const [folded, setFolded] = useState(false);
   const [sending, setSending] = useState(false);
-  const live = pending && !!onAnswer;
+  const live = pending && (!!onAnswer || !!onPick);
   const otherInput = useRef<HTMLInputElement>(null);
 
   const q = questions[Math.min(tab, questions.length - 1)];
@@ -79,10 +84,12 @@ export function AskCard({ questions, pending, onAnswer }: AskCardProps) {
   };
 
   const send = async () => {
-    if (!onAnswer || !text || sending) return;
+    const chosen = merged.filter((g) => g.length > 0);
+    if (sending || (!onPick && (!onAnswer || !text)) || (onPick && chosen.length === 0)) return;
     setSending(true);
     try {
-      await onAnswer(text);
+      if (onPick) await onPick(picked, other.map((o) => o?.trim() ?? ""));
+      else await onAnswer?.(text);
     } finally {
       setSending(false);
     }

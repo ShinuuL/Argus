@@ -27,6 +27,8 @@ fn main() {
     std::env::remove_var("OLDPWD");
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();
             // O orquestrador e o auto-work usam `tokio::spawn`: criamos dentro do runtime.
@@ -151,7 +153,17 @@ fn main() {
             agents::task_get,
             agents::task_create,
             agents::task_cancel,
+            agents::task_acp_answer,
             agents::task_reply,
+            caveman::caveman_status,
+            caveman::caveman_compress,
+            // imagens (fallback pago do Google AI Studio, chave no ambiente ou na tela)
+            imagem::imagem_status,
+            imagem::imagem_chave_definir,
+            imagem::imagem_chave_limpar,
+            imagem::imagem_gerar,
+            imagem::imagem_listar,
+            imagem::imagem_ler,
             agents::task_history,
             agents::task_subagents,
             agents::task_subagent_history,

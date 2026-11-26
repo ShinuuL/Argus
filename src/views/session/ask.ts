@@ -18,6 +18,13 @@ export function isAskTool(name: string): boolean {
   return ASK_TOOLS.has(name.toLowerCase().replace(/^mcp__[^_]+__/, ""));
 }
 
+/** Identificador de uma pergunta feita pelo protocolo ACP. */
+export function acpAskRef(input: unknown): string | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const value = (input as Record<string, unknown>).acp_request;
+  return typeof value === "string" && value ? value : null;
+}
+
 export interface AskOption {
   label: string;
   description: string | null;

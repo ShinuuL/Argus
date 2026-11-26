@@ -25,6 +25,14 @@
 .set-perm-list code { font: var(--font-mono); font-size: 11.5px; padding: 1px 6px; border-radius: var(--radius-sm); background: var(--bg); border: 1px solid var(--border); }
 .set-card .srv-allowed { margin: 0; padding: 0; border: 0; }
 
+/* Imagens geradas: galeria e visualização em tamanho real. */
+.set-img-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.set-img-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-top: 10px; }
+.set-img-card { display: flex; flex-direction: column; gap: 4px; padding: 6px; min-width: 0; text-align: left; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); }
+.set-img-card:hover { background: var(--bg-hover); border-color: var(--focus); }
+.set-img-card img { width: 100%; aspect-ratio: 1; object-fit: contain; border-radius: var(--radius-sm); }
+.set-img-card .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .set-themes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
 .set-theme { display: flex; flex-direction: column; gap: 8px; padding: 8px; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .set-theme:hover { background: var(--bg-hover); }

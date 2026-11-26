@@ -79,6 +79,36 @@
 .cv-quote:hover { border-color: var(--accent); color: var(--accent); }
 @keyframes cv-quote-in { from { opacity: 0; transform: translateY(-3px); } }
 @media (prefers-reduced-motion: reduce) { .cv-quote { animation: none; } }
+/* caveman: a escolha entre o texto recebido e o comprimido fica com o usuário. */
+.cv-caveman-bar { position: fixed; z-index: 41; display: flex; align-items: center; gap: 6px; }
+.cv-caveman-bar .cv-quote { position: static; animation: none; }
+.cv-caveman-bar .cv-quote:disabled { opacity: .6; cursor: default; }
+.cv-caveman-hint {
+  max-width: 320px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--surface-2); color: var(--text-2); font-size: 11px;
+}
+.cv-caveman {
+  position: fixed; z-index: 42; right: 16px; bottom: 16px; width: min(760px, calc(100vw - 32px));
+  padding: 12px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface-2); box-shadow: 0 10px 32px var(--shadow);
+}
+.cv-caveman-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; }
+.cv-caveman-head .ses-ask-ibtn { margin-left: auto; }
+.cv-caveman-note { margin-bottom: 10px; color: var(--text-2); font-size: 11px; }
+.cv-caveman-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cv-caveman-cols > div { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.cv-caveman-label { font-size: 11px; color: var(--text-2); }
+.cv-caveman-cols pre {
+  margin: 0; min-height: 90px; max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font-size: 11px;
+}
+.cv-caveman-cols button {
+  align-self: flex-start; padding: 5px 10px; border: 1px solid var(--line); border-radius: 6px;
+  background: transparent; color: var(--text-1); font-size: 12px; cursor: pointer;
+}
+.cv-caveman-cols button:hover { border-color: var(--accent); color: var(--accent); }
+.cv-caveman-cols button.primary { background: var(--accent); color: var(--on-accent, var(--surface-1)); }
+@media (max-width: 700px) { .cv-caveman-cols { grid-template-columns: 1fr; } }
 /*
  * "Trabalhando": três pontos fixos e o passo atual. O movimento fica só no anel
  * da linha do tempo (um laço focal por tela).

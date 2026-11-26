@@ -1,6 +1,6 @@
 # Argus — Estado atual e próximos passos
 
-_Atualizado em 2026-11-24. Base: 2026-11-14, depois da migração da interface de Dioxus para Tauri 2, do redesenho do layout (chat no centro, temas) e de uma rodada de validação na janela com tarefas reais._
+_Atualizado em 2026-11-26. Base: 2026-11-14, depois da migração da interface de Dioxus para Tauri 2, do redesenho do layout (chat no centro, temas) e de uma rodada de validação na janela com tarefas reais._
 
 O Argus é uma IDE desktop que gerencia vários projetos de uma pasta raiz e orquestra agentes de IA (Claude Code, OpenCode, Codex e Gemini). A lógica fica em Rust (`argus-core`); a interface é React + TypeScript dentro de uma janela Tauri 2. Os agentes usam o login das próprias CLIs oficiais; a IDE nunca lê nem guarda tokens.
 
@@ -907,6 +907,90 @@ Escopo fechado: só o claude. `--input-format stream-json` existe na CLI do clau
 
 ---
 
+## Correções do relatório de validação 0.1.4 — 26/11
+
+Argus em produção com Claude logado confirmou: servidor em segundo plano vivo depois do turno, mesmo host nos turnos 1 e 2 e `SessionUsage` no cabeçalho. Falharam: terminal visível, `prepare_ms` de 24 a 206 s, cancelamento sem ack e log dos eventos do host no arquivo do primeiro turno.
+
+- [x] **Cold start (C):** `checkpoints::snapshot` deixa de fazer `git add -A` no repositório inteiro. Agora lista só o que mudou (`git diff-index` + `git ls-files --others`) e reescreve esses caminhos no índice temporário. Testes `incremental_snapshot_matches_full_add` (compara a árvore com a do método antigo: editar, apagar, criar com espaço no nome, ignorar) e `snapshot_without_commit_still_captures_files` (pasta sem commit). `snapshot_ms` passou a ter linha própria no log do turno.
+- [x] **Log do turno (A):** as leituras de stdout/stderr do host escrevem no log do turno corrente (`AgentHost::set_log`), não no da abertura do host.
+- [x] **Terminal visível (B):** `spawn_host` passa `CREATE_NO_WINDOW` junto de `CREATE_NEW_PROCESS_GROUP`.
+- [x] **Cancelamento (E):** no Windows o Argus anexa ao console do host antes de mandar `CTRL_BREAK_EVENT` e registra `cancel: sinal de interrupt nao entregue ao host` quando o sinal não chega. O botão "Parar" ganhou trava contra cliques repetidos enquanto a confirmação está aberta.
+- [x] **Descarte sem registro (D):** troca de opções entre turnos agora grava `host descartado: opcoes mudaram entre turnos`. A troca no turno 3 da task 23 provavelmente veio do `/compact` automático (evento `Compacting` e `system init` novos); falta conferir o log do turno de compactação.
+- [ ] Validar de novo em sessão real: `snapshot_ms`/`first_event_ms` no start, nenhuma janela `claude`, `cancel confirmado: host preservado` e linhas `out` no arquivo do turno corrente.
+- [x] Perguntas do opencode: `opencode run` não interativo auto-rejeita regras `ask` ("cannot ask the user for permission"). Implementado o provedor `opencode-acp` (cliente ACP) — ver a seção abaixo. Falta validar ao vivo com uma regra `ask` de verdade.
+- [x] Validar ao vivo uma pergunta ACP (`session/request_permission` e `elicitation/create`) com o usuário escolhendo no cartão e o turno continuando sem mensagem nova. Feito na janela de dev em 26/11; ver a seção "Validação ao vivo do ACP na janela".
+
+**Gates (26/11, na ordem do `AGENTS.md`, raiz do repo):** `npm run typecheck` → exit 0; `cargo test --workspace` → 299 + 23 passados, 0 falhas, 2 ignorados no core e 4 `live` ignorados; `cargo check -p argus-desktop` → exit 0 (só o aviso antigo de `sanitize_name`); `npm run teste:celular` → tudo certo; `npm run build` → exit 0; `node --check crates/core/assets/remote/app.js` → exit 0.
+
+---
+
+## Sessão interativa ACP e caveman — 26/11
+
+Pedido do usuário: resolver a pendência de sessão interativa com cliente ACP e integrar o repositório `caveman` ao Argus para escolher a saída recebida. Nada foi commitado nem enviado nesta rodada.
+
+**Cliente ACP (implementado):**
+
+- `crates/core/src/agents/acp.rs`: JSON-RPC 2.0 linha a linha sobre stdin/stdout do `opencode acp`. Faz `initialize` (com `elicitation.form`), `session/new` / `session/load`, `session/set_config_option` (`configId: "model"`), `session/prompt`, `session/cancel` e responde `session/request_permission` / `elicitation/create`. Nenhum token é lido pelo Argus; o login continua sendo da CLI.
+- `opencode-acp` é um provedor **novo**, registrado em `src-tauri/src/state.rs`. O `opencode` atual (`opencode run`) segue intacto. Um formulário com várias perguntas vira um cartão só (`questions`), porque o ACP espera uma resposta com o conteúdo completo; a escolha volta por `task_acp_answer`, sem criar novo turno.
+- `crates/core/src/agents/orchestrator.rs`: caminho próprio para `prov.acp()`, com host vivo por conversa. Num host já aberto não se repete `session/load` (isso repetiria o histórico na transcrição). `session/cancel` confirma por `stopReason: "cancelled"`; com confirmação o host fica vivo, sem confirmação ele é descartado. Uso: o total acumulado do ACP vira consumo do turno por subtração.
+- `Transcript.tsx` / `AskCard.tsx` / `ask.ts` / `index.tsx`: cartão ACP com abas e botões, marcado como respondido na interface (não se inventa `ToolResult`; um resultado falso fecharia a pergunta errada quando há duas na fila). O botão "Parar" já tinha trava contra cliques repetidos.
+- Testes novos em `acp.rs`: parse de requisições/respostas, parâmetros de sessão com `cwd` absoluto, `elicitation` com uma e várias perguntas, eventos de texto/ferramenta/uso e `stopReason: "cancelled"`.
+
+**Caveman (implementado):**
+
+- `crates/core/src/caveman.rs`: chama `caveman compress` de verdade (texto na stdin, comprimido na stdout, relatório JSON na stderr), com `DO_NOT_TRACK=1`. Sem `caveman-engine`, a CLI faz pass-through e o relatório diz `engine: "missing"`, `ratio: 0` — a interface mostra "sem compressão (pass-through)" e a nota do relatório, sem fingir compressão.
+- Comandos `caveman_status` / `caveman_compress` e funções `cavemanStatus` / `cavemanCompress`. Em `Transcript.tsx`, selecionar texto sobre a conversa oferece "Comprimir com caveman" ao lado de "Responder"; o painel Mostra original e comprimido e o usuário escolhe "Usar original" ou "Usar comprimido". Nada substitui a resposta recebida automaticamente.
+
+**Sonda ao vivo (26/11, Windows):** `opencode acp` (CLI 2.3.0) respondeu `initialize` com `loadSession`, `resume` e `fork`, e `session/list` respondeu normalmente. Mas `session/new` **não respondeu** — nem com `mcpServers: []`, nem com servidor stdio/http, nem com `cwd` diferente, mesmo após 60 s; sem `mcpServers` ele responde `-32602`. Isso é um bug upstream conhecido da CLI no Windows (issue `anomalyco/opencode#64686`: Bun `fetch` fica preso pela subscription SSE `/global/event`; afeta v1 e v2). Como efeito colateral da correção, `orchestrator.rs` agora tem limite de 20 s para a abertura da sessão ACP: em vez de travar para sempre, o turno falha com mensagem em pt-BR orientando a usar o provedor `opencode` padrão. Nenhuma mudança na CLI foi feita (fora do escopo do repo).
+
+**Premissa a confirmar:** "selecionar a saída que recebo" foi implementado como escolher entre o trecho original e o comprimido pelo caveman. Se o pedido era outro (por exemplo, escolher entre respostas de modelos ou provedores), é preciso dizer antes de ampliar.
+
+**Ainda não feito:**
+
+- [x] Rodar um turno ACP real com login do `opencode` e uma regra `ask`, conferir no log bruto `initialize`, `session/new`, `ask`, a resposta do cartão e o turno continuando sem novo `User`. Feito em 26/11 na janela de dev: tarefa 36 (`elicitation/create` com Alpha/Beta) e tarefa 37 (`session/request_permission` para `echo oi`). O turno continuou sem mensagem nova do usuário.
+- [x] Conferir `session/cancel` no ACP com `stopReason: "cancelled"` e o host preservado no turno seguinte. Feito em 26/11 na janela de dev, tarefa 38: `stopReason: cancelled`, `meta cancel ACP confirmado: host preservado` e o próximo turno terminou com `stopReason: end_turn` respondeu `ok`.
+- [ ] Instalar `caveman` (`npm install -g @caveman-ai/cli` + `caveman setup`, com autorização) e validar a compressão real; hoje `Get-Command caveman` não encontra o CLI, então só os testes do relatório passaram.
+- [ ] Confirmar com o usuário o significado de "selecionar a saída que recebo".
+- [x] Validar na janela (ponte) o cartão ACP: feito em 26/11 com o dev em `ARGUS_PONTE=8788` e `devUrl=http://127.0.0.1:1421`; cartões de pergunta e de permissão clicados, turno cancelado e retomado. A instância principal (PID 26512) não foi fechada.
+- [ ] Validar na janela o painel do caveman; a CLI ainda não está instalada (`Get-Command caveman` vazio). Também não há cenário na galeria para o cartão ACP.
+- [ ] **Tipo de saída mostrado no print (não implementado).** O usuário mostrou uma tela com checklist de tarefas e estado de subagente; o OCR do anexo traz: "Abrir chamado e mover para em validacao", "Registrar na fila e perguntar sobre vídeo", "Preparo: jar e massa", "Executar A1/A2 (ok)", "B1/B3 com NFC-e em loopback", "1 subagente trabalhando", "Restaurar base, revisar e redigir", "Levar pacote do sim ao avaliador" e "Há 7 minutos". Saída desejada: itens com status (pendente/ok), contagem de subagentes em atividade e tempo desde a última mudança. Hoje o Argus mostra a lista de tarefas do `TodoWrite` (painel Agentes) e os cartões de subagente, mas não esse painel consolidado com tempo relativo. Fica como pendência até o usuário confirmar o formato.
+
+**Gates (26/11, na ordem do `AGENTS.md`, raiz do repo):** `npm run typecheck` → exit 0; `cargo test --workspace` → 0 falhas (309 testes do core, 23 do desktop; `updates_become_stream_events` corrigido para ler `content` do update e params de `session/update`); `cargo check -p argus-desktop` → exit 0 (só o aviso antigo de `sanitize_name`); `npm run teste:celular` → tudo certo; `npm run build` → exit 0; `node --check crates/core/assets/remote/app.js` → exit 0.
+
+---
+
+## Correções das entregas ACP, caveman e fork — 26/11
+
+Pedido do usuário: corrigir os bugs das duas entregas, gerar o fork que não saiu e registrar como pendência a saída mostrada no print. Nada foi commitado nem enviado nesta rodada.
+
+- [x] **ACP — abertura da sessão:** resposta de erro (ou `session/new` sem `sessionId`) sai do loop na hora e grava o erro uma vez só. Antes o host esperava o timeout e o erro aparecia duplicado. Teste `acp_session_new_error_ends_the_turn_once`.
+- [x] **ACP — cartão respondido:** novo evento `AcpAnswered { request }` fecha o cartão pelo id do pedido, no histórico e ao vivo. O estado local `answeredAcp` saiu: recarregar a janela não reabre uma pergunta já respondida. `acp_asks` agora remove só a pergunta respondida, não a fila inteira.
+- [x] **Caveman:** o shim `.cmd` do npm passa a rodar por `cmd /c` no Windows (senão `CreateProcess` falha); `CavemanReport` usa `#[serde(default)]`, então um relatório com campos ausentes não vira "engine desconhecido".
+- [x] **Fork:** `Orchestrator::fork` deixou de exigir Claude. No Claude segue `--fork-session`; nos outros provedores o Argus cria a cópia com histórico, sessão nova e resumo honesto no primeiro turno (`build_fork_context`). `canFork` acompanha a regra. `session/fork` do ACP não é usado: anuncia a capacidade, mas não responde no Windows (#64686).
+
+**Gates (26/11, na ordem do `AGENTS.md`, raiz do repo):** `npm run typecheck` → exit 0; `cargo test --workspace` → 313 + 23 passados, 0 falhas, 6 ignorados; `cargo check -p argus-desktop` → exit 0 (só o aviso antigo de `sanitize_name`); `npm run teste:celular` → tudo certo; `npm run build` → exit 0; `node --check crates/core/assets/remote/app.js` → exit 0.
+
+**Revalidação das pendências (26/11):** sonda ao vivo com `opencode acp` 2.3.0 confirmou `initialize`, `session/new` e `session/prompt` com `stopReason: end_turn`, e `session/cancel` com `stopReason: cancelled`. Não apareceu `session/request_permission` nem `elicitation/create` (capacidades `fs`/`terminal` desligadas no cliente e nenhum servidor MCP que elice). `caveman` segue sem instalar (`Get-Command caveman` vazio); Screen-Mirror não vê aparelho; a janela do Argus já estava aberta, então a ponte não pôde ser subida sem fechar a do usuário. Testes direcionados passaram: 8 de `agents::acp::tests`, 4 de `caveman::tests`, `cancel_preserves_host_only_with_cli_ack` e `acp_session_new_error_ends_the_turn_once`.
+
+---
+
+## Skills da máquina no menu `/` — 26/11
+
+Pedido: subir o `tauri dev` para validar e fazer as skills instaladas na máquina aparecerem no `/`. Nada foi copiado nem regravado: o Argus lê os `SKILL.md` que as próprias CLIs já leem. Para ligar a ponte foi preciso encerrar a instância anterior do `argus-desktop` (PID 5848) e o `npm run tauri dev` órfão; a janela de dev segue aberta com `ARGUS_PONTE=1`.
+
+- [x] `agentdefs::list_skills` passou a ler `~/.claude/skills`, `~/.agents/skills`, `~/.config/opencode/skills` e `~/.opencode/skills`, além de `<projeto>/.claude/skills`. Prioridade: projeto, Claude, Agentes, OpenCode. Nome repetido volta `shadowed`, então o menu não duplica. Teste `skills_de_varias_raizes_nao_duplicam_o_menu`.
+- [x] `SkillDef` ganhou `source` (`Projeto`, `Claude`, `Agentes`, `OpenCode`) para a interface dizer de onde veio a skill. A gravação de skills continua escrevendo em `.claude`.
+- [x] `allSlashItems` junta comandos locais, da CLI e skills do disco. Skill com o mesmo nome de comando da CLI usa a descrição do `SKILL.md`; comando local do Argus continua na frente. No menu aparece a etiqueta `skill`.
+- [x] Escolher a sugestão insere `/<nome> ` no rascunho e o texto segue ao agente, como os outros comandos de barra.
+- [x] Validado na janela pela ponte: com `/imp`, apareceu `/impeccable` com origem `Claude` **uma vez só**, embora o arquivo exista em três raízes; com `/context7`, apareceu `/context7-mcp` com origem `Agentes`. `Tab` inseriu `/impeccable ` no rascunho. `node scripts/ui.mjs erros` devolveu `[]`.
+
+**Gates (26/11, na ordem do `AGENTS.md`, raiz do repo):** `npm run typecheck` → exit 0; `cargo test --workspace` → 314 + 23 passados, 0 falhas, 6 ignorados; `cargo check -p argus-desktop` → exit 0 (só o aviso antigo de `sanitize_name`); `npm run teste:celular` → tudo certo; `npm run build` → exit 0; `node --check crates/core/assets/remote/app.js` → exit 0.
+
+- [ ] Mandar um turno real com `/<skill>` em cada provedor. O Claude lista as skills no `system/init` e resolve `/skill-name`; nos outros provedores o texto entra como pedido comum, sem garantia de que a CLI acione a skill. A validação de hoje cobre só o menu e a inserção no rascunho.
+- [ ] Trazer para o menu as skills de plugins do Claude (`vercel:*`, no cache de plugins), que hoje continuam disponíveis apenas quando a CLI do Claude informa a própria lista.
+
+---
+
 ## Configurações reorganizada (UI Bento) — 24/11
 
 Coluna de conteúdo centrada em 1080px, lead de 760px, opções em cartões
@@ -936,3 +1020,200 @@ Pendência:
 - [ ] Validar a gravação no app real (Tauri): sem runtime, o Vite simulou o
   `invoke` no navegador. A chamada em lote (`tasks_archive` com os 3 ids) foi
   conferida, mas a ida ao banco e o `refreshTasks()` com dados reais não.
+
+---
+
+## Validação ao vivo do ACP na janela — 26/11
+
+Pedido: validar o cartão de pergunta do ACP na janela e testar permissão,
+cancelamento e próximo turno. O dev subiu em portas livres (`Vite` 1421,
+ponte 8788) sem mexer na instância principal (PID 26512). Nada foi commitado.
+
+- [x] **Correção encontrada na validação:** o opencode manda `id` numérico
+  (`0`) no JSON-RPC; o Argus devolvia `"0"` como string e a CLI descartava a
+  resposta ("Got response to unknown request 0"). `Ask` agora guarda o valor
+  original (`id_json`), `respond` preserva o tipo, e o teste
+  `numeric_request_id_stays_numeric_in_the_answer` cobre número e string.
+- [x] **Pergunta (tarefa 36):** cartão Alpha/Beta clicado na janela; o log
+  `opencode-acp-36-1795720012532.log` mostra `User has answered your questions:
+  "Qual opção escolher?"="Alpha"`. A conversa terminou com "Opção escolhida:
+  Alpha" e `Concluída`, sem mensagem nova do usuário.
+- [x] **Permissão (tarefa 37):** cartão "Permitir echo oi?" com `Allow once`;
+  o comando rodou e a resposta na janela foi "Resultado: oi".
+- [x] **Cancelamento (tarefa 38):** `Parar o turno` → `Só parar o turno`;
+  log com `stopReason: "cancelled"` e `meta cancel ACP confirmado: host
+  preservado`. Janela mostrou `Interrompida`.
+- [x] **Próximo turno (tarefa 38):** `taskReply` voltou no mesmo host e
+  terminou com `stopReason: "end_turn"`; a janela mostrou `ok` e `Concluída`.
+
+**Gates (26/11, na ordem do `AGENTS.md`, raiz do repo):** `npm run typecheck` →
+exit 0; `cargo test --workspace` → 315 + 23 passados, 0 falhas, 2 ignorados no
+core e 4 `live` ignorados; `cargo check -p argus-desktop` → exit 0 (só o aviso
+antigo de `sanitize_name`); `npm run teste:celular` → tudo certo;
+`npm run build` → exit 0; `node --check crates/core/assets/remote/app.js` →
+exit 0.
+
+Pendência descoberta fora do escopo:
+
+- [x] O texto do cancelamento pelo usuário dizia "Erro: o turno falhou.
+  cancelled". `acp::prompt_events` agora recebe `user_cancelled` e não grava
+  `Result { ok: false }` quando o `stopReason: "cancelled"` confirma um "Parar"
+  do usuário; o estado da tarefa continua `Cancelled`. Uma interrupção sem pedido
+  do usuário e um erro real da CLI continuam aparecendo como falha. Testes:
+  `prompt_usage_is_a_delta_not_the_session_total` e
+  `acp_cancel_confirmado_nao_vira_erro_na_conversa`.
+
+---
+
+## Fallback de imagem com Google AI Studio — 26/11
+
+Pedido: fazer o Argus ler a chave do Google AI Studio para gerar e ver imagens
+como fallback, sem mexer no login das CLIs dos agentes. Nada foi commitado nem
+enviado nesta rodada.
+
+**Implementado:**
+
+- [x] `crates/core/src/imagem.rs` lê a chave só de `GEMINI_API_KEY` ou
+  `GOOGLE_API_KEY` no ambiente do Rust. Nada é gravado, logado ou devolvido à
+  interface: o status informa apenas o NOME da variável. A chave vai no header
+  `x-goog-api-key` pela stdin do `curl.exe --config -`, nunca em argumento de
+  processo.
+- [x] Pedido no endpoint `https://generativelanguage.googleapis.com/v1beta/interactions`
+  com `model: "gemini-nano-banana-2.1"` e `Api-Revision: 2026-05-20`, conforme a
+  documentação consultada em 26/11. `ARGUS_IMAGEM_MODELO` e
+  `ARGUS_IMAGEM_ENDPOINT` permitem trocar modelo/endpoint sem código. A leitura
+  aceita tanto `output_image` quanto `inlineData` de `generateContent`.
+- [x] Imagens salvas em `%APPDATA%/<perfil>/imagens`, com galeria, miniatura e
+  Lightbox. A leitura do arquivo valida o caminho dentro dessa pasta; fora dela
+  é recusada. Oito testes novos cobrem escape do config do curl, extensão por
+  MIME, os dois formatos de resposta e remoção da chave de mensagens de erro.
+- [x] Comandos Tauri `imagem_status`, `imagem_gerar`, `imagem_listar` e
+  `imagem_ler`, com wrappers em `src/api/commands.ts` e tipos em `src/api/types.ts`.
+  Nenhuma dependência nova foi adicionada.
+- [x] Página "Imagens" em Configurações (área `src/areas/settings` e view antiga
+  do workbench) e comando local `/imagem <pedido>` no chat, que gera a imagem e
+  já a anexa à caixa de mensagem via `chat_attachment_save`.
+
+**Premissas adotadas — confirmar se não eram as esperadas:**
+
+1. Origem da chave: começou só em variável de ambiente lida no Rust e, a pedido
+   do usuário, passou a aceitar também campo na interface, sempre em memória.
+   Motivo: o Argus nunca lê nem guarda token das CLIs.
+2. Gatilho: só ação explícita (botão "Gerar imagem" ou `/imagem`). Nada é gerado
+   automaticamente durante um turno do agente.
+3. Transporte: `curl.exe` do sistema, para não acrescentar dependência de TLS ao
+   `argus-core`.
+4. Destino: `%APPDATA%/<perfil>/imagens`, fora da pasta de trabalho do agente.
+5. Aviso de custo: a documentação de 2026-11 marca os modelos de imagem do Gemini
+   como "Free Tier: Not available". O painel e o comando avisam que é pago; os
+   agentes continuam com o login das próprias CLIs e o que o plano free permite.
+
+**Validação ao vivo (26/11):** janela de dev com `ARGUS_PONTE=8788`, Vite em
+`127.0.0.1:1421`, instância principal (PID 26512) intacta. A página "Imagens"
+abriu com "Não configurada. Modelo: gemini-nano-banana-2.1."; clicar em "Gerar
+imagem" devolveu "Chave do Google AI Studio não encontrada. Defina
+GEMINI_API_KEY no ambiente e reinicie o Argus." Após reload, `node scripts/ui.mjs
+erros` devolveu `[]`. Evidências: `argus-imagens-ver4.json`, `argus-imagens-ver5.json`
+e `argus-imagens-ver6.json` em `%TEMP%\opencode`.
+
+**Gates (26/11, na ordem do `AGENTS.md`, raiz do repo):** `npm run typecheck` →
+exit 0; `cargo test --workspace` → 322 + 23 passados, 0 falhas, 2 ignorados no
+core e 4 `live` ignorados; `cargo check -p argus-desktop` → exit 0 (só o aviso
+antigo de `sanitize_name`); `npm run teste:celular` → tudo certo; `npm run build`
+→ exit 0; `node --check crates/core/assets/remote/app.js` → exit 0.
+
+**Ainda não feito:**
+
+- [ ] Com uma chave real, subir o dev com `GEMINI_API_KEY` no ambiente e validar
+  geração, resposta da API, miniatura, Lightbox e anexo via `/imagem`. Sem chave,
+  apenas o caminho de erro sem chave foi exercitado na janela.
+- [ ] Confirmar se a origem da chave deve ser realmente a variável de ambiente e
+  se modelo/endpoint padrão devem continuar `gemini-nano-banana-2.1` /
+  `v1beta/interactions`.
+- [ ] Nenhum aparelho Android conectado: sem validação por Screen Mirror nesta
+  rodada.
+
+---
+
+## Chave da imagem pela tela — 26/11
+
+Pedido do usuário: poder incluir a chave do Google AI Studio pela tela. A
+ferramenta de perguntas não estava disponível nesta execução, então adotei a
+opção segura: a chave vale só nesta sessão e nunca é gravada em disco. Nada foi
+commitado nem enviado.
+
+- [x] `crates/core/src/imagem.rs` ganhou `set_key_from_ui` e
+  `clear_key_from_ui`. A chave colada fica num `Mutex<Option<String>>` em
+  memória e tem precedência sobre `GEMINI_API_KEY` / `GOOGLE_API_KEY`.
+  `status()` passou a devolver `from_ui`, nunca o valor da chave. Teste
+  `ui_key_is_kept_in_memory_only_until_cleared`.
+- [x] Comandos Tauri `imagem_chave_definir` / `imagem_chave_limpar` e wrappers
+  `imagemChaveDefinir` / `imagemChaveLimpar`.
+- [x] Campo `type="password"` em Configurações › Imagens, com botões "Guardar
+  chave" e "Limpar chave da tela". O campo nunca é preenchido com a chave
+  guardada; a interface diz que ela some ao reiniciar e não é logada.
+- [x] `/imagem <pedido>` continua sendo comando local e passou a usar a chave da
+  tela quando ela está ativa.
+
+**Validação ao vivo (26/11):** o `tauri dev` reiniciou sozinho após a mudança em
+Rust (PID 4396), sem fechar a instância principal (PID 26512). Na ponte 8788,
+digitar uma chave falsa no campo e clicar "Guardar chave" devolveu
+`configured: true`, `from_ui: true`, `source: "tela"`; a página mostrou
+"Configurada nesta sessão (tela)." Depois de "Limpar chave da tela", voltou a
+`configured: false`. O `/imagem` foi retestado e mostrou o novo aviso "Cole a
+chave em Configurações › Imagens (só nesta sessão)…", sem criar tarefa.
+`node scripts/ui.mjs erros` → `[]`.
+
+**Gates (26/11, na ordem do `AGENTS.md`, raiz do repo):** `npm run typecheck` →
+exit 0; `cargo test --workspace` → 323 + 23 passados, 0 falhas, 2 ignorados no
+core e 4 `live` ignorados; `cargo check -p argus-desktop` → exit 0 (só o aviso
+antigo de `sanitize_name`); `npm run teste:celular` → tudo certo; `npm run build`
+→ exit 0; `node --check crates/core/assets/remote/app.js` → exit 0.
+
+**Ainda não feito:**
+
+- [ ] Se você quiser que a chave sobreviva ao reinício, é preciso autorizar
+  gravar segredo em disco e escolher como proteger o arquivo no perfil.
+- [ ] Com uma chave real, validar geração, miniatura, Lightbox e anexo via
+  `/imagem` ponta a ponta.
+
+---
+
+## Autoatualização via GitHub Release (desenho aprovado em 26/11, Fase A iniciada)
+
+Desenho aprovado pelo usuário: atualizar o Argus por release do GitHub, com
+instalação automática abrindo o instalador NSIS, e deixar o instalador só com o
+ícone do Argus. Se fizer sentido depois, dá para usar o gateway geral de
+atualizações do portal-geral como fonte/canal alternativo.
+
+### Fase A — preparar updater no Tauri (concluída em 26/11, base)
+
+- [x] Adicionar `tauri-plugin-updater` e `tauri-plugin-process` (Rust + npm).
+- [x] Registrar plugins no `Builder` do `src-tauri/src/main.rs`.
+- [x] Configurar `tauri.conf.json`: `bundle.createUpdaterArtifacts: true`, `plugins.updater.pubkey` e `plugins.updater.endpoints` (GitHub Releases `latest.json`).
+- [x] Ajustar capabilities para `updater:default` e `process:allow-restart`.
+- [x] Gerar chave de assinatura do updater: pubkey no config; chave privada salva fora do repo em `C:\Users\kinga\.tauri\argus-updater.key` (guardar como segredo, ex.: GitHub Secret `TAURI_SIGNING_PRIVATE_KEY`; não commitar).
+- [x] Gates da fase: `npm run typecheck` (ok) e `cargo check -p argus-desktop` (ok, warning antigo de `sanitize_name`).
+
+**Notas da Fase A:**
+- `bundle.windows.nsis.installMode` não foi colocado como `passive` porque o schema do Tauri 2 aceita `currentUser|perMachine|both` nesse campo; `plugins.updater.windows.installMode` também ficou de fora por enquanto para não chutar enum. O comportamento padrão do updater no Windows já abre/roda o instalador; validar o modo desejado na Fase B/C.
+- O endpoint assume release pública em `ShinuuL/Argus`; se o canal mudar para o gateway do portal-geral, trocar `plugins.updater.endpoints`.
+
+### Fase B — UI de atualização (implementada em 26/11, falta validação real)
+
+- [x] Checar update em Configurações (auto-checagem ao abrir a página + botão "Verificar atualização"). Checagem global ao abrir o app ainda não foi ligada.
+- [x] Mostrar versão atual/nova, notas e confirmação antes de instalar.
+- [x] Baixar, instalar (`downloadAndInstall`) e `relaunch`; erro seguro com link manual para releases.
+- [ ] Validar ponta a ponta com uma release de teste (app antigo detectando `latest.json`, assinatura, instalador abrindo e app reiniciando).
+
+### Fase C — workflow de release no GitHub (pendente)
+
+- [ ] Criar `.github/workflows/release.yml` disparado por tag `v*`.
+- [ ] Publicar instalador NSIS, `.nsis.zip`, `.nsis.zip.sig` e `latest.json`.
+- [ ] Garantir versão sincronizada (`package.json`, `tauri.conf.json`, `Cargo.toml/workspace`).
+
+### Fase D — instalador só com ícone do Argus (pendente)
+
+- [ ] Criar assets NSIS mínimos (sidebar/header) com só a marca/ícone do Argus.
+- [ ] Configurar `bundle.windows.nsis.installerIcon/sidebarImage/headerImage/installMode`.
+- [ ] Validar visual do instalador e desinstalador no Windows.

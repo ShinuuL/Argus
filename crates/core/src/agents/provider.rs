@@ -100,6 +100,10 @@ pub enum AgentEvent {
     /// Saída de uma ferramenta comum (não de subagente). Vem na mesma ordem dos
     /// `ToolUse` do mesmo dono; `output` é cortado em [`TOOL_OUTPUT_MAX`] caracteres.
     ToolResult { ok: bool, output: String },
+    /// O usuário respondeu a uma pergunta ACP (`request` é o id do pedido).
+    /// Não é saída de ferramenta: só fecha o cartão correspondente, no histórico
+    /// e ao vivo, para ele não voltar a ficar clicável depois de recarregar.
+    AcpAnswered { request: String },
     Result { ok: bool, summary: String, cost: Option<f64> },
     Usage(TokenUsage),
     Raw(String),
@@ -346,6 +350,7 @@ impl AgentEvent {
             AgentEvent::ToolUse { .. } => "ToolUse",
             AgentEvent::Thinking(_) => "Thinking",
             AgentEvent::ToolResult { .. } => "ToolResult",
+            AgentEvent::AcpAnswered { .. } => "AcpAnswered",
             AgentEvent::Result { .. } => "Result",
             AgentEvent::Usage(_) => "Usage",
             AgentEvent::Raw(_) => "Raw",
@@ -403,6 +408,12 @@ pub trait AgentProvider: Send + Sync {
     /// Comando de um turno. O prompt vai em `CommandSpec::stdin`.
     /// Com `session` = Some, continua a conversa existente.
     fn task_command(&self, prompt: &str, cwd: &Path, session: Option<&str>, opts: &TurnOptions) -> CommandSpec;
+    /// Provedor que conversa por ACP: um processo vivo, mensagens JSON-RPC e
+    /// pedidos de permissão/pergunta que esperam resposta do usuário. O
+    /// orquestrador usa um caminho próprio para ele, sem spawn por turno.
+    fn acp(&self) -> bool {
+        false
+    }
     /// Comando de um host que fica vivo entre turnos. `None` (padrão) = um
     /// processo por turno, como sempre. Quando há host, o prompt NÃO vai em
     /// `stdin`: cada turno é uma mensagem enviada por [`Self::host_message`].

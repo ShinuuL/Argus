@@ -39,12 +39,14 @@ export type PageId = "deps" | "builds" | "connections" | "devices" | "metrics" |
 export type LegacyPageId = "providers";
 
 /** Seções da tela de Configurações. */
-export type SettingsSection = "theme" | "agents" | "providers" | "project";
+export type SettingsSection = "theme" | "agents" | "providers" | "imagens" | "updates" | "project";
 
 export const SETTINGS_SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: "theme", label: "Tema" },
   { id: "agents", label: "Agentes" },
   { id: "providers", label: "Provedores" },
+  { id: "imagens", label: "Imagens" },
+  { id: "updates", label: "Atualizações" },
   { id: "project", label: "Por projeto" },
 ];
 

@@ -10,7 +10,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { api, errorMessage, type Path, type TaskId } from "@/api";
+import { api, errorMessage, type Path, type SkillDef, type TaskId } from "@/api";
 import { Popover } from "@/shell/Popover";
 import { Icon } from "@/shell/icons";
 import { AttachmentChips } from "./AttachmentChips";
@@ -162,6 +162,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const [suggest, setSuggest] = useState<Suggest | null>(null);
   const [agents, setAgents] = useState<ChatAgent[]>([]);
   const [cliCommands, setCliCommands] = useState<string[]>([]);
+  /** Skills lidas do disco; `null` enquanto a primeira leitura não termina. */
+  const [skills, setSkills] = useState<SkillDef[] | null>(null);
   const [sending, setSending] = useState(false);
   const [polishing, setPolishing] = useState(false);
   /** Rascunho de antes da reescrita, enquanto o "Desfazer" estiver à vista. */
@@ -198,6 +200,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     void chatAgents(workdir ?? null).then((list) => {
       if (alive) setAgents(list);
     });
+    return () => {
+      alive = false;
+    };
+  }, [workdir]);
+
+  // Skills das CLIs instaladas na máquina entram no menu `/` de qualquer
+  // provedor. Falha na leitura não trava o menu local.
+  useEffect(() => {
+    let alive = true;
+    setSkills(null);
+    void api.agentSkillsList(workdir ?? null).then(
+      (list) => alive && setSkills(list),
+      () => alive && setSkills([]),
+    );
     return () => {
       alive = false;
     };
@@ -339,20 +355,26 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       if (token) {
         setSuggest((prev) =>
           prev?.mode === "slash"
-            ? { mode: "slash", token, items: slashItems(commands, token.query), index: 0, loading: false }
+            ? { mode: "slash", token, items: slashItems(commands, skills ?? [], token.query), index: 0, loading: skills === null }
             : prev,
         );
       }
     });
-  }, [key, provider, workdir]);
+  }, [key, provider, skills, workdir]);
 
   const refreshSuggest = useCallback(
     (value: string, cursor: number) => {
       window.clearTimeout(searchTimer.current);
       const slash = slashCursor(value, cursor);
       if (slash) {
-        const waiting = !!workdir && provider === "claude" && !cliCommands.length && capsAsked.current !== workdir;
-        setSuggest({ mode: "slash", token: slash, items: slashItems(cliCommands, slash.query), index: 0, loading: waiting });
+        const waitingCli = !!workdir && provider === "claude" && !cliCommands.length && capsAsked.current !== workdir;
+        setSuggest({
+          mode: "slash",
+          token: slash,
+          items: slashItems(cliCommands, skills ?? [], slash.query),
+          index: 0,
+          loading: skills === null || waitingCli,
+        });
         loadCliCommands();
         return;
       }
@@ -394,7 +416,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         });
       }, SEARCH_DELAY_MS);
     },
-    [agents, cliCommands, loadCliCommands, provider, workdir],
+    [agents, cliCommands, loadCliCommands, provider, skills, workdir],
   );
 
   const closeSuggest = () => {
@@ -884,11 +906,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   );
 });
 
-function slashItems(cliCommands: string[], q: string): SuggestItem[] {
-  return filterSlash(allSlashItems(cliCommands), q).map((c) => ({
+function slashItems(cliCommands: string[], skills: SkillDef[], q: string): SuggestItem[] {
+  return filterSlash(allSlashItems(cliCommands, skills), q).map((c) => ({
     key: `slash:${c.name}`,
     label: `/${c.name}`,
     detail: c.description,
-    tag: c.local ? "Argus" : undefined,
+    tag: c.source ? "skill" : c.local ? "Argus" : undefined,
   }));
 }

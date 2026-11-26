@@ -308,6 +308,19 @@ struct Inner {
     /// Um processo da CLI vivo por conversa, quando o provedor aceita
     /// (`host_command`). Fora isso o turno continua com spawn por turno.
     hosts: Mutex<HashMap<TaskId, Arc<Mutex<AgentHost>>>>,
+    /// Todo pid de host já aberto por conversa. O mapa `hosts` perde a entrada
+    /// em vários caminhos (troca de opções, erro de escrita, descarte), e um
+    /// deles deixava a CLI viva depois do fim do turno. Aqui nada se perde:
+    /// `discard_host` varre esta lista e mata o que ainda estiver de pé.
+    host_pids: Mutex<HashMap<TaskId, Vec<u32>>>,
+    /// Processo ACP vivo por conversa (provedor `opencode-acp`).
+    acp_hosts: Mutex<HashMap<TaskId, Arc<tokio::sync::Mutex<super::acp::AcpHost>>>>,
+    /// Pid do host ACP, para encerrar sem precisar de `blocking_lock`.
+    acp_pids: Mutex<HashMap<TaskId, u32>>,
+    /// Perguntas ACP em aberto, para responder sem criar turno novo.
+    acp_asks: Mutex<HashMap<TaskId, Vec<super::acp::Ask>>>,
+    /// Conversas ACP cujo host deve ficar vivo depois de um cancelamento confirmado.
+    acp_keep: Mutex<std::collections::HashSet<TaskId>>,
     sem: Arc<Semaphore>,
     tx: broadcast::Sender<OrchestratorEvent>,
     next_id: AtomicU64,
@@ -366,6 +379,16 @@ struct AgentHost {
     /// `result` correlacionado): o turno parou, mas a conversa continua no host.
     /// `finish` consulta e limpa este sinal antes de descartar o processo.
     keep_on_cancel: bool,
+    /// Arquivo onde as leituras de stdout/stderr escrevem. O host sobrevive aos
+    /// turnos, mas as linhas pertencem ao turno que as lê: este ponteiro é trocado
+    /// no começo de cada turno, senão tudo caía no log do primeiro.
+    log: Arc<Mutex<crate::agentlog::TurnLog>>,
+}
+
+impl AgentHost {
+    fn set_log(&self, log: crate::agentlog::TurnLog) {
+        *self.log.lock().unwrap_or_else(|e| e.into_inner()) = log;
+    }
 }
 
 /// Chave da preferência de um nível de git ("local" ou "remote") no banco.
@@ -459,6 +482,11 @@ impl Orchestrator {
                 tasks: Mutex::new(tasks),
                 cancels: Mutex::new(HashMap::new()),
                 hosts: Mutex::new(HashMap::new()),
+                host_pids: Mutex::new(HashMap::new()),
+                acp_hosts: Mutex::new(HashMap::new()),
+                acp_pids: Mutex::new(HashMap::new()),
+                acp_asks: Mutex::new(HashMap::new()),
+                acp_keep: Mutex::new(std::collections::HashSet::new()),
                 sem: Arc::new(Semaphore::new(max_concurrent.max(1))),
                 tx,
                 next_id: AtomicU64::new(next),
@@ -911,29 +939,36 @@ impl Orchestrator {
         }
     }
 
-    /// Ramifica a conversa: tarefa nova com o mesmo histórico e a mesma sessão,
-    /// que no primeiro turno abre uma sessão própria (`--fork-session`). A
-    /// original segue intacta. Só em "Direto na pasta" (uma cópia isolada
-    /// dividida faria aplicar/descartar de uma afetar a outra) e no claude.
+    /// Ramifica a conversa: tarefa nova com o mesmo histórico. A original segue
+    /// intacta. Só em "Direto na pasta" (uma cópia isolada dividida faria
+    /// aplicar/descartar de uma afetar a outra).
+    ///
+    /// Claude: `--fork-session` na CLI, no primeiro turno, preservando a sessão
+    /// original. Outros provedores: o ACP anuncia `fork`, mas `session/fork`
+    /// não responde no Windows (issue #64686), e `opencode run` não tem fork.
+    /// O Argus cria o ramo ele mesmo: histórico copiado, sessão nova e um resumo
+    /// do que veio antes na frente do primeiro pedido (`handoff`). É uma cópia
+    /// honesta, não um fork da sessão da CLI.
     pub fn fork(&self, id: TaskId) -> Result<TaskId, OrchestratorError> {
         let t = self.task(id).ok_or(OrchestratorError::UnknownTask(id))?;
         if t.state.is_active() {
             return Err(OrchestratorError::Busy);
         }
-        if t.provider != "claude" {
-            return Err(OrchestratorError::InvalidModel("ramificar só funciona com o Claude".into()));
-        }
         if t.mode != WorkMode::Direct {
             return Err(OrchestratorError::InvalidModel("ramificar ainda só funciona em conversas Direto na pasta".into()));
         }
         let session = t.session_id.clone().ok_or(OrchestratorError::NoSession)?;
+        let cli_fork = t.provider == "claude";
         let new_id = self.inner.next_id.fetch_add(1, Ordering::SeqCst);
         let prompt = format!("{} (ramo de #{id})", t.prompt);
         let fork = Task {
             id: new_id,
             prompt: prompt.clone(),
             state: TaskState::Completed,
-            handoff: false,
+            // Só o Claude retoma a sessão original com `--fork-session`. Nos
+            // outros, o primeiro turno abre sessão nova e recebe o resumo.
+            session_id: if cli_fork { t.session_id.clone() } else { None },
+            handoff: !cli_fork,
             // Ramo novo: marca de origem e nunca nasce arquivado (mesmo que o pai esteja).
             archived: false,
             fork_of: Some(id),
@@ -944,7 +979,11 @@ impl Orchestrator {
             db.set_task_mode(new_id as i64, fork.mode.as_str())?;
             db.set_task_access(new_id as i64, fork.access.as_str())?;
             db.set_task_model(new_id as i64, fork.model.as_deref())?;
-            db.set_task_session(new_id as i64, &session)?;
+            if cli_fork {
+                db.set_task_session(new_id as i64, &session)?;
+            } else {
+                db.set_task_handoff(new_id as i64, true)?;
+            }
             db.set_task_fork_of(new_id as i64, Some(id as i64))?;
             if let Some(w) = &fork.workdir {
                 db.set_task_workdir(new_id as i64, &w.to_string_lossy())?;
@@ -957,7 +996,9 @@ impl Orchestrator {
                     let _ = db.set_setting(&key(new_id), Some(&v));
                 }
             }
-            db.set_setting(&super::todos::fork_key(new_id), Some("1"))?;
+            if cli_fork {
+                db.set_setting(&super::todos::fork_key(new_id), Some("1"))?;
+            }
         }
         self.inner.tasks.lock().unwrap().insert(new_id, fork);
         self.emit_state(new_id, TaskState::Completed);
@@ -1073,6 +1114,11 @@ impl Orchestrator {
             }
             Err(_) => Vec::new(),
         };
+        // Ramo criado pelo Argus: o provedor é o mesmo da origem, então o texto
+        // de "outro agente" da troca de provedor seria mentira.
+        if t.fork_of.is_some() {
+            return super::handoff::build_fork_context(before, &files, super::handoff::MAX_CHARS);
+        }
         super::handoff::build_context(before, &t.provider, &from_name, t.session_id.is_some(), &files, super::handoff::MAX_CHARS)
     }
 
@@ -1114,9 +1160,11 @@ impl Orchestrator {
         // Só uma conversa que terminou bem — ou cujo cancelamento a CLI confirmou
         // sem encerrar o processo — mantém a CLI viva para o próximo turno.
         if !matches!(st, TaskState::Completed) {
-            let preserved = matches!(st, TaskState::Cancelled) && self.take_keep_on_cancel(id);
+            let preserved = matches!(st, TaskState::Cancelled)
+                && (self.take_keep_on_cancel(id) || self.take_acp_keep(id));
             if !preserved {
                 self.discard_host(id);
+                self.discard_acp_host(id);
             }
         }
         self.set_state(id, st);
@@ -1131,6 +1179,54 @@ impl Orchestrator {
         let keep = guard.keep_on_cancel;
         guard.keep_on_cancel = false;
         keep
+    }
+
+    fn take_acp_keep(&self, id: TaskId) -> bool {
+        self.inner.acp_keep.lock().unwrap().remove(&id)
+    }
+
+    /// Remove o host ACP da conversa e encerra o processo.
+    fn discard_acp_host(&self, id: TaskId) {
+        self.inner.acp_hosts.lock().unwrap().remove(&id);
+        let pid = self.inner.acp_pids.lock().unwrap().remove(&id);
+        self.inner.acp_asks.lock().unwrap().remove(&id);
+        self.inner.acp_keep.lock().unwrap().remove(&id);
+        if let Some(pid) = pid {
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle.spawn(async move { kill_pid(pid).await; });
+            }
+        }
+    }
+
+    /// Responde a uma pergunta ACP pendente, sem criar novo turno.
+    pub async fn acp_answer(&self, id: TaskId, request: &str, groups: &[Vec<String>], extras: &[String]) -> Result<(), OrchestratorError> {
+        let host = self.inner.acp_hosts.lock().unwrap().get(&id).cloned().ok_or(OrchestratorError::NoSession)?;
+        let line = {
+            let mut h = host.lock().await;
+            let ask = h.asks.get(request).cloned().ok_or_else(|| OrchestratorError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "pergunta ACP não existe mais")))?;
+            let line = super::acp::answer_line(&ask, groups, extras).ok_or_else(|| OrchestratorError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, "escolha inválida para esta pergunta")))?;
+            h.asks.remove(request);
+            line
+        };
+        // Não inventamos `ToolResult`: o ACP não confirma a escolha por aqui e
+        // um resultado falso fecharia o cartão errado quando há duas perguntas.
+        // Este evento carrega o id do pedido, então fecha só o cartão dele e
+        // sobrevive ao recarregamento da janela.
+        host.lock().await.write_line(&line).await.map_err(OrchestratorError::Io)?;
+        {
+            let mut asks = self.inner.acp_asks.lock().unwrap();
+            let empty = asks.get_mut(&id).is_some_and(|v| {
+                v.retain(|a| a.id != request);
+                v.is_empty()
+            });
+            if empty {
+                asks.remove(&id);
+            }
+        }
+        if let Some(t) = self.task(id) {
+            self.record(id, &t, 0, AgentEvent::AcpAnswered { request: request.to_string() });
+        }
+        Ok(())
     }
 
     async fn first_turn(&self, task: &Task, prov: Arc<dyn AgentProvider>, cancel: &Notify) -> Result<TaskState, OrchestratorError> {
@@ -1276,14 +1372,384 @@ impl Orchestrator {
     /// Remove o host da conversa e mata a árvore da CLI. Serve também em contexts
     /// síncronos (troca de provedor, exclusão): o kill roda numa task do runtime.
     fn discard_host(&self, id: TaskId) {
-        let host = self.inner.hosts.lock().unwrap().remove(&id);
-        let Some(host) = host else { return };
-        let pid = host.lock().unwrap_or_else(|e| e.into_inner()).child.id();
-        if let Some(pid) = pid {
-            if let Ok(handle) = tokio::runtime::Handle::try_current() {
-                handle.spawn(async move { kill_pid(pid).await; });
+        self.inner.hosts.lock().unwrap().remove(&id);
+        // Mata todo host já aberto nesta conversa, não só o que estava no mapa:
+        // um pid que saiu do mapa por outro caminho ficava vivo até o Argus
+        // fechar. `taskkill` num pid que já morreu é inofensivo.
+        let pids = self.inner.host_pids.lock().unwrap().remove(&id).unwrap_or_default();
+        if pids.is_empty() {
+            return;
+        }
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                for pid in pids {
+                    kill_pid(pid).await;
+                }
+            });
+        }
+    }
+
+    /// Escolhe o modelo (quando pedido) e envia o prompt numa sessão ACP já aberta.
+    async fn acp_send_prompt(
+        host: &Arc<tokio::sync::Mutex<super::acp::AcpHost>>,
+        session: &str,
+        prompt: &str,
+        model: Option<&str>,
+    ) -> Result<(Option<String>, String), OrchestratorError> {
+        let mut h = host.lock().await;
+        let model_id = match model {
+            Some(model) => {
+                let id = h.new_id();
+                let line = super::acp::set_model_line(&id, session, model);
+                h.write_line(&line).await.map_err(OrchestratorError::Io)?;
+                Some(id)
+            }
+            None => None,
+        };
+        let prompt_id = h.new_id();
+        let line = super::acp::prompt_line(&prompt_id, session, prompt);
+        h.write_line(&line).await.map_err(OrchestratorError::Io)?;
+        Ok((model_id, prompt_id))
+    }
+
+    /// Turno ACP: uma sessão viva no mesmo processo, com perguntas que esperam
+    /// resposta. Devolve o mesmo contrato de `run_turn` (estado + uso de modelo).
+    async fn acp_turn(
+        &self,
+        task: &Task,
+        spec: CommandSpec,
+        prompt: &str,
+        session: Option<&str>,
+        workdir: &Path,
+        opts: &TurnOptions,
+        cancel: &Notify,
+        timer: &crate::agentlog::TurnTimer,
+        log: &crate::agentlog::TurnLog,
+        turn: i64,
+    ) -> Result<(TaskState, bool), OrchestratorError> {
+        use super::acp::{self, Wire};
+        let id = task.id;
+        let existing = self.inner.acp_hosts.lock().unwrap().get(&id).cloned();
+        let host = match existing {
+            Some(h) => h,
+            None => {
+                let t = std::time::Instant::now();
+                let h = self.spawn_acp_host(&spec, id, workdir, session, log).await?;
+                log.latency("host", t.elapsed().as_millis());
+                h
+            }
+        };
+        let rx = {
+            let mut h = host.lock().await;
+            h.set_log(log.clone());
+            h.rx.take()
+        };
+        let Some(mut rx) = rx else {
+            self.discard_acp_host(id);
+            return Err(OrchestratorError::Io(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "host ACP sem leitor de saída")));
+        };
+        // Num host vivo a sessão já existe: mandar `session/load` de novo faria
+        // o ACP repetir o histórico na transcrição. Só abrimos sessão na primeira
+        // vez (ou ao retomar um host recém-criado de uma tarefa com sessionId).
+        let (open_id, had_session) = {
+            let mut h = host.lock().await;
+            let sid = h.session.clone();
+            match sid.as_deref() {
+                Some(_) => (None, true),
+                None => {
+                    let open_id = h.new_id();
+                    let dirs = crate::attachments::dirs_for(&crate::attachments::root(), id, &[&task.prompt, prompt]);
+                    let line = match session {
+                        Some(s) => acp::load_session_line(&open_id, s, workdir, &dirs),
+                        None => acp::new_session_line(&open_id, workdir, &dirs),
+                    };
+                    h.write_line(&line).await.map_err(OrchestratorError::Io)?;
+                    (Some(open_id), session.is_some())
+                }
+            }
+        };
+        log.line("meta", &format!("acp sessão {} ({}), prompt {}", open_id.as_deref().unwrap_or("-"), if had_session { "retomada" } else { "nova" }, turn));
+        let this = self.clone();
+        let t = task.clone();
+        let used = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // Mesmo motivo do `turn_model` dos outros caminhos: sem escolha no turno,
+        // vale o modelo da tarefa, senão a linha de uso sai sem modelo.
+        let model_out = opts.model.clone().or_else(|| task.model.clone());
+        let mut prompt_id: Option<String> = None;
+        let mut model_id: Option<String> = None;
+        if open_id.is_none() {
+            let sid = { host.lock().await.session.clone().unwrap_or_default() };
+            if sid.is_empty() {
+                self.discard_acp_host(id);
+                return Err(OrchestratorError::Io(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "host ACP sem sessão")));
+            }
+            let (mid, pid) = Self::acp_send_prompt(&host, &sid, prompt, opts.model.as_deref()).await?;
+            model_id = mid;
+            prompt_id = Some(pid);
+        }
+        let mut ended = false;
+        let mut cancelled = false;
+        let mut eof = false;
+        let mut was_cancelled = false;
+        let mut stop_cancelled = false;
+        let mut text = String::new();
+        let mut saw_event = false;
+        let mut cancel_deadline: Option<std::time::Instant> = None;
+        // A abertura da sessão tem limite de tempo: no Windows o `opencode acp`
+        // pode travar em `session/new` por um bug da CLI (issue #64686). Sem
+        // isso o turno ficaria esperando para sempre, sem erro e sem log.
+        let mut open_waiting = open_id.is_some();
+        let open_deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        let mut open_error: Option<String> = None;
+        let mut last_usage = {
+            let h = host.lock().await;
+            h.last_usage
+        };
+        let init_id = {
+            let h = host.lock().await;
+            h.init_id.clone()
+        };
+
+        loop {
+            let wire = if cancelled {
+                let Some(deadline) = cancel_deadline else { break };
+                let rest = deadline.saturating_duration_since(std::time::Instant::now());
+                if rest.is_zero() { log.line("meta", "cancel ACP sem resposta: host sera descartado"); break; }
+                match tokio::time::timeout(rest, rx.recv()).await {
+                    Ok(m) => m,
+                    Err(_) => { log.line("meta", "cancel ACP sem resposta (timeout): host sera descartado"); break; }
+                }
+            } else {
+                tokio::select! {
+                    m = rx.recv() => m,
+                    _ = cancel.notified() => {
+                        cancelled = true;
+                        was_cancelled = true;
+                        log.line("meta", "cancel: session/cancel enviado ao ACP");
+                        let sid = { host.lock().await.session.clone() };
+                        if let Some(sid) = sid {
+                            let line = acp::cancel_line(&sid);
+                            if let Err(e) = host.lock().await.write_line(&line).await {
+                                log.line("err", &format!("falha ao enviar session/cancel: {e}"));
+                            }
+                        }
+                        cancel_deadline = Some(std::time::Instant::now() + std::time::Duration::from_secs(8));
+                        continue;
+                    }
+                    _ = tokio::time::sleep_until(tokio::time::Instant::from_std(open_deadline)), if open_waiting => {
+                        open_error = Some("opencode acp não respondeu ao abrir a sessão (tempo esgotado). No Windows isso é um bug conhecido da CLI; use o provedor opencode padrão.".into());
+                        break;
+                    }
+                }
+            };
+            let Some(wire) = wire else { eof = true; break; };
+            let raw = match wire { Wire::Line(l) => l, Wire::Eof => { eof = true; break; } };
+            if !saw_event {
+                saw_event = true;
+                log.latency("first_event", timer.elapsed_ms());
+            }
+            log.line("out", &raw);
+            // O `id` do pedido pode ser número (opencode usa 0) ou string. Guarde
+            // o valor original: responder "0" a um pedido com id 0 é descartado.
+            let raw_id = serde_json::from_str::<serde_json::Value>(&raw)
+                .ok()
+                .and_then(|v| v.get("id").cloned());
+            let Some(msg) = acp::parse_message(&raw) else { continue };
+            match msg {
+                acp::Message::Notification { method, params } if method == "session/update" => {
+                    let update = params.get("update").unwrap_or(&params);
+                    for ev in acp::update_events(update) {
+                        if let AgentEvent::TextDelta(t) = &ev { text.push_str(t); }
+                        this.record_turn_event(id, &t, turn, ev, model_out.as_deref(), &used);
+                    }
+                }
+                acp::Message::Request { id: req, method, params } => {
+                    let req_value = raw_id.clone().unwrap_or_else(|| serde_json::Value::String(req.clone()));
+                    let asks = match method.as_str() {
+                        "session/request_permission" => acp::permission_ask(&req_value, &params).into_iter().collect::<Vec<_>>(),
+                        "elicitation/create" => acp::elicitation_ask(&req_value, &params).into_iter().collect::<Vec<_>>(),
+                        _ => Vec::new(),
+                    };
+                    if asks.is_empty() {
+                        log.line("meta", &format!("pedido ACP sem tradução: {method}"));
+                        continue;
+                    }
+                    for ask in asks {
+                        log.line("ask", &format!("{req} {}", ask.parts[0].question));
+                        {
+                            let mut h = host.lock().await;
+                            h.asks.insert(req.clone(), ask.clone());
+                        }
+                        this.inner.acp_asks.lock().unwrap().entry(id).or_default().push(ask.clone());
+                        this.record_turn_event(id, &t, turn, acp::ask_event(&ask), model_out.as_deref(), &used);
+                    }
+                }
+                acp::Message::Response { id: resp, result, error } => {
+                    if init_id.as_deref() == Some(resp.as_str()) {
+                        if let Some(msg) = error {
+                            log.line("err", &format!("initialize falhou: {msg}"));
+                        } else {
+                            {
+                                let mut h = host.lock().await;
+                                h.initialized = true;
+                                h.init_id = None;
+                            }
+                            log.line("meta", "ACP inicializado");
+                        }
+                    } else if open_id.as_deref() == Some(resp.as_str()) {
+                        open_waiting = false;
+                        let Some(sid) = result.get("sessionId").and_then(serde_json::Value::as_str).map(str::to_string) else {
+                            // Sem sessionId não há prompt para enviar: sair do loop
+                            // evita esperar uma resposta que nunca vai chegar. O
+                            // erro é gravado uma vez, no fim do turno.
+                            open_error = Some(error.unwrap_or_else(|| "session/new sem sessionId".into()));
+                            break;
+                        };
+                        log.line("session", &sid);
+                        {
+                            let mut h = host.lock().await;
+                            h.session = Some(sid.clone());
+                            h.initialized = true;
+                        }
+                        this.record_turn_event(id, &t, turn, AgentEvent::Session(sid.clone()), model_out.as_deref(), &used);
+                        let (mid, pline) = Self::acp_send_prompt(&host, &sid, prompt, opts.model.as_deref()).await?;
+                        model_id = mid;
+                        prompt_id = Some(pline);
+                        if cancelled {
+                            let line = acp::cancel_line(&sid);
+                            let _ = host.lock().await.write_line(&line).await;
+                        }
+                    } else if model_id.as_deref() == Some(resp.as_str()) {
+                        if let Some(msg) = error { log.line("err", &format!("set_config_option: {msg}")); }
+                    } else if prompt_id.as_deref() == Some(resp.as_str()) {
+                        stop_cancelled = result.get("stopReason").and_then(serde_json::Value::as_str) == Some("cancelled");
+                        if stop_cancelled { self.inner.acp_keep.lock().unwrap().insert(id); }
+                        let events = acp::prompt_events(&result, &error, last_usage, was_cancelled);
+                        let (input, output, _) = acp::prompt_usage(&result);
+                        last_usage = Some((input, output));
+                        {
+                            let mut h = host.lock().await;
+                            h.last_usage = last_usage;
+                            h.asks.clear();
+                            h.cancelled = false;
+                        }
+                        self.inner.acp_asks.lock().unwrap().remove(&id);
+                        if !text.trim().is_empty() {
+                            this.record_turn_event(id, &t, turn, AgentEvent::Text(text.trim().to_string()), model_out.as_deref(), &used);
+                        }
+                        for ev in events {
+                            this.record_turn_event(id, &t, turn, ev, model_out.as_deref(), &used);
+                        }
+                        ended = true;
+                        break;
+                    } else {
+                        log.line("out_other", &raw);
+                    }
+                }
+                _ => {}
             }
         }
+        if let Some(msg) = &open_error {
+            log.line("err", msg);
+            this.record_turn_event(id, &t, turn, AgentEvent::Result { ok: false, summary: msg.clone(), cost: None }, model_out.as_deref(), &used);
+        }
+        // Devolve o leitor: o próximo turno do mesmo host continua de onde parou.
+        {
+            let mut h = host.lock().await;
+            if h.rx.is_none() { h.rx = Some(rx); }
+        }
+        let confirmed_cancel = was_cancelled && stop_cancelled && !eof;
+        if ended && !eof && (!was_cancelled || confirmed_cancel) {
+            if !confirmed_cancel { self.inner.acp_keep.lock().unwrap().remove(&id); }
+            log.line("meta", if confirmed_cancel { "cancel ACP confirmado: host preservado" } else { "turno ACP concluído" });
+        } else {
+            if was_cancelled { log.line("meta", "cancel ACP sem confirmação: host descartado"); }
+            self.discard_acp_host(id);
+        }
+        log.latency("result", timer.elapsed_ms());
+        let st = if let Some(msg) = open_error { TaskState::Failed(msg) }
+            else if was_cancelled { TaskState::Cancelled }
+            else if ended { TaskState::Completed }
+            else { TaskState::Failed("host ACP encerrou antes do resultado".into()) };
+        Ok((st, used.load(Ordering::SeqCst)))
+    }
+
+    async fn spawn_acp_host(
+        &self,
+        spec: &CommandSpec,
+        id: TaskId,
+        workdir: &Path,
+        session: Option<&str>,
+        log: &crate::agentlog::TurnLog,
+    ) -> Result<Arc<tokio::sync::Mutex<super::acp::AcpHost>>, OrchestratorError> {
+        use super::acp::{self, AcpHost, Wire};
+        let mut cmd = build_command(spec, Some(workdir));
+        #[cfg(unix)]
+        cmd.process_group(0);
+        #[cfg(windows)]
+        cmd.creation_flags(0x0000_0200 | 0x0800_0000);
+        let mut child = cmd
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .stdin(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()?;
+        if let Some(pid) = child.id() {
+            crate::procs::tracker().track(pid, crate::procs::Owner::Session(id));
+        }
+        crate::procs::tracker().track_dir(crate::procs::Owner::Session(id), workdir);
+        let stdin = child.stdin.take().ok_or_else(|| std::io::Error::new(std::io::ErrorKind::BrokenPipe, "ACP sem stdin"))?;
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+        let (tx, rx) = mpsc::unbounded_channel();
+        let log_out = Arc::new(Mutex::new(log.clone()));
+        let lp = log_out.clone();
+        let le = log_out.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stdout).lines();
+            while let Ok(Some(l)) = lines.next_line().await {
+                lp.lock().unwrap_or_else(|e| e.into_inner()).line("out", &l);
+                if tx.send(Wire::Line(l)).is_err() { break; }
+            }
+            let _ = tx.send(Wire::Eof);
+        });
+        let this = self.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(l)) = lines.next_line().await {
+                le.lock().unwrap_or_else(|e| e.into_inner()).line("err", &l);
+                if crate::agentlog::is_cli_log(&l) { continue; }
+                if let Some(db) = &this.inner.db {
+                    let _ = db.insert_event(id as i64, "Stderr", &json(&AgentEvent::Raw(l.clone())));
+                }
+                let _ = this.inner.tx.send(OrchestratorEvent::Stderr { task: id, line: l });
+            }
+        });
+        let mut host = AcpHost {
+            child,
+            stdin: Arc::new(tokio::sync::Mutex::new(stdin)),
+            rx: Some(rx),
+            session: session.map(str::to_string),
+            init_id: None,
+            initialized: false,
+            next_id: 0,
+            last_usage: None,
+            cancelled: false,
+            asks: HashMap::new(),
+            log: log_out.clone(),
+        };
+        let init = host.new_id();
+        host.init_id = Some(init.clone());
+        // `initialize` é obrigatório antes de qualquer sessão. A resposta é lida
+        // no loop do turno; a CLI processa as mensagens na ordem recebida.
+        let line = acp::initialize_line(&init);
+        host.write_line(&line).await?;
+        if let Some(pid) = host.child.id() {
+            self.inner.acp_pids.lock().unwrap().insert(id, pid);
+        }
+        let host = Arc::new(tokio::sync::Mutex::new(host));
+        self.inner.acp_hosts.lock().unwrap().insert(id, host.clone());
+        Ok(host)
     }
 
     /// Sobe o processo que fica vivo entre turnos. As leituras de stdout e
@@ -1296,13 +1762,16 @@ impl Orchestrator {
         key: HostKey,
         log: &crate::agentlog::TurnLog,
     ) -> Result<AgentHost, OrchestratorError> {
+        let log_ref = Arc::new(Mutex::new(log.clone()));
         let mut cmd = build_command(spec, Some(workdir));
         #[cfg(unix)]
         cmd.process_group(0);
         // Grupo próprio no Windows permite interromper só a CLI com
-        // CTRL_BREAK_EVENT, sem derrubar o console do Argus junto.
+        // CTRL_BREAK_EVENT. CREATE_NO_WINDOW evita que o Windows abra um
+        // Windows Terminal visível para o host (que fica vivo entre turnos);
+        // os outros spawns já usavam esse sinalizador.
         #[cfg(windows)]
-        cmd.creation_flags(0x0000_0200); // CREATE_NEW_PROCESS_GROUP
+        cmd.creation_flags(0x0000_0200 | 0x0800_0000); // CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
         let mut child = cmd
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -1311,17 +1780,18 @@ impl Orchestrator {
             .spawn()?;
         if let Some(pid) = child.id() {
             crate::procs::tracker().track(pid, crate::procs::Owner::Session(id));
+            self.inner.host_pids.lock().unwrap().entry(id).or_default().push(pid);
         }
         crate::procs::tracker().track_dir(crate::procs::Owner::Session(id), workdir);
         let stdin = child.stdin.take().ok_or_else(|| std::io::Error::new(std::io::ErrorKind::BrokenPipe, "host sem stdin"))?;
         let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
         let (tx, rx) = mpsc::unbounded_channel();
-        let log_out = log.clone();
+        let log_out = log_ref.clone();
         tokio::spawn(async move {
             let mut lines = BufReader::new(stdout).lines();
             while let Ok(Some(l)) = lines.next_line().await {
-                log_out.line("out", &l);
+                log_out.lock().unwrap_or_else(|e| e.into_inner()).line("out", &l);
                 if tx.send(HostLine::Line(l)).is_err() {
                     break;
                 }
@@ -1329,11 +1799,11 @@ impl Orchestrator {
             let _ = tx.send(HostLine::Eof);
         });
         let this = self.clone();
-        let log_err = log.clone();
+        let log_err = log_ref.clone();
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(l)) = lines.next_line().await {
-                log_err.line("err", &l);
+                log_err.lock().unwrap_or_else(|e| e.into_inner()).line("err", &l);
                 if crate::agentlog::is_cli_log(&l) {
                     continue;
                 }
@@ -1350,6 +1820,7 @@ impl Orchestrator {
             key,
             ack_capable: false,
             keep_on_cancel: false,
+            log: log_ref,
         })
     }
 
@@ -1386,15 +1857,19 @@ impl Orchestrator {
             })
         };
         if let Some(pid) = stale_pid {
+            log.line("meta", &format!("host descartado: opcoes mudaram entre turnos (pid {:?})", pid));
             self.inner.hosts.lock().unwrap().remove(&id);
             kill_pid(pid).await;
         }
         let host = {
             let mut hosts = self.inner.hosts.lock().unwrap();
             if let Some(h) = hosts.get(&id) {
+                let pid = h.lock().unwrap_or_else(|e| e.into_inner()).child.id();
+                log.line("meta", &format!("host reaproveitado do turno anterior (pid {pid:?})"));
                 h.clone()
             } else {
                 let t = std::time::Instant::now();
+                log.line("cmd", &format!("{} {}", spec.program, spec.args.join(" ")));
                 let h = Arc::new(Mutex::new(self.spawn_host(&spec, id, workdir, key, log)?));
                 hosts.insert(id, h.clone());
                 log.latency("host", t.elapsed().as_millis());
@@ -1427,6 +1902,12 @@ impl Orchestrator {
             let h = host.lock().unwrap_or_else(|e| e.into_inner());
             h.child.id()
         };
+        // As leituras do processo escrevem no log deste turno, não no da primeira
+        // vez em que o host foi aberto (bug A do relatório de validação).
+        {
+            let h = host.lock().unwrap_or_else(|e| e.into_inner());
+            h.set_log(log.clone());
+        }
         let message_id = host_message_id(id, turn);
         let line = prov.host_message(prompt, &message_id);
         {
@@ -1441,7 +1922,9 @@ impl Orchestrator {
         let t = task.clone();
         let used_model = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let used = used_model.clone();
-        let turn_model = opts.model.clone();
+        // Sem modelo escolhido no turno, o uso herda o padrao do provedor: a
+        // linha de custo do opencode saia sempre sem modelo (bug da validacao).
+        let turn_model = opts.model.clone().or_else(|| prov.default_model());
         let model_out = turn_model.clone();
         let tracker = Arc::new(Mutex::new(prov.turn_tracker()));
         let tracker_out = tracker.clone();
@@ -1491,7 +1974,9 @@ impl Orchestrator {
                         cancelled = true;
                         log_out.line("meta", "cancel: interrompendo o comando deste turno");
                         if let Some(pid) = host_pid {
-                            interrupt_host(pid).await;
+                            if !interrupt_host(pid).await {
+                                log_out.line("meta", "cancel: sinal de interrupt nao entregue ao host");
+                            }
                         }
                         cancel_deadline = Some(std::time::Instant::now() + std::time::Duration::from_secs(5));
                         continue;
@@ -1655,10 +2140,30 @@ impl Orchestrator {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
+        // Log bruto deste turno, sempre ligado. Antes do retrato: a espera do
+        // git tem linha própria (`snapshot_ms`) e não fica escondida em `prepare`.
+        let log = crate::agentlog::TurnLog::new(&task.provider, id, turn);
+        // ACP é um caminho próprio: a pergunta ao vivo precisa de um processo
+        // que espere a resposta do usuário, não de um `run` não-interativo.
+        if prov.acp() {
+            let spec = crate::permissions::apply_for(
+                prov.task_command(prompt, workdir, session, opts),
+                &task.project,
+                self.git_levels(&task.project, task.mode),
+                self.permission_mode(&task.project),
+                opts.access,
+            );
+            log.latency("prepare", timer.elapsed_ms());
+            log.line("meta", &format!("provider={} task={} turn={} cwd={}", task.provider, id, turn, workdir.display()));
+            log.line("cmd", &format!("{} {}", spec.program, spec.args.join(" ")));
+            return self.acp_turn(task, spec, prompt, session, workdir, opts, cancel, &timer, &log, turn).await;
+        }
         // Ponto de retorno: a pasta como estava antes deste pedido.
+        let t_snapshot = std::time::Instant::now();
         let n = self.user_count(id);
         let wd = workdir.to_path_buf();
         let _ = tokio::task::spawn_blocking(move || crate::checkpoints::snapshot(&wd, id, n)).await;
+        log.latency("snapshot", t_snapshot.elapsed().as_millis());
         prov.begin_turn(session);
         // Recado do mural antes do pedido: é por aqui que um agente fica sabendo
         // que outro está no mesmo arquivo. Fora de turno de comando (`/compact`),
@@ -1672,10 +2177,9 @@ impl Orchestrator {
             }
             None => prompt,
         };
-        // Log bruto deste turno, sempre ligado. stdout (eventos) e stderr (logs da
-        // CLI) vão para o mesmo arquivo, fora da conversa: é o que permite
-        // investigar os defeitos do opencode sem repetir a execução.
-        let log = crate::agentlog::TurnLog::new(&task.provider, id, turn);
+        // stdout (eventos) e stderr (logs da CLI) vão para o mesmo arquivo do
+        // retrato, fora da conversa: é o que permite investigar os defeitos do
+        // opencode sem repetir a execução.
         // Provedor com host mantém o processo vivo entre turnos; os demais seguem
         // com um spawn por turno, exatamente como antes.
         let host_spec = prov.host_command(workdir, session, opts);
@@ -1729,12 +2233,15 @@ impl Orchestrator {
         log.latency("mcp", t_mcp.elapsed().as_millis());
         log.latency("prepare", timer.elapsed_ms());
         log.line("meta", &format!("provider={} task={} turn={} cwd={}", task.provider, id, turn, workdir.display()));
-        log.line("cmd", &format!("{} {}", spec.program, spec.args.join(" ")));
+        // No caminho do host a linha `cmd` sai em `host_turn`, e só quando um
+        // processo é mesmo criado: registrar aqui sugeria um spawn que não houve
+        // quando o host do turno anterior foi reaproveitado.
         if using_host {
             return self
                 .host_turn(task, prov, spec, prompt, session, workdir, opts, cancel, &timer, &log, turn)
                 .await;
         }
+        log.line("cmd", &format!("{} {}", spec.program, spec.args.join(" ")));
         let mut cmd = build_command(&spec, Some(workdir));
         #[cfg(unix)]
         cmd.process_group(0); // permite matar a árvore inteira no cancelamento
@@ -1767,7 +2274,9 @@ impl Orchestrator {
         let t = task.clone();
         let used_model = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let used = used_model.clone();
-        let turn_model = opts.model.clone();
+        // Sem modelo escolhido no turno, o uso herda o padrao do provedor: a
+        // linha de custo do opencode saia sempre sem modelo (bug da validacao).
+        let turn_model = opts.model.clone().or_else(|| prov.default_model());
         // Acompanha o processo para completar o que a CLI não imprimiu (uso de
         // turno cancelado, resultado que faltou). Compartilhado com a leitura.
         let tracker = Arc::new(std::sync::Mutex::new(prov.turn_tracker()));
@@ -2315,21 +2824,34 @@ async fn kill_pid(pid: u32) {
 /// No Windows usa `CTRL_BREAK_EVENT` no grupo próprio criado em `spawn_host`:
 /// `CTRL_C_EVENT` iria para todo o console, inclusive o Argus. No Unix manda
 /// SIGINT para o grupo (`process_group(0)` no spawn).
-async fn interrupt_host(pid: u32) {
+async fn interrupt_host(pid: u32) -> bool {
     #[cfg(windows)]
     {
-        use windows::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_BREAK_EVENT};
+        use windows::Win32::System::Console::{AttachConsole, FreeConsole, GenerateConsoleCtrlEvent, CTRL_BREAK_EVENT};
         unsafe {
-            let _ = GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid);
+            // O Argus é GUI: não tem console próprio. Sem anexar ao console do
+            // host, o CTRL_BREAK_EVENT não alcança o grupo da CLI e a espera
+            // pelo ack termina em timeout (foi o que apareceu com bash à frente).
+            let _ = FreeConsole();
+            if AttachConsole(pid).is_err() {
+                return false;
+            }
+            let sent = GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid).is_ok();
+            let _ = FreeConsole();
+            sent
         }
     }
     #[cfg(unix)]
-    let _ = tokio::process::Command::new("kill")
-        .args(["-INT", "--", &format!("-{pid}")])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .await;
+    {
+        tokio::process::Command::new("kill")
+            .args(["-INT", "--", &format!("-{pid}")])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
 }
 
 /// Monta um tokio Command a partir do CommandSpec (resolve o executável real,
@@ -2411,6 +2933,39 @@ mod tests {
         }
     }
 
+    /// Provider ACP falso: um script devolve `initialize` e um erro em
+    /// `session/new`, sem depender da CLI do opencode.
+    struct FakeAcp(PathBuf);
+    impl AgentProvider for FakeAcp {
+        fn id(&self) -> &str {
+            "fake-acp"
+        }
+        fn display_name(&self) -> &str {
+            "Fake ACP"
+        }
+        fn detect(&self) -> Option<PathBuf> {
+            Some(self.0.clone())
+        }
+        fn login_status(&self) -> LoginStatus {
+            LoginStatus::Unknown
+        }
+        fn login_command(&self) -> CommandSpec {
+            CommandSpec::new(if cfg!(windows) { "cmd" } else { "sh" })
+        }
+        fn task_command(&self, _p: &str, cwd: &Path, _s: Option<&str>, _o: &TurnOptions) -> CommandSpec {
+            let mut c = CommandSpec::new(if cfg!(windows) { "cmd" } else { "sh" }).cwd(cwd);
+            let script = self.0.to_string_lossy().into_owned();
+            c.args = if cfg!(windows) { vec!["/c".into(), script] } else { vec![script] };
+            c
+        }
+        fn acp(&self) -> bool {
+            true
+        }
+        fn parse_line(&self, _l: &str) -> Vec<AgentEvent> {
+            Vec::new()
+        }
+    }
+
     /// Provider com host persistente, sem depender da CLI: um script que conta
     /// cada mensagem num arquivo e responde com uma linha `result`. A linha
     /// `host N` identifica o processo, para provar reutilização e descarte.
@@ -2424,7 +2979,7 @@ mod tests {
             let c = count.to_string_lossy().replace('\\', "/");
             let body = if cfg!(windows) {
                 format!(
-                    "@echo off\r\nfor /f %%n in ('find /c /v \"\" ^< \"{}\"') do set hid=%%n\r\necho SESSION:host-%hid%\r\necho host %hid% >> \"{}\"\r\n:loop\r\nset /p linha=\r\nif errorlevel 1 exit /b\r\necho turno %hid% >> \"{}\"\r\necho {{\"type\":\"result\",\"subtype\":\"success\",\"user_message_uuids\":[\"%linha%\"]}}\r\ngoto loop\r\n",
+                    "@echo off\r\nfor /f %%n in ('%SystemRoot%\\System32\\find.exe /c /v \"\" ^< \"{}\"') do set hid=%%n\r\necho SESSION:host-%hid%\r\necho host %hid% >> \"{}\"\r\n:loop\r\nset /p linha=\r\nif errorlevel 1 exit /b\r\necho turno %hid% >> \"{}\"\r\necho {{\"type\":\"result\",\"subtype\":\"success\",\"user_message_uuids\":[\"%linha%\"]}}\r\ngoto loop\r\n",
                     c, c, c
                 )
             } else {
@@ -2506,7 +3061,7 @@ mod tests {
             };
             let body = if cfg!(windows) {
                 format!(
-                    "@echo off\r\nfor /f %%n in ('find /c /v \"\" ^< \"{}\"') do set hid=%%n\r\necho SESSION:host-%hid%\r\necho host %hid% >> \"{}\"\r\n:loop\r\nset /p linha=\r\nif errorlevel 1 exit /b\r\necho turno %hid% >> \"{}\"\r\necho {{\"type\":\"command_lifecycle\",\"command_uuid\":\"%linha%\",\"state\":\"started\"}}\r\n{}echo {{\"type\":\"result\",\"subtype\":\"success\"}}\r\ngoto loop\r\n",
+                    "@echo off\r\nfor /f %%n in ('%SystemRoot%\\System32\\find.exe /c /v \"\" ^< \"{}\"') do set hid=%%n\r\necho SESSION:host-%hid%\r\necho host %hid% >> \"{}\"\r\n:loop\r\nset /p linha=\r\nif errorlevel 1 exit /b\r\necho turno %hid% >> \"{}\"\r\necho {{\"type\":\"command_lifecycle\",\"command_uuid\":\"%linha%\",\"state\":\"started\"}}\r\n{}echo {{\"type\":\"result\",\"subtype\":\"success\"}}\r\ngoto loop\r\n",
                     c, c, c, extra
                 )
             } else {
@@ -2810,7 +3365,7 @@ mod tests {
         let c = count.to_string_lossy().replace('\\', "/");
         let body = if cfg!(windows) {
             format!(
-                "@echo off\r\nfor /f %%n in ('find /c /v \"\" ^< \"{}\"') do set hid=%%n\r\necho SESSION:host-%hid%\r\necho host %hid% >> \"{}\"\r\n:loop\r\nset /p linha=\r\nif errorlevel 1 exit /b\r\necho turno %hid% >> \"{}\"\r\necho {{\"type\":\"result\",\"subtype\":\"success\",\"user_message_uuids\":[\"alheio\"]}}\r\necho {{\"type\":\"result\",\"subtype\":\"success\",\"user_message_uuids\":[\"%linha%\"]}}\r\ngoto loop\r\n",
+                "@echo off\r\nfor /f %%n in ('%SystemRoot%\\System32\\find.exe /c /v \"\" ^< \"{}\"') do set hid=%%n\r\necho SESSION:host-%hid%\r\necho host %hid% >> \"{}\"\r\n:loop\r\nset /p linha=\r\nif errorlevel 1 exit /b\r\necho turno %hid% >> \"{}\"\r\necho {{\"type\":\"result\",\"subtype\":\"success\",\"user_message_uuids\":[\"alheio\"]}}\r\necho {{\"type\":\"result\",\"subtype\":\"success\",\"user_message_uuids\":[\"%linha%\"]}}\r\ngoto loop\r\n",
                 c, c, c
             )
         } else {
@@ -2842,7 +3397,7 @@ mod tests {
         let c = count.to_string_lossy().replace('\\', "/");
         let body = if cfg!(windows) {
             format!(
-                "@echo off\r\nfor /f %%n in ('find /c /v \"\" ^< \"{}\"') do set hid=%%n\r\necho SESSION:host-%hid%\r\necho host %hid% >> \"{}\"\r\n:loop\r\nset /p linha=\r\nif errorlevel 1 exit /b\r\necho turno %hid% >> \"{}\"\r\necho {{\"type\":\"result\",\"subtype\":\"success\"}}\r\necho {{\"type\":\"result\",\"subtype\":\"success\"}}\r\ngoto loop\r\n",
+                "@echo off\r\nfor /f %%n in ('%SystemRoot%\\System32\\find.exe /c /v \"\" ^< \"{}\"') do set hid=%%n\r\necho SESSION:host-%hid%\r\necho host %hid% >> \"{}\"\r\n:loop\r\nset /p linha=\r\nif errorlevel 1 exit /b\r\necho turno %hid% >> \"{}\"\r\necho {{\"type\":\"result\",\"subtype\":\"success\"}}\r\necho {{\"type\":\"result\",\"subtype\":\"success\"}}\r\ngoto loop\r\n",
                 c, c, c
             )
         } else {
@@ -3152,14 +3707,82 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fork_is_refused_outside_claude() {
+    async fn fork_outside_claude_is_created_by_argus() {
         let dir = tempfile::tempdir().unwrap();
         let o = Orchestrator::with_db(vec![Arc::new(Fake(script_args(&["SESSION:abc", "ola"])))], 1, Some(Db::open(dir.path().join("f.db")).unwrap()));
         assert!(matches!(o.fork(42), Err(OrchestratorError::UnknownTask(42))));
         let id = o.submit(dir.path(), "fake", "primeiro").unwrap();
         wait_final(&o, id).await;
-        let err = o.fork(id).unwrap_err().to_string();
-        assert!(err.contains("Claude"), "{err}");
+        let fork_id = o.fork(id).unwrap();
+        let fork = o.task(fork_id).unwrap();
+        assert_eq!(fork.fork_of, Some(id));
+        // Sem fork na CLI: sessão nova e resumo do histórico no primeiro turno.
+        assert_eq!(fork.session_id, None);
+        assert!(fork.handoff);
+        assert!(fork.prompt.contains(&format!("ramo de #{id}")));
+        assert!(o.history(fork_id).contains(&AgentEvent::User("primeiro".into())));
+        let db = o.db().unwrap();
+        assert!(db.get_setting(&crate::agents::todos::fork_key(fork_id)).unwrap().is_none());
+        assert!(db.get_task(fork_id as i64).unwrap().unwrap().handoff);
+        let reloaded = Orchestrator::with_db(vec![Arc::new(Fake(echo_args("ola")))], 2, Some(Db::open(dir.path().join("f.db")).unwrap()));
+        let t = reloaded.task(fork_id).unwrap();
+        assert_eq!(t.fork_of, Some(id));
+        assert!(t.handoff);
+    }
+
+    #[tokio::test]
+    async fn acp_session_new_error_ends_the_turn_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let init = r#"{"jsonrpc":"2.0","id":"argus-acp-1","result":{}}"#;
+        let err = r#"{"jsonrpc":"2.0","id":"argus-acp-2","error":{"code":-32603,"message":"sessao recusada"}}"#;
+        let script = if cfg!(windows) {
+            format!("@echo off\r\nping -n 2 127.0.0.1 >NUL\r\necho {init}\r\necho {err}\r\n")
+        } else {
+            format!("#!/bin/sh\nsleep 1\necho '{init}'\necho '{err}'\n")
+        };
+        let path = dir.path().join(if cfg!(windows) { "acp.cmd" } else { "acp.sh" });
+        std::fs::write(&path, script).unwrap();
+        let o = Orchestrator::with_db(vec![Arc::new(FakeAcp(path))], 1, Some(Db::open(dir.path().join("f.db")).unwrap()));
+        let id = o.submit(dir.path(), "fake-acp", "oi").unwrap();
+        let st = wait_final(&o, id).await;
+        match st {
+            TaskState::Failed(msg) => assert!(msg.contains("sessao recusada"), "{msg}"),
+            other => panic!("esperado Failed, veio {other:?}"),
+        }
+        let erros = o
+            .history(id)
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Result { ok: false, .. }))
+            .count();
+        assert_eq!(erros, 1, "o erro da abertura não pode virar dois resultados: {:?}", o.history(id));
+    }
+
+    #[tokio::test]
+    async fn acp_cancel_confirmado_nao_vira_erro_na_conversa() {
+        let dir = tempfile::tempdir().unwrap();
+        let init = r#"{"jsonrpc":"2.0","id":"argus-acp-1","result":{}}"#;
+        let session = r#"{"jsonrpc":"2.0","id":"argus-acp-2","result":{"sessionId":"ses_1"}}"#;
+        let stop = r#"{"jsonrpc":"2.0","id":"argus-acp-3","result":{"stopReason":"cancelled","usage":{}}}"#;
+        let script = if cfg!(windows) {
+            format!("@echo off\r\necho {init}\r\necho {session}\r\nping -n 3 127.0.0.1 >NUL\r\necho {stop}\r\n")
+        } else {
+            format!("#!/bin/sh\necho '{init}'\necho '{session}'\nsleep 2\necho '{stop}'\n")
+        };
+        let path = dir.path().join(if cfg!(windows) { "acp.cmd" } else { "acp.sh" });
+        std::fs::write(&path, script).unwrap();
+        let o = Orchestrator::with_db(vec![Arc::new(FakeAcp(path))], 1, Some(Db::open(dir.path().join("f.db")).unwrap()));
+        let id = o.submit(dir.path(), "fake-acp", "oi").unwrap();
+        // Cancela depois da sessão aberta, antes da resposta com stopReason.
+        for _ in 0..200 {
+            if o.history(id).iter().any(|e| matches!(e, AgentEvent::Session(_))) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        o.cancel(id).unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Cancelled);
+        let h = o.history(id);
+        assert!(!h.iter().any(|e| matches!(e, AgentEvent::Result { ok: false, .. })), "cancelamento confirmado não é falha: {h:?}");
     }
 
     #[tokio::test]

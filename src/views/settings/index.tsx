@@ -9,6 +9,8 @@ import { SETTINGS_SECTIONS, THEMES, useApp, useTheme, useWorkbench } from "@/sto
 import ProvidersView from "@/views/agents";
 import AutoWorkPanel from "@/views/autowork";
 import { AllowedCommands } from "@/views/servers";
+import ImagensPanel from "./imagens";
+import UpdatesPanel from "./updates";
 import "./settings.css";
 
 function ThemePicker() {
@@ -315,6 +317,10 @@ export default function SettingsView() {
             <ProvidersView />
           </section>
         )}
+
+        {section === "imagens" && <ImagensPanel />}
+
+        {section === "updates" && <UpdatesPanel />}
 
         {section === "project" && (
           <section className="set-section">
