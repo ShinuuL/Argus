@@ -230,16 +230,18 @@ export function UsageRing() {
     info: w,
   }));
   const all: Row[] = [...cli, ...plugin];
-  if (all.length === 0) return null;
-
-  const top = all.reduce((m, l) => ((l.pct ?? -1) > (m.pct ?? -1) ? l : m), all[0]);
-  const u = Math.min(1, Math.max(0, top.pct ?? 0) / 100);
-  const t = tone(u, top.status);
+  // Sem dados a CLI ainda não informou cota: mostre o anel vazio, com uma
+  // explicação honesta, em vez de sumir com o indicador.
+  const idle = all.length === 0;
+  const top = idle ? null : all.reduce((m, l) => ((l.pct ?? -1) > (m.pct ?? -1) ? l : m), all[0]);
+  const u = Math.min(1, Math.max(0, top?.pct ?? 0) / 100);
+  const t = top ? tone(u, top.status) : "idle";
   const R = 6.5;
   const C = 2 * Math.PI * R;
-  const summary =
-    all.map((l) => `${l.name}: ${l.pct == null ? "sem calibração" : `${l.pct}%`}`).join(" · ") +
-    " · clique para detalhes";
+  const summary = idle
+    ? "Limites de uso: a CLI ainda não informou nenhuma janela · clique para detalhes"
+    : all.map((l) => `${l.name}: ${l.pct == null ? "sem calibração" : `${l.pct}%`}`).join(" · ") +
+      " · clique para detalhes";
 
   return (
     <span className="ur">
@@ -260,6 +262,12 @@ export function UsageRing() {
       </button>
       <Popover anchor={btn} open={open} onClose={() => setOpen(false)} ariaLabel="Seus limites de uso" width={360} className="ur-pop">
         <div className="ur-head">Seus limites de uso</div>
+        {idle && (
+          <p className="ur-note">
+            A CLI ainda não informou nenhuma janela de uso. O anel aparece preenchido assim que o Claude ou o
+            OpenCode reportar uma cota; enquanto isso, não há percentual para mostrar.
+          </p>
+        )}
         {all.map((row) => {
           const shown = row.pct;
           const lt = tone((shown ?? 0) / 100, row.status);
@@ -283,10 +291,12 @@ export function UsageRing() {
             </div>
           );
         })}
-        <p className="ur-note">
-          As linhas da CLI vêm do próprio provedor. As janelas de 5 horas vêm do plugin `usage-window` do OpenCode;
-          o percentual é uma estimativa local, não a cota oficial do provider.
-        </p>
+        {!idle && (
+          <p className="ur-note">
+            As linhas da CLI vêm do próprio provedor. As janelas de 5 horas vêm do plugin `usage-window` do
+            OpenCode; o percentual é uma estimativa local, não a cota oficial do provider.
+          </p>
+        )}
       </Popover>
     </span>
   );

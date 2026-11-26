@@ -32,7 +32,9 @@
   background: var(--bg-selected); color: var(--text-strong);
 }
 .chat-user-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.chat-msg-atts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+/* align-items: flex-start: sem isso os chips de arquivo esticam na altura da
+   miniatura da imagem ao lado e viram pílulas vazias do tamanho do print. */
+.chat-msg-atts { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; margin-bottom: 4px; }
 .chat-msg.agent { padding: 2px 0; }
 .chat-line { font-size: 12px; color: var(--text-dim); }
 .chat-line.ok { color: var(--ok); }
@@ -137,10 +139,12 @@ button.chat-sub:hover { background: var(--bg-hover); }
 }
 .chat-zoom img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .chat-att-chip {
-  display: inline-block; padding: 1px 7px; border-radius: var(--radius-pill); font-size: 12px;
-  background: var(--bg-control); border: 1px solid var(--border-control);
+  display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0;
+  padding: 2px 8px; border-radius: var(--radius-pill); font-size: 12px;
+  background: var(--bg-control); border: 1px solid var(--border-control); color: var(--text-2);
 }
-.chat-atts { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-att-chip .chat-att-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.chat-atts { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; }
 .chat-att {
   display: flex; align-items: center; gap: 6px; max-width: 250px; padding: 3px;
   background: var(--bg-raised); border: 1px solid var(--border-control); border-radius: var(--radius);
@@ -214,7 +218,7 @@ button.chat-sub:hover { background: var(--bg-hover); }
 .chat-input {
   display: block; flex: 1; min-width: 0; box-sizing: border-box; resize: none;
   min-height: 24px; max-height: 200px; padding: 0; align-self: center;
-  border: 0; outline: 0; background: transparent; line-height: 1.45; font-size: 13px; color: var(--text);
+  border: 0; outline: 0; background: transparent; line-height: 24px; font-size: 13px; color: var(--text);
 }
 .chat-input:focus-visible { outline: none; }
 .chat-actions { display: flex; align-items: center; gap: 4px; flex: none; }
@@ -331,6 +335,7 @@ button.chat-pill:hover:not(:disabled), .chat-pill-select:hover { background: var
 .ur-btn { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--radius); background: none; cursor: pointer; --ur: var(--accent); }
 .ur-btn.warn { --ur: var(--warn); }
 .ur-btn.err { --ur: var(--err); }
+.ur-btn.idle { --ur: var(--border-strong); }
 .ur-btn:hover { background: var(--bg-hover); }
 .ur-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 0; }
 .ur-track { fill: none; stroke: var(--border); stroke-width: 2.5; }

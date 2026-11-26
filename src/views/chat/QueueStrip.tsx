@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Icon } from "@/shell/icons";
 import type { QueueItem } from "./store";
 
 export interface QueueStripProps {
@@ -44,10 +45,10 @@ export function QueueStrip({ items, paused, busy = false, expanded, onExpandedCh
             <span key={q.id} className="chat-queue-item" title={q.text}>
               <span className="chat-queue-text">{q.text || `${q.attachments.length} anexo(s)`}</span>
               <button type="button" title="Editar" aria-label="Editar mensagem da fila" onClick={() => onEdit(q)}>
-                ✎
+                <Icon name="pencil" size={13} />
               </button>
               <button type="button" title="Tirar da fila" aria-label="Tirar da fila" onClick={() => onRemove(q)}>
-                ✕
+                <Icon name="close" size={13} />
               </button>
             </span>
           ))}

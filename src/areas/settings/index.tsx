@@ -291,8 +291,8 @@ function ContextPage() {
 }
 
 const POLISH_OPTIONS: { value: PolishMode; label: string; hint: string }[] = [
-  { value: "off", label: "Desligado", hint: "O botão ✨ e o Ctrl+I somem da caixa." },
-  { value: "button", label: "Só no botão ✨ (ou Ctrl+I)", hint: "Padrão: você decide quando vale a reescrita." },
+  { value: "off", label: "Desligado", hint: "O botão de melhorar pedido e o Ctrl+I somem da caixa." },
+  { value: "button", label: "Só no botão de melhorar pedido (ou Ctrl+I)", hint: "Padrão: você decide quando vale a reescrita." },
   {
     value: "auto",
     label: "Em todo envio",

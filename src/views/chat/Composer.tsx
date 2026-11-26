@@ -110,8 +110,10 @@ export interface ComposerProps {
   disabled?: boolean;
   placeholder?: string;
   autoFocus?: boolean;
-  /** Controles da sub-barra abaixo da pílula (modelo, modo e uso), alinhados à direita. */
+  /** Controles da sub-barra abaixo da pílula (modelo e modo), alinhados à direita. */
   toolbar?: ReactNode;
+  /** Indicador de uso: fica dentro da caixa, para não ser cortado pela barra de pílulas. */
+  usage?: ReactNode;
   /** Linha "trabalhando…", logo acima da pílula, vindas do transcript. */
   working?: ReactNode;
   /** Pedidos já enviados nesta conversa (o mais novo por último): seta para cima na caixa vazia os recupera. */
@@ -147,7 +149,7 @@ const MAX_HEIGHT = 200;
  * grande) e fila de mensagens enquanto o agente trabalha.
  */
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
-  { taskId, draftId, onSend, busy = false, workdir, provider, onStop, onCommand, disabled = false, placeholder, autoFocus, toolbar, working, recall },
+  { taskId, draftId, onSend, busy = false, workdir, provider, onStop, onCommand, disabled = false, placeholder, autoFocus, toolbar, usage, working, recall },
   ref,
 ) {
   const key = chatKey(taskId, draftId);
@@ -441,7 +443,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       if (!args) {
         setNotice({
           tone: "info",
-          text: "Escreva /melhorar <pedido> — ou escreva o pedido na caixa e use o ✨ (Ctrl+I).",
+          text: "Escreva /melhorar <pedido> — ou escreva o pedido na caixa e use o botão de melhorar pedido (Ctrl+I).",
         });
         return;
       }
@@ -678,7 +680,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             </button>
           )}
           <button type="button" title="Fechar" aria-label="Fechar aviso" onClick={() => setNotice(null)}>
-            ✕
+            <Icon name="close" size={13} />
           </button>
         </div>
       )}
@@ -787,21 +789,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   <Icon name="slash" size={15} />
                   <span className="sel-opt-label">Usar prompt ou skill (/)</span>
                 </button>
-                {mode !== "off" && (
-                  <button
-                    type="button"
-                    className={`sel-opt pop-opt${polishing ? " is-busy" : ""}`}
-                    disabled={disabled || polishing || !text.trim()}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      closePlus(true);
-                      void polish();
-                    }}
-                  >
-                    <Icon name={polishing ? "spinner" : "sparkles"} size={15} />
-                    <span className="sel-opt-label">{polishing ? "Melhorando o pedido…" : "Melhorar pedido (Ctrl+I)"}</span>
-                  </button>
-                )}
                 <button
                   type="button"
                   className="sel-opt pop-opt"
@@ -847,6 +834,24 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             onBlur={() => window.setTimeout(closeSuggest, 150)}
           />
           <div className="chat-actions">
+            {usage}
+            {mode !== "off" && (
+              <button
+                type="button"
+                className={`chat-ibtn${polishing ? " is-busy" : ""}`}
+                title={
+                  polishing
+                    ? "Melhorando o pedido…"
+                    : "Melhorar pedido (Ctrl+I): reescreve o rascunho aqui na caixa, sem enviar"
+                }
+                aria-label="Melhorar pedido"
+                disabled={disabled || polishing || !text.trim()}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => void polish()}
+              >
+                <Icon name={polishing ? "spinner" : "sparkles"} size={15} />
+              </button>
+            )}
             {!busy && (
               <span className="chat-mic" role="img" aria-label="Voz ainda não disponível" title="Voz ainda não disponível">
                 <MicIcon />

@@ -7,6 +7,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { api, samePath, type AgentEvent, type DetectedCommand, type Path } from "@/api";
+import { Icon } from "@/shell/icons";
 import { commandsOf, serverOf, startCommand, useRuns } from "@/views/builds/runs";
 
 /** Comandos de shell do último pedido (depois do último `User`). */
@@ -97,7 +98,7 @@ export function ServerStoppedNotice({ events, project, busy }: { events: AgentEv
         Iniciar pelo Argus
       </button>
       <button type="button" title="Fechar" aria-label="Fechar aviso" onClick={() => setDismissed(events.length)}>
-        ✕
+        <Icon name="close" size={13} />
       </button>
     </div>
   );

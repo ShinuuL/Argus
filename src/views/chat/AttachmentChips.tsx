@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Icon } from "@/shell/icons";
 import { kindLabel, sizeText, type ChatAttachment } from "./attachments";
 import { Lightbox } from "./Lightbox";
 
@@ -9,7 +10,7 @@ export interface AttachmentChipsProps {
   onRestoreText?: (att: ChatAttachment) => void;
 }
 
-/** Chips dos anexos acima da caixa: miniatura ou tipo, nome, tamanho e ✕. */
+/** Chips dos anexos acima da caixa: miniatura ou tipo, nome, tamanho e botão de remover. */
 export function AttachmentChips({ attachments, onRemove, onRestoreText }: AttachmentChipsProps) {
   const [zoom, setZoom] = useState<ChatAttachment | null>(null);
   if (!attachments.length) return null;
@@ -34,11 +35,11 @@ export function AttachmentChips({ attachments, onRemove, onRestoreText }: Attach
           </span>
           {a.pasted && onRestoreText && (
             <button type="button" className="chat-att-btn" title="Colar como texto na mensagem" onClick={() => onRestoreText(a)}>
-              ↩
+              <Icon name="undo" size={13} />
             </button>
           )}
           <button type="button" className="chat-att-btn" title="Tirar o anexo" aria-label={`Tirar ${a.name}`} onClick={() => onRemove(a)}>
-            ✕
+            <Icon name="close" size={13} />
           </button>
         </div>
       ))}

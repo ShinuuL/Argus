@@ -944,7 +944,6 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
         access={task?.access ?? accessChoice}
         onAccess={closed ? undefined : (a) => void changeAccess(a)}
       />
-      <UsageRing />
     </>
   );
 
@@ -1086,7 +1085,10 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                   <div className="ses-sub-block">
                     <div className="ses-sub-label">
                       Resultado devolvido{" "}
-                      <span className={current.ok === false ? "err" : "ok"}>{current.ok === false ? "✗ erro" : "✓"}</span>
+                      <span className={current.ok === false ? "err" : "ok"}>
+                        <Icon name={current.ok === false ? "close" : "check"} size={12} />
+                        {current.ok === false ? "erro" : null}
+                      </span>
                     </div>
                     <div className="ses-sub-box">{current.result || "(sem texto)"}</div>
                   </div>
@@ -1108,7 +1110,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                 <div className="chat-notice" role="status">
                   <pre>{notice}</pre>
                   <button type="button" title="Fechar" aria-label="Fechar aviso" onClick={() => setNotice(null)}>
-                    ✕
+                    <Icon name="close" size={13} />
                   </button>
                 </div>
               )}
@@ -1116,7 +1118,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                 <div className="chat-notice err" role="alert">
                   <pre>{error ?? loadError}</pre>
                   <button type="button" title="Fechar" aria-label="Fechar aviso" onClick={() => setError(null)}>
-                    ✕
+                    <Icon name="close" size={13} />
                   </button>
                 </div>
               )}
@@ -1131,7 +1133,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                     Executar de verdade
                   </button>
                   <button type="button" title="Fechar" aria-label="Fechar aviso" onClick={() => setDismissedAt(entries.length)}>
-                    ✕
+                    <Icon name="close" size={13} />
                   </button>
                 </div>
               )}
@@ -1202,6 +1204,7 @@ export default function ChatTab({ tabId, taskId, project: tabProject, active }: 
                 onStop={taskId != null && !cancelling ? cancel : undefined}
                 onCommand={onCommand}
                 toolbar={pills}
+                usage={<UsageRing />}
                 working={working}
                 recall={recall}
                 autoFocus={active}

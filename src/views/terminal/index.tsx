@@ -104,7 +104,7 @@ export default function TerminalView() {
     <>
       <div className="tabs" role="tablist" aria-label="Terminais">
         <button className="tab" title="Mostrar/ocultar terminais" aria-expanded={open} onClick={toggleBottom}>
-          {open ? "▾ Terminal" : "▸ Terminal"}
+          <Icon name={open ? "chevronDown" : "chevronRight"} size={12} /> Terminal
         </button>
         {tabs.map((t) => (
           <div

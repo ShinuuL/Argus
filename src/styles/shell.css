@@ -21,7 +21,14 @@ input::placeholder, textarea::placeholder { color: var(--text-2); opacity: 0.8; 
 .muted { opacity: 1; color: var(--text-2); }
 
 /* Erro nunca depende só da cor (no tema Brasa o destaque também é vermelho): ícone e rótulo. */
-.err[role="alert"]::before { content: "⚠ "; }
+.err[role="alert"]::before {
+  content: "";
+  --argus-aviso: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z'/%3E%3Cpath d='M12 9v4'/%3E%3Cpath d='M12 17h.01'/%3E%3C/svg%3E");
+  display: inline-block; width: 1em; height: 1em; margin-right: 4px; vertical-align: -0.12em;
+  background: currentColor;
+  -webkit-mask: var(--argus-aviso) center / contain no-repeat;
+  mask: var(--argus-aviso) center / contain no-repeat;
+}
 .danger-btn, .srv-danger, .wb-menu button.danger { color: var(--err); }
 .danger-btn, .srv-danger { background: transparent; border-color: var(--err); }
 .danger-btn:hover:not(:disabled), .srv-danger:hover:not(:disabled) { background: var(--err-bg); }

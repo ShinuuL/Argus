@@ -44,10 +44,10 @@ const FILE_ICONS: Record<string, string> = {
   javascript: "JS",
   typescript: "TS",
   json: "{}",
-  ini: "⚙",
+  ini: "INI",
   python: "PY",
   go: "GO",
-  markdown: "M↓",
+  markdown: "MD",
   html: "<>",
   css: "#",
   scss: "#",
@@ -76,7 +76,7 @@ function TabIcon({ kind, task }: { kind: TabKind; task: Task | undefined }) {
     case "file":
       return (
         <span className="wb-ic" aria-hidden="true">
-          {FILE_ICONS[languageFor(kind.path)] ?? "□"}
+          {FILE_ICONS[languageFor(kind.path)] ?? "?"}
         </span>
       );
     case "chat":
@@ -474,8 +474,8 @@ function EditorGroup({
                 }}
                 onDoubleClick={(e) => e.stopPropagation()}
               >
-                <span className="wb-dot">●</span>
-                <span className="wb-cross">×</span>
+                <span className="wb-dot"><Icon name="circleDot" size={8} filled /></span>
+                <span className="wb-cross"><Icon name="close" size={10} /></span>
               </span>
             </div>
           );

@@ -249,7 +249,7 @@ export default function ServersArea() {
           <span className="ui-sp" />
           {filter && (
             <Chip tone="info" onClick={() => openPanel(null)} title="Mostrar os servidores de todas as sessões">
-              {ownerLabel(filter)} ✕
+              {ownerLabel(filter)} <Icon name="close" size={12} />
             </Chip>
           )}
           <input

@@ -58,7 +58,7 @@ function fileIcon(name: string): { cls: string; glyph: string } {
       return { cls: "rs", glyph: "RS" };
     case "md":
     case "mdx":
-      return { cls: "md", glyph: "M↓" };
+      return { cls: "md", glyph: "MD" };
     case "json":
     case "jsonc":
     case "toml":
@@ -80,9 +80,9 @@ function fileIcon(name: string): { cls: string; glyph: string } {
     case "gif":
     case "webp":
     case "ico":
-      return { cls: "img", glyph: "▣" };
+      return { cls: "img", glyph: "IMG" };
     default:
-      return { cls: "gen", glyph: name.slice(0, 1).toUpperCase() || "•" };
+      return { cls: "gen", glyph: name.slice(0, 1).toUpperCase() || "?" };
   }
 }
 
@@ -208,7 +208,7 @@ function DirNode({ entry, depth }: { entry: DirEntry; depth: number }) {
         onClick={toggle}
         onKeyDown={(e) => onActivateKey(e, toggle)}
       >
-        <span className="vsc-tw">{open ? "▾" : "▸"}</span>
+        <span className="vsc-tw"><Icon name={open ? "chevronDown" : "chevronRight"} size={11} /></span>
         <Guides depth={depth} />
         <span className="vsc-ico">
           <Icon name={open ? "folderOpen" : "folder"} filled size={15} className="vsc-folder" />
@@ -216,7 +216,7 @@ function DirNode({ entry, depth }: { entry: DirEntry; depth: number }) {
         <span className="vsc-name">{entry.name}</span>
         {touched && (
           <span className="vsc-mod" title="contém alterações">
-            ●
+            <Icon name="circleDot" size={8} filled />
           </span>
         )}
       </div>
@@ -268,7 +268,7 @@ function SectionHead({ label, open, onClick }: { label: string; open: boolean; o
   return (
     <div className="vsc-sec-h">
       <button type="button" className="vsc-sec-btn" aria-expanded={open} onClick={onClick}>
-        <span className="vsc-tw">{open ? "▾" : "▸"}</span>
+        <span className="vsc-tw"><Icon name={open ? "chevronDown" : "chevronRight"} size={11} /></span>
         {label}
       </button>
     </div>
@@ -419,7 +419,7 @@ export default function ExplorerView() {
             }}
           />
           <button type="button" title="Criar arquivo" onClick={() => void createFile()}>
-            ✓
+            <Icon name="check" size={14} />
           </button>
         </div>
       )}
@@ -449,7 +449,7 @@ export default function ExplorerView() {
               <span className="vsc-name">{baseName(path)}</span>
               {dirtySet.has(id) && (
                 <span className="vsc-mod" title="alterado">
-                  ●
+                  <Icon name="circleDot" size={8} filled />
                 </span>
               )}
               {mark && (

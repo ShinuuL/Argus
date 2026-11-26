@@ -45,7 +45,12 @@ function FocusInfo() {
   const changed = status?.changed_files.length ?? 0;
   return (
     <>
-      {task && <span className="sb-item">● {task.provider}</span>}
+      {task && (
+        <span className="sb-item">
+          <Icon name="circleDot" size={9} filled />
+          {task.provider}
+        </span>
+      )}
       {task?.access === "bypass" && (
         <span className="sb-item">
           <BypassBadge compact />

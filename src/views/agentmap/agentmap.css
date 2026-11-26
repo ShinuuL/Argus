@@ -124,13 +124,23 @@
 /* Mural de arquivos: quem está mexendo em quê (crates/core/src/mural.rs). */
 .ap-mural { border-top: 1px solid var(--border); }
 .ap-sub.alerta { color: var(--warn); }
+/* Uma sessão por grupo: o "#36" aparece uma vez, não em todas as linhas. */
+.ap-mural-grupos { display: flex; flex-direction: column; gap: 6px; }
+.ap-mural-grupo { min-width: 0; }
+.ap-mural-gh { display: flex; align-items: center; gap: 5px; padding: 2px 6px; color: var(--text-2); font-size: 11px; font-weight: 600; }
+.ap-mural-gn { color: var(--text-dim); font-weight: 500; font-variant-numeric: tabular-nums; }
+.ap-mural-gq { margin-left: auto; font-weight: 400; font-variant-numeric: tabular-nums; }
 .ap-mural-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .ap-mural-item { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: var(--radius); font-size: 12.5px; color: var(--text-2); }
 .ap-mural-item svg { flex: none; }
+/* Escrita e leitura não dependem só do formato do ícone. */
+.ap-mural-item.write > svg { color: var(--accent-text); }
 /* O nome do arquivo é o que se procura na lista: só ele tem a cor cheia. */
 .ap-mural-nome { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
-.ap-mural-quem { font-variant-numeric: tabular-nums; }
-.ap-mural-quando { flex: none; font-size: 11px; }
+.ap-mural-agente { flex: none; max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: var(--text-dim); }
+.ap-mural-quando { flex: none; font-size: 11px; font-variant-numeric: tabular-nums; }
+.ap-mural-alerta { flex: none; display: inline-flex; align-items: center; gap: 3px; color: var(--warn); font-size: 10.5px; font-weight: 600; }
+.ap-mural-mais { padding: 2px 6px; font-size: 11px; color: var(--text-2); }
 /* Duas sessões no mesmo arquivo: é o caso que o painel existe para mostrar. */
 .ap-mural-item.conflito { background: var(--warn-bg); color: var(--warn); }
 .ap-mural-item.conflito .ap-mural-nome { color: var(--warn); }

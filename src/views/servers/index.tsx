@@ -43,7 +43,8 @@ export function SessionServersBadge({ taskId }: SessionServersBadgeProps) {
   };
   return (
     <button className="srv-badge" title="Ver servidores desta sessão" onClick={open}>
-      ● {countLabel(count)}
+      <Icon name="circleDot" size={9} filled />
+      {countLabel(count)}
     </button>
   );
 }
@@ -263,7 +264,7 @@ export default function ServersView() {
       {filter && (
         <div className="srv-head">
           <button className="srv-chip" title="Mostrar os servidores de todas as sessões" onClick={() => openPanel(null)}>
-            {ownerLabel(filter)} ✕
+            {ownerLabel(filter)} <Icon name="close" size={12} />
           </button>
         </div>
       )}

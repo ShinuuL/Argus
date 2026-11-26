@@ -25,20 +25,22 @@ pub struct AppInfo {
 }
 
 /// CPU e memória do sistema. A CPU é a média desde a chamada anterior:
-/// chame a cada ~2 s (a primeira leitura vem 0).
+/// chame a cada ~2 s. A primeira leitura só abre os contadores e devolve 0,
+/// para não deixar o pet preso num falso 100%.
 #[tauri::command]
 pub async fn system_usage(ctx: State<'_, AppCtx>) -> Result<SystemUsage, String> {
     let sys = ctx.sys.clone();
     blocking(move || {
         let mut guard = sys.lock().map_err(err)?;
-        if guard.is_none() {
+        let first = guard.is_none();
+        if first {
             *guard = Some(sysinfo::System::new().map_err(err)?);
         }
         let Some(sys) = guard.as_mut() else { return Ok(SystemUsage::default()) };
         sys.refresh_cpu_usage();
         sys.refresh_memory();
         Ok(SystemUsage {
-            cpu: sys.global_cpu_usage(),
+            cpu: if first { 0.0 } else { sys.global_cpu_usage().clamp(0.0, 100.0) },
             mem_used_mb: sys.used_memory() / 1_048_576,
             mem_total_mb: sys.total_memory() / 1_048_576,
         })

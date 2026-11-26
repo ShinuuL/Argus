@@ -11,7 +11,7 @@ export type { PolishMode };
 
 export const POLISH_LABELS: Record<PolishMode, string> = {
   off: "Desligado",
-  button: "No botão (✨ ou Ctrl+I)",
+  button: "No botão de melhorar pedido (Ctrl+I)",
   auto: "Em todo envio (com conferência)",
 };
 

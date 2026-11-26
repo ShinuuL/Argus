@@ -192,7 +192,8 @@ export const MessageView = memo(function MessageView({
                   <Thumb key={a.path} path={a.path} name={a.name} />
                 ) : (
                   <span key={a.path} className="chat-att-chip" title={a.path}>
-                    {a.name}
+                    <Icon name={a.kind === "pdf" || a.kind === "text" ? "fileText" : "file"} size={13} />
+                    <span className="chat-att-name">{a.name}</span>
                   </span>
                 ),
               )}
@@ -383,7 +384,7 @@ export function MessageList({
             Executar de verdade
           </button>
           <button type="button" title="Fechar" aria-label="Fechar aviso" onClick={() => setDismissedAt(events.length)}>
-            ✕
+            <Icon name="close" size={13} />
           </button>
         </div>
       )}
