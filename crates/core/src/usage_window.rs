@@ -193,6 +193,111 @@ pub fn list_from_state(state: &Value, now: u64, window: u64) -> Vec<UsageWindowI
     out
 }
 
+/// Limite manual de uma janela que o Argus calcula sozinho.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ManualLimit {
+    pub tokens: Option<u64>,
+    pub requests: Option<u64>,
+}
+
+/// Chave de uma linha de uso no formato do plugin (`provedor/modelo`).
+/// Linha sem modelo não vira janela: sem saber o modelo, somar o consumo de
+/// dois modelos diferentes na mesma barra seria pior que não mostrar nada.
+pub fn row_key(provider: &str, model: Option<&str>) -> Option<String> {
+    let m = model.map(str::trim).filter(|m| !m.is_empty())?;
+    Some(format!("{provider}/{m}"))
+}
+
+/// Janelas de 5 horas calculadas do histórico do próprio Argus.
+///
+/// O plugin `usage-window` só acompanha o que passa pelo OpenCode, então a
+/// janela do claude nunca aparecia. Aqui a conta sai das linhas de uso que o
+/// Argus já grava, pela mesma regra do plugin: a janela abre na primeira
+/// requisição depois que a anterior vence, `tokens = entrada + saída` (o cache
+/// lido fica de fora) e uma requisição é um turno, não uma linha — um turno de
+/// vários passos grava várias linhas.
+///
+/// `rows` precisa vir em ordem de tempo e cobrir mais que uma janela: é o
+/// encadeamento desde a primeira requisição que diz onde a janela atual
+/// começou. Só a janela viva de cada chave é devolvida.
+///
+/// Sem amostra de rate limit — o Argus não tem de onde tirar isso para o claude
+/// — a calibração é só o limite manual, e sem ele o percentual fica em branco.
+pub fn list_from_rows(
+    rows: &[crate::db::UsageRow],
+    manual: &std::collections::BTreeMap<String, ManualLimit>,
+    now: u64,
+    window: u64,
+) -> Vec<UsageWindowInfo> {
+    use std::collections::BTreeMap;
+
+    #[derive(Default)]
+    struct Acc {
+        start: u64,
+        input: u64,
+        output: u64,
+        cache_read: u64,
+        turnos: std::collections::BTreeSet<(i64, bool, i64)>,
+    }
+
+    let mut por_chave: BTreeMap<String, Acc> = BTreeMap::new();
+    for r in rows {
+        let Some(key) = row_key(&r.provider, r.usage.model.as_deref()) else { continue };
+        // `created_at` é gravado em segundos; a janela trabalha em ms.
+        let at = (r.created_at.max(0) as u64).saturating_mul(1000);
+        let acc = por_chave.entry(key).or_default();
+        if acc.start == 0 || at >= acc.start.saturating_add(window) {
+            *acc = Acc { start: at, ..Default::default() };
+        }
+        acc.input += r.usage.input_tokens;
+        acc.output += r.usage.output_tokens;
+        acc.cache_read += r.usage.cache_read;
+        acc.turnos.insert(r.turn_key());
+    }
+
+    let mut out: Vec<UsageWindowInfo> = por_chave
+        .into_iter()
+        .filter(|(_, a)| a.start > 0 && now < a.start.saturating_add(window))
+        .map(|(key, a)| {
+            let lim = manual.get(&key).copied().unwrap_or_default();
+            let tokens = a.input + a.output;
+            let requests = a.turnos.len() as u64;
+            let percent = (lim.tokens.is_some() || lim.requests.is_some()).then(|| {
+                let by_tokens = lim.tokens.map(|l| tokens as f64 / l as f64).unwrap_or(0.0);
+                let by_requests = lim.requests.map(|l| requests as f64 / l as f64).unwrap_or(0.0);
+                ((by_tokens.max(by_requests) * 100.0).round() as u64).min(100_000)
+            });
+            let (provider, model) = key
+                .split_once('/')
+                .map_or((String::new(), key.clone()), |(p, m)| (p.to_string(), m.to_string()));
+            UsageWindowInfo {
+                is_free: crate::metrics::is_free_model(&model.to_lowercase()),
+                key,
+                provider,
+                model,
+                started_at_ms: a.start,
+                resets_at_ms: a.start.saturating_add(window),
+                tokens,
+                input: a.input,
+                output: a.output,
+                // O Argus não separa raciocínio da saída: ele já entra em `output`.
+                reasoning: 0,
+                cache_read: a.cache_read,
+                requests,
+                limit_tokens: lim.tokens,
+                limit_requests: lim.requests,
+                percent,
+                calibration: if percent.is_some() { "manual".into() } else { "none".into() },
+                // Amostra de rate limit é coisa do plugin; aqui nunca existe.
+                samples: 0,
+                limit_hit_at_ms: None,
+            }
+        })
+        .collect();
+    out.sort_by(|a, b| b.percent.unwrap_or(0).cmp(&a.percent.unwrap_or(0)).then_with(|| b.tokens.cmp(&a.tokens)));
+    out
+}
+
 /// Lê o estado do plugin. Arquivo ausente significa "sem janelas", não erro:
 /// o plugin pode ainda não ter registrado nenhuma requisição.
 pub fn read_state() -> Result<Value, String> {
@@ -305,6 +410,100 @@ pub fn list_windows() -> Result<Vec<UsageWindowInfo>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Linha de uso do histórico do Argus (`created_at` em segundos).
+    fn linha(provider: &str, model: Option<&str>, at_ms: u64, turno: i64, inp: u64, out: u64) -> crate::db::UsageRow {
+        crate::db::UsageRow {
+            task_id: 1,
+            project: "p".into(),
+            provider: provider.into(),
+            usage: crate::agents::provider::TokenUsage {
+                model: model.map(str::to_string),
+                input_tokens: inp,
+                output_tokens: out,
+                cache_read: 9_000,
+                cache_write: 0,
+                cost_usd: None,
+            },
+            created_at: (at_ms / 1000) as i64,
+            turn: Some(turno),
+        }
+    }
+
+    const JANELA: u64 = 5 * 3_600_000;
+
+    #[test]
+    fn claude_ganha_janela_do_historico_do_argus() {
+        let agora = 100 * JANELA;
+        let rows = vec![
+            linha("claude", Some("claude-opus-5"), agora - 3_600_000, 1, 10, 20),
+            linha("claude", Some("claude-opus-5"), agora - 3_600_000, 1, 5, 5),
+            linha("claude", Some("claude-opus-5"), agora - 600_000, 2, 1, 4),
+        ];
+        let w = list_from_rows(&rows, &Default::default(), agora, JANELA);
+        assert_eq!(w.len(), 1);
+        assert_eq!(w[0].key, "claude/claude-opus-5");
+        assert_eq!(w[0].provider, "claude");
+        // entrada + saída; o cache lido fica de fora, como no plugin.
+        assert_eq!(w[0].tokens, 45);
+        assert_eq!(w[0].cache_read, 27_000);
+        // Três linhas, dois turnos: requisição é turno, não linha.
+        assert_eq!(w[0].requests, 2);
+        assert_eq!(w[0].started_at_ms, agora - 3_600_000);
+        assert_eq!(w[0].resets_at_ms, agora - 3_600_000 + JANELA);
+        // Sem limite não há como estimar percentual, e nada é chutado.
+        assert_eq!(w[0].percent, None);
+        assert_eq!(w[0].calibration, "none");
+    }
+
+    #[test]
+    fn janela_vencida_nao_aparece_e_a_nova_zera() {
+        let agora = 100 * JANELA;
+        let rows = vec![
+            // Janela anterior, já vencida.
+            linha("claude", Some("m"), agora - 2 * JANELA, 1, 1_000, 1_000),
+            // Primeira requisição depois do vencimento: abre outra.
+            linha("claude", Some("m"), agora - 60_000, 2, 7, 3),
+        ];
+        let w = list_from_rows(&rows, &Default::default(), agora, JANELA);
+        assert_eq!(w.len(), 1);
+        assert_eq!(w[0].tokens, 10, "o consumo da janela vencida nao pode vazar");
+        assert_eq!(w[0].started_at_ms, agora - 60_000);
+
+        // Só o que venceu: nenhuma janela viva.
+        let so_velha = vec![linha("claude", Some("m"), agora - 2 * JANELA, 1, 1, 1)];
+        assert!(list_from_rows(&so_velha, &Default::default(), agora, JANELA).is_empty());
+    }
+
+    #[test]
+    fn limite_manual_da_o_percentual() {
+        let agora = 100 * JANELA;
+        let rows = vec![linha("claude", Some("m"), agora - 1000, 1, 100, 150)];
+        let mut manual = std::collections::BTreeMap::new();
+        manual.insert("claude/m".to_string(), ManualLimit { tokens: Some(1_000), requests: None });
+        let w = list_from_rows(&rows, &manual, agora, JANELA);
+        assert_eq!(w[0].percent, Some(25));
+        assert_eq!(w[0].calibration, "manual");
+
+        // O maior entre tokens e requisições manda, igual ao plugin.
+        manual.insert("claude/m".to_string(), ManualLimit { tokens: Some(1_000), requests: Some(2) });
+        let w = list_from_rows(&rows, &manual, agora, JANELA);
+        assert_eq!(w[0].percent, Some(50));
+    }
+
+    #[test]
+    fn modelos_diferentes_sao_janelas_diferentes() {
+        let agora = 100 * JANELA;
+        let rows = vec![
+            linha("claude", Some("opus"), agora - 1000, 1, 10, 0),
+            linha("claude", Some("haiku"), agora - 1000, 2, 20, 0),
+            // Linha sem modelo não vira janela: somar modelos distintos seria pior.
+            linha("claude", None, agora - 1000, 3, 999, 0),
+        ];
+        let w = list_from_rows(&rows, &Default::default(), agora, JANELA);
+        let chaves: Vec<&str> = w.iter().map(|x| x.key.as_str()).collect();
+        assert_eq!(chaves, vec!["claude/haiku", "claude/opus"], "ordenadas pelo consumo");
+    }
 
     fn state(now: u64, window: u64) -> Value {
         json!({

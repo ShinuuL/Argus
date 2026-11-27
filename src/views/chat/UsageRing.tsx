@@ -3,12 +3,13 @@
  * usada. Mostra dois tipos de janela:
  *
  * - as informadas pela CLI (`rate_limit_event`), a cada turno;
- * - as de 5 horas calculadas pelo plugin `usage-window` do OpenCode, lidas do
- *   `state.json` dele. Nessas, o limite pode ser ajustado aqui (equivalente ao
- *   `set_limit` e ao `reset_samples` da ferramenta do plugin).
+ * - as de 5 horas, que vêm de duas fontes e chegam aqui na mesma lista: o
+ *   plugin `usage-window` do OpenCode, lido do `state.json` dele, e o próprio
+ *   histórico do Argus, que cobre o que o plugin não vê — o claude antes de
+ *   tudo. Em ambas o limite pode ser ajustado aqui.
  *
- * O estado do plugin muda a cada resposta da CLI, sem evento para o Argus.
- * Por isso a lista é relida ao abrir o popover e a cada 30 segundos.
+ * O consumo muda a cada resposta da CLI, sem evento para o Argus. Por isso a
+ * lista é relida ao abrir o popover e a cada 30 segundos.
  */
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, errorMessage, formatIntPt, onOrch, variantOf, type RateLimitInfo, type UsageWindowInfo } from "@/api";
@@ -293,8 +294,9 @@ export function UsageRing() {
         })}
         {!idle && (
           <p className="ur-note">
-            As linhas da CLI vêm do próprio provedor. As janelas de 5 horas vêm do plugin `usage-window` do
-            OpenCode; o percentual é uma estimativa local, não a cota oficial do provider.
+            As linhas da CLI vêm do próprio provedor. As janelas de 5 horas saem do plugin `usage-window` do
+            OpenCode ou, nos provedores que ele não acompanha, do histórico do próprio Argus; o percentual é
+            uma estimativa local, não a cota oficial do provider.
           </p>
         )}
       </Popover>
