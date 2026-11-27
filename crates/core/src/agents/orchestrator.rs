@@ -1459,13 +1459,13 @@ impl Orchestrator {
         use super::acp::{self, Wire};
         let id = task.id;
         let existing = self.inner.acp_hosts.lock().unwrap().get(&id).cloned();
-        let host = match existing {
-            Some(h) => h,
+        let (host, host_novo) = match existing {
+            Some(h) => (h, false),
             None => {
                 let t = std::time::Instant::now();
                 let h = self.spawn_acp_host(&spec, id, workdir, session, log).await?;
                 log.latency("host", t.elapsed().as_millis());
-                h
+                (h, true)
             }
         };
         let rx = {
@@ -1480,15 +1480,21 @@ impl Orchestrator {
         // Num host vivo a sessão já existe: mandar `session/load` de novo faria
         // o ACP repetir o histórico na transcrição. Só abrimos sessão na primeira
         // vez (ou ao retomar um host recém-criado de uma tarefa com sessionId).
-        let (open_id, had_session) = {
+        let dirs = crate::attachments::dirs_for(&crate::attachments::root(), id, &[&task.prompt, prompt]);
+        let (mut open_id, had_session) = {
             let mut h = host.lock().await;
             let sid = h.session.clone();
+            // Só o host reaproveitado já tem a sessão viva dentro do processo.
+            // Num host recém-aberto o `session_id` guardado é de um processo que
+            // já morreu — o `opencode acp` não compartilha sessão com o serviço —
+            // e mandar o prompt direto devolvia "session not found": a conversa
+            // ficava quebrada para sempre. Host novo sempre abre a sessão.
             match sid.as_deref() {
-                Some(_) => (None, true),
-                None => {
+                Some(_) if !host_novo => (None, true),
+                _ => {
                     let open_id = h.new_id();
-                    let dirs = crate::attachments::dirs_for(&crate::attachments::root(), id, &[&task.prompt, prompt]);
-                    let line = match session {
+                    let retomar = session.or(sid.as_deref());
+                    let line = match retomar {
                         Some(s) => acp::load_session_line(&open_id, s, workdir, &dirs),
                         None => acp::new_session_line(&open_id, workdir, &dirs),
                     };
@@ -1500,7 +1506,7 @@ impl Orchestrator {
                         self.discard_acp_host(id);
                         return Err(OrchestratorError::Io(e));
                     }
-                    (Some(open_id), session.is_some())
+                    (Some(open_id), retomar.is_some())
                 }
             }
         };
@@ -1541,6 +1547,8 @@ impl Orchestrator {
         // pode travar em `session/new` por um bug da CLI (issue #64686). Sem
         // isso o turno ficaria esperando para sempre, sem erro e sem log.
         let mut open_waiting = open_id.is_some();
+        // Uma tentativa só: se a sessão nova também falhar, o erro vale.
+        let mut tentou_sessao_nova = false;
         let open_deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
         let mut open_error: Option<String> = None;
         let mut last_usage = {
@@ -1640,7 +1648,29 @@ impl Orchestrator {
                         }
                     } else if open_id.as_deref() == Some(resp.as_str()) {
                         open_waiting = false;
-                        let Some(sid) = result.get("sessionId").and_then(serde_json::Value::as_str).map(str::to_string) else {
+                        let achou = result.get("sessionId").and_then(serde_json::Value::as_str).map(str::to_string);
+                        // A sessão gravada pode não existir mais no opencode (cada
+                        // `opencode acp` tem as suas, e o processo anterior morreu).
+                        // Abrir uma nova mantém a conversa utilizável: o que já foi
+                        // dito continua no banco do Argus, só o contexto da CLI
+                        // recomeça. Sem isso a conversa ficava inutilizável.
+                        if achou.is_none() && had_session && !tentou_sessao_nova {
+                            tentou_sessao_nova = true;
+                            log.line("meta", &format!(
+                                "sessão ACP não retomada ({}): abrindo uma nova",
+                                error.as_deref().unwrap_or("sem sessionId")
+                            ));
+                            let novo = { host.lock().await.new_id() };
+                            let line = acp::new_session_line(&novo, workdir, &dirs);
+                            if let Err(e) = host.lock().await.write_line(&line).await {
+                                this.discard_acp_host(id);
+                                return Err(OrchestratorError::Io(e));
+                            }
+                            open_id = Some(novo);
+                            open_waiting = true;
+                            continue;
+                        }
+                        let Some(sid) = achou else {
                             // Sem sessionId não há prompt para enviar: sair do loop
                             // evita esperar uma resposta que nunca vai chegar. O
                             // erro é gravado uma vez, no fim do turno.
@@ -3860,6 +3890,55 @@ mod tests {
             .filter(|e| matches!(e, AgentEvent::Result { ok: false, .. }))
             .count();
         assert_eq!(erros, 1, "o erro da abertura não pode virar dois resultados: {:?}", o.history(id));
+    }
+
+    /// Conversa ACP cujo processo morreu (app reiniciado, por exemplo). O turno
+    /// seguinte abre outro `opencode acp`, que não conhece a sessão gravada: o
+    /// `session/load` volta "session not found". Antes disso o prompt ia direto
+    /// para a sessão morta e a conversa ficava inutilizável para sempre.
+    #[tokio::test]
+    async fn acp_sessao_perdida_abre_outra_em_vez_de_travar() {
+        let dir = tempfile::tempdir().unwrap();
+        let marca = dir.path().join("rodou-uma-vez");
+        let init = r#"{"jsonrpc":"2.0","id":"argus-acp-1","result":{}}"#;
+        // Primeira execução: sessão nova e turno normal.
+        let s1 = r#"{"jsonrpc":"2.0","id":"argus-acp-2","result":{"sessionId":"ses_1"}}"#;
+        let p1 = r#"{"jsonrpc":"2.0","id":"argus-acp-3","result":{"stopReason":"end_turn"}}"#;
+        // Segunda: o load falha, a sessão nova vem no id seguinte.
+        let perdida = r#"{"jsonrpc":"2.0","id":"argus-acp-2","error":{"code":-32602,"message":"Invalid params: session not found: ses_1"}}"#;
+        let s2 = r#"{"jsonrpc":"2.0","id":"argus-acp-3","result":{"sessionId":"ses_2"}}"#;
+        let p2 = r#"{"jsonrpc":"2.0","id":"argus-acp-4","result":{"stopReason":"end_turn"}}"#;
+        let m = marca.to_string_lossy().into_owned();
+        let script = if cfg!(windows) {
+            format!(
+                // O `ping` no fim segura o processo vivo: saindo na hora, a
+                // escrita do prompt pelo Argus pegaria o pipe já fechado.
+                "@echo off\r\nif exist \"{m}\" goto dois\r\necho pronto> \"{m}\"\r\necho {init}\r\necho {s1}\r\necho {p1}\r\ngoto fim\r\n:dois\r\necho {init}\r\necho {perdida}\r\necho {s2}\r\necho {p2}\r\n:fim\r\nping -n 6 127.0.0.1 >NUL\r\n"
+            )
+        } else {
+            format!(
+                "#!/bin/sh\nif [ -f \"{m}\" ]; then\n echo '{init}'\n echo '{perdida}'\n echo '{s2}'\n echo '{p2}'\nelse\n touch \"{m}\"\n echo '{init}'\n echo '{s1}'\n echo '{p1}'\nfi\nsleep 5\n"
+            )
+        };
+        let path = dir.path().join(if cfg!(windows) { "acp.cmd" } else { "acp.sh" });
+        std::fs::write(&path, script).unwrap();
+        let o = Orchestrator::with_db(vec![Arc::new(FakeAcp(path))], 1, Some(Db::open(dir.path().join("f.db")).unwrap()));
+        let id = o.submit(dir.path(), "fake-acp", "um").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed);
+        assert_eq!(o.task(id).unwrap().session_id.as_deref(), Some("ses_1"));
+
+        // O processo morre, a sessão gravada continua: é o estado depois de
+        // fechar e reabrir o Argus.
+        o.discard_acp_host(id);
+        o.reply(id, "dois").unwrap();
+        assert_eq!(wait_final(&o, id).await, TaskState::Completed, "a sessão perdida nao pode derrubar o turno");
+        assert_eq!(o.task(id).unwrap().session_id.as_deref(), Some("ses_2"), "a conversa segue na sessão nova");
+        let h = o.history(id);
+        assert!(
+            !h.iter().any(|e| matches!(e, AgentEvent::Result { ok: false, .. })),
+            "retomar numa sessão nova não é falha: {h:?}"
+        );
+        o.discard_acp_host(id);
     }
 
     #[tokio::test]
