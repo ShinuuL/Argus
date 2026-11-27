@@ -1460,9 +1460,14 @@ impl Orchestrator {
         let id = task.id;
         let existing = self.inner.acp_hosts.lock().unwrap().get(&id).cloned();
         let (host, host_novo) = match existing {
-            Some(h) => (h, false),
+            Some(h) => {
+                let pid = self.inner.acp_pids.lock().unwrap().get(&id).copied();
+                log.line("meta", &format!("host ACP reaproveitado do turno anterior (pid {pid:?})"));
+                (h, false)
+            }
             None => {
                 let t = std::time::Instant::now();
+                log.line("cmd", &format!("{} {}", spec.program, spec.args.join(" ")));
                 let h = self.spawn_acp_host(&spec, id, workdir, session, log).await?;
                 log.latency("host", t.elapsed().as_millis());
                 (h, true)
@@ -2233,7 +2238,9 @@ impl Orchestrator {
             );
             log.latency("prepare", timer.elapsed_ms());
             log.line("meta", &format!("provider={} task={} turn={} cwd={}", task.provider, id, turn, workdir.display()));
-            log.line("cmd", &format!("{} {}", spec.program, spec.args.join(" ")));
+            // A linha `cmd` sai dentro do `acp_turn`, só quando há spawn de
+            // verdade: aqui ela registrava processo que o turno não abriu
+            // sempre que o host do turno anterior foi reaproveitado.
             return self.acp_turn(task, spec, prompt, session, workdir, opts, cancel, &timer, &log, turn).await;
         }
         // Ponto de retorno: a pasta como estava antes deste pedido.
@@ -3937,6 +3944,44 @@ mod tests {
         assert!(
             !h.iter().any(|e| matches!(e, AgentEvent::Result { ok: false, .. })),
             "retomar numa sessão nova não é falha: {h:?}"
+        );
+        o.discard_acp_host(id);
+    }
+
+    /// O mesmo caso do teste acima, mas com o `opencode acp` instalado: o
+    /// segundo turno abre outro processo, que não conhece a sessão do primeiro.
+    /// Foi assim que o bug apareceu na janela de dev. Gasta token de verdade:
+    ///
+    ///     cargo test -p argus-core --lib acp_real -- --ignored
+    #[tokio::test]
+    #[ignore = "fala com a CLI opencode de verdade"]
+    async fn acp_real_sobrevive_a_perda_da_sessao() {
+        let dir = tempfile::tempdir().unwrap();
+        let o = Orchestrator::with_db(
+            vec![Arc::new(super::super::acp::AcpProvider::new())],
+            1,
+            Some(Db::open(dir.path().join("f.db")).unwrap()),
+        );
+        let id = o.submit(dir.path(), "opencode-acp", "Responda apenas: um").unwrap();
+        assert_eq!(wait_final_real(&o, id).await, TaskState::Completed, "turno 1 nao completou");
+        let primeira = o.task(id).unwrap().session_id;
+        assert!(primeira.is_some(), "turno 1 nao abriu sessao");
+
+        // Mata o processo mantendo o session_id: é o estado de quem fechou e
+        // reabriu o Argus no meio de uma conversa.
+        o.discard_acp_host(id);
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+
+        o.reply(id, "Responda apenas: dois").unwrap();
+        assert_eq!(
+            wait_final_real(&o, id).await,
+            TaskState::Completed,
+            "a sessao perdida derrubou o turno: e o bug que travava a conversa"
+        );
+        let h = o.history(id);
+        assert!(
+            !h.iter().any(|e| matches!(e, AgentEvent::Result { ok: false, .. })),
+            "o turno de recuperacao nao pode virar erro na conversa: {h:?}"
         );
         o.discard_acp_host(id);
     }
