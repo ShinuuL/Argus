@@ -48,7 +48,10 @@
 
 /* Aba "Agentes" do painel direito: mapa compacto e tarefas em segundo plano. */
 .ap { display: flex; flex-direction: column; min-width: 0; font-family: var(--font-sans); }
-.ap-map, .ap-bg, .ap-todos { padding: var(--space-2) 10px var(--space-3); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* A caixa de toda seção do painel. Vale para "Mapa de agentes", "Minhas
+   tarefas", "Lembretes" (que reusa `.ap-todos`), "Arquivos em uso" e "Tarefas
+   em segundo plano": sem isso a seção encosta na borda e no vizinho de cima. */
+.ap-map, .ap-bg, .ap-todos, .ap-mural { padding: var(--space-2) 10px var(--space-3); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .ap-bg { border-top: 1px solid var(--border); }
 .ap-head { display: flex; align-items: flex-start; gap: 2px; min-width: 0; }
 .ap-head-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -121,7 +124,8 @@
 .ap-activity { color: var(--run); }
 .ap-stop { align-self: flex-start; height: 24px; padding: 0 10px; font-size: 12px; color: var(--err); }
 
-/* Mural de arquivos: quem está mexendo em quê (crates/core/src/mural.rs). */
+/* Mural de arquivos: quem está mexendo em quê (crates/core/src/mural.rs).
+   O espaçamento vem da regra das seções, lá em cima. */
 .ap-mural { border-top: 1px solid var(--border); }
 .ap-sub.alerta { color: var(--warn); }
 /* Uma sessão por grupo: o "#36" aparece uma vez, não em todas as linhas. */
