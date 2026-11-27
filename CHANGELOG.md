@@ -7,6 +7,61 @@ lugares, que precisam andar juntos: `package.json`, `src-tauri/tauri.conf.json`,
 `src-mobile/tauri.conf.json` e `src-mobile/Cargo.toml`. Cada release tem uma tag `vX.Y.Z` e o instalador
 `Argus_X.Y.Z_x64-setup.exe` anexado no GitHub.
 
+## 0.1.5 (2026-11-27)
+
+Correções do que acontece entre um turno e o outro: a CLI que fica viva, o
+ponto de retorno que demorava, a conversa ACP que travava e a janela de uso que
+ignorava o claude. Nenhuma mudança no formato dos dados salvos.
+
+- **Ponto de retorno 26× mais rápido.** O `snapshot` gravava o estado da pasta
+  com um `git update-index` por arquivo alterado — um processo por arquivo. Agora
+  é uma chamada só, com os caminhos pelo stdin. Medido numa pasta com 42
+  arquivos alterados: 2,790 s para 0,106 s. O git em si levava 70 ms; o resto era
+  custo de abrir processo. É o `snapshot_ms` no log do turno, que caiu da casa
+  dos 3,4 s para a dos 600 ms em uso real.
+- **A CLI não é mais encerrada entre turnos.** O processo que responde um turno
+  atende o seguinte, e só morre quando o Argus manda. Isso já era a intenção, mas
+  só tinha teste com provedor falso; agora há um teste que fala com a CLI `claude`
+  instalada, em dois turnos da mesma conversa, e falha se o processo morrer depois
+  de responder, se o segundo turno abrir outro processo ou se o host sobreviver ao
+  descarte.
+- **Conversa ACP não trava mais quando a sessão se perde.** Uma conversa
+  `opencode-acp` cujo processo tivesse morrido (app reiniciado, por exemplo) ficava
+  inutilizável: todo turno seguinte respondia em milissegundos com
+  `session not found`. O `session_id` guardado pertencia a um processo morto — o
+  `opencode acp` não compartilha sessão com o serviço — e o prompt ia direto para
+  ele. Agora só o host reaproveitado pula a abertura da sessão; host novo sempre
+  manda `session/load`, e se a sessão não existir mais, abre uma nova em vez de
+  morrer. O histórico da conversa continua no banco do Argus; só o contexto da CLI
+  recomeça.
+- **Nenhum host sobrevive ao fim da conversa.** Todo pid de host aberto por uma
+  conversa fica registrado, e o descarte varre essa lista: antes, um pid que
+  saísse do mapa por outro caminho ficava vivo até o Argus fechar. Três saídas por
+  erro no caminho ACP também deixavam o processo vivo e sem leitor, prendendo a
+  conversa; as três agora encerram o host.
+- **Janela de 5 horas também para o claude.** A bolinha de uso só conhecia o
+  `state.json` do plugin `usage-window` do OpenCode, que não acompanha o claude.
+  A segunda fonte calcula a janela do histórico do próprio Argus, pela mesma regra
+  do plugin: a janela abre na primeira requisição depois que a anterior vence,
+  `tokens = entrada + saída` (cache lido de fora) e uma requisição é um turno, não
+  uma linha de uso. Sem amostra de rate limit não há o que calibrar, então o
+  percentual só aparece depois de um limite manual — que é guardado no banco do
+  Argus, não no arquivo do plugin.
+- **Uso do OpenCode com o modelo que respondeu.** Metade das linhas de uso do
+  OpenCode (3.633 de 6.164) estava sem modelo: o `run --format json` não imprime
+  o modelo em lugar nenhum. O serviço sabe, e cada mensagem de assistente traz
+  `model.providerID` e `model.id`. O turno cai nessa consulta quando a conversa não
+  tem modelo escolhido nem padrão do provedor, e grava o que achou na tarefa — a
+  consulta sai uma vez por conversa. Sessão sem resposta ou formato que mudar
+  deixa a linha sem modelo, como antes: nenhum nome é inventado.
+- **Mural de arquivos alinhado com o resto do painel.** "Arquivos em uso" era a
+  única seção do painel Agentes fora da regra de espaçamento: encostava na borda
+  esquerda e na seção de cima.
+- **Log do turno diz a verdade sobre o processo.** A linha `cmd` saía antes de
+  saber se haveria spawn, nos caminhos da CLI e do ACP, e registrava processo que
+  o turno não abriu sempre que o host anterior era reaproveitado. Agora ela só sai
+  no spawn, e o host reaproveitado se anuncia com o pid.
+
 ## 0.1.4 (2026-11-24)
 
 Configurações em cartões e sessões mais fáceis de organizar. As duas colunas novas
