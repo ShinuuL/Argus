@@ -135,9 +135,63 @@ pub fn ensure_session(session: Option<&str>, cwd: &Path, rules: &Value) -> Resul
     }
 }
 
+/// Modelo que respondeu na sessão, no formato `provedor/modelo`.
+///
+/// O `run --format json` não imprime o modelo em lugar nenhum (conferido no
+/// `step_start` e no `step_finish` de execuções reais), então a métrica ficava
+/// sem modelo sempre que a conversa não tinha um escolhido à mão. O serviço
+/// sabe: cada mensagem de assistente traz `model.providerID` e `model.id`.
+/// A lista vem da mais nova para a mais antiga; vale a primeira de assistente.
+pub fn session_model(session: &str) -> Option<String> {
+    let bin = api_bin().ok()?;
+    let v = api(&bin, "GET", &format!("/api/session/{session}/message"), None).ok()?;
+    model_from_messages(&v)
+}
+
+fn model_from_messages(v: &Value) -> Option<String> {
+    v.get("data")?.as_array()?.iter().find_map(|m| {
+        let model = m.get("model")?;
+        let id = model.get("id")?.as_str()?.trim();
+        if id.is_empty() {
+            return None;
+        }
+        match model.get("providerID").and_then(Value::as_str).map(str::trim) {
+            Some(p) if !p.is_empty() => Some(format!("{p}/{id}")),
+            _ => Some(id.to_string()),
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Resposta real do serviço: a mensagem mais nova é o `idle`, sem modelo,
+    /// e a de assistente logo depois é quem sabe quem respondeu.
+    #[test]
+    fn model_comes_from_the_newest_assistant_message() {
+        let v = serde_json::json!({"data": [
+            {"id": "msg_3", "type": "idle", "outcome": "succeeded"},
+            {"id": "msg_2", "type": "assistant", "model": {"id": "big-pickle", "providerID": "opencode"}},
+            {"id": "msg_1", "type": "assistant", "model": {"id": "antigo", "providerID": "opencode"}},
+        ]});
+        assert_eq!(model_from_messages(&v).as_deref(), Some("opencode/big-pickle"));
+    }
+
+    #[test]
+    fn model_without_provider_keeps_the_bare_name() {
+        let v = serde_json::json!({"data": [{"type": "assistant", "model": {"id": "solto", "providerID": ""}}]});
+        assert_eq!(model_from_messages(&v).as_deref(), Some("solto"));
+    }
+
+    /// Sessão sem resposta ainda (ou formato que mudou): nenhum nome é inventado.
+    #[test]
+    fn no_assistant_message_means_no_model() {
+        assert_eq!(model_from_messages(&serde_json::json!({"data": []})), None);
+        assert_eq!(model_from_messages(&serde_json::json!({"erro": "x"})), None);
+        let so_usuario = serde_json::json!({"data": [{"type": "user"}]});
+        assert_eq!(model_from_messages(&so_usuario), None);
+    }
 
     #[test]
     fn body_has_location_and_rules() {

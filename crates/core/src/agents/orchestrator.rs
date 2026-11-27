@@ -1174,6 +1174,31 @@ impl Orchestrator {
         self.set_state(id, st);
     }
 
+    /// Modelo que a linha de uso do turno leva. A escolha da conversa vem na
+    /// frente, depois o padrão do provedor. Sem os dois, o opencode ainda sabe
+    /// qual modelo respondeu — ele não imprime isso no `run --format json`, mas
+    /// o serviço guarda na mensagem. Era daí que vinha metade das linhas de uso
+    /// sem modelo. O que for descoberto fica gravado na tarefa: a consulta sai
+    /// uma vez por conversa, não uma por turno.
+    fn turn_model(
+        &self,
+        task: &Task,
+        prov: &Arc<dyn AgentProvider>,
+        opts: &TurnOptions,
+        session: Option<&str>,
+    ) -> Option<String> {
+        if let Some(m) = opts.model.clone().or_else(|| prov.default_model()) {
+            return Some(m);
+        }
+        let sid = session?;
+        if !prov.id().starts_with("opencode") {
+            return None;
+        }
+        let m = super::opencode_session::session_model(sid)?;
+        let _ = self.set_model(task.id, Some(&m));
+        Some(m)
+    }
+
     /// Consome o sinal de que o cancelamento deste host foi confirmado. Chamado
     /// uma vez por `finish`: um cancelamento posterior não herda a decisão.
     fn take_keep_on_cancel(&self, id: TaskId) -> bool {
@@ -1947,7 +1972,7 @@ impl Orchestrator {
         let used = used_model.clone();
         // Sem modelo escolhido no turno, o uso herda o padrao do provedor: a
         // linha de custo do opencode saia sempre sem modelo (bug da validacao).
-        let turn_model = opts.model.clone().or_else(|| prov.default_model());
+        let turn_model = self.turn_model(task, &prov, opts, session);
         let model_out = turn_model.clone();
         let tracker = Arc::new(Mutex::new(prov.turn_tracker()));
         let tracker_out = tracker.clone();
@@ -2299,7 +2324,7 @@ impl Orchestrator {
         let used = used_model.clone();
         // Sem modelo escolhido no turno, o uso herda o padrao do provedor: a
         // linha de custo do opencode saia sempre sem modelo (bug da validacao).
-        let turn_model = opts.model.clone().or_else(|| prov.default_model());
+        let turn_model = self.turn_model(task, &prov, opts, session);
         // Acompanha o processo para completar o que a CLI não imprimiu (uso de
         // turno cancelado, resultado que faltou). Compartilhado com a leitura.
         let tracker = Arc::new(std::sync::Mutex::new(prov.turn_tracker()));
@@ -3357,6 +3382,63 @@ mod tests {
         let hid = hosts[0].trim_start_matches("host ");
         assert!(turns.iter().all(|t| t.trim_start_matches("turno ") == hid), "{raw}");
         o.discard_host(id);
+    }
+
+    /// Espera o fim de um turno que fala com a CLI de verdade (minutos, não
+    /// segundos como o `wait_final` dos falsos).
+    async fn wait_final_real(o: &Orchestrator, id: TaskId) -> TaskState {
+        for _ in 0..600 {
+            let s = o.task(id).unwrap().state;
+            if !matches!(s, TaskState::Queued | TaskState::Running) {
+                return s;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        panic!("timeout esperando o turno real terminar")
+    }
+
+    fn pid_vivo(pid: u32) -> bool {
+        let out = std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .output()
+            .expect("tasklist");
+        String::from_utf8_lossy(&out.stdout).contains(&pid.to_string())
+    }
+
+    fn pids_do_host(o: &Orchestrator, id: TaskId) -> Vec<u32> {
+        o.inner.host_pids.lock().unwrap().get(&id).cloned().unwrap_or_default()
+    }
+
+    /// O turno que responde não pode encerrar a CLI: o mesmo processo atende o
+    /// turno seguinte. Usa a CLI instalada e gasta tokens de verdade, por isso
+    /// só roda sob demanda (`cargo test -- --ignored host_real`).
+    #[tokio::test]
+    #[ignore = "fala com a CLI claude de verdade"]
+    async fn host_real_do_claude_sobrevive_entre_turnos() {
+        let dir = tempfile::tempdir().unwrap();
+        let o = Orchestrator::new(vec![Arc::new(super::super::claude::ClaudeProvider::new())], 1);
+        let id = o
+            .submit_with(
+                dir.path(),
+                "claude",
+                "Responda apenas: um",
+                SubmitOptions { model: Some("claude-haiku-4-5-20251001".into()), ..Default::default() },
+            )
+            .unwrap();
+        assert_eq!(wait_final_real(&o, id).await, TaskState::Completed, "turno 1 nao completou");
+        let pids = pids_do_host(&o, id);
+        assert_eq!(pids.len(), 1, "turno 1 devia abrir um host: {pids:?}");
+        assert!(pid_vivo(pids[0]), "a CLI morreu depois de responder o turno 1 (pid {})", pids[0]);
+
+        o.reply(id, "Responda apenas: dois").unwrap();
+        assert_eq!(wait_final_real(&o, id).await, TaskState::Completed, "turno 2 nao completou");
+        let depois = pids_do_host(&o, id);
+        assert_eq!(depois, pids, "turno 2 abriu outra CLI em vez de reaproveitar: {depois:?}");
+        assert!(pid_vivo(depois[0]), "a CLI morreu depois do turno 2 (pid {})", depois[0]);
+
+        o.discard_host(id);
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        assert!(!pid_vivo(depois[0]), "o host ficou vivo depois do descarte (pid {})", depois[0]);
     }
 
     #[tokio::test]
